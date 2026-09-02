@@ -3,7 +3,7 @@ import { buildAdvisorSwarmSynthesisMessages } from './model-flow'
 import { createAdvisorTurnDeadline, raceAdvisorAbort } from './abort'
 import { HARNESS_TOOL_LOOP_LIMITS } from './limits'
 import { runAdvisorRuntimeAgentLoop } from '../agent-loop/advisor-runtime'
-import { serializeMetroraAgentMessages, type MetroraAgentMessage } from '../agent-loop/contracts'
+import { serializeMetroraAgentMessages, type MetroraAgentContinuation, type MetroraAgentMessage } from '../agent-loop/contracts'
 import type { AdvisorAnswer, AdvisorHostedModel, AdvisorHostedModelCapabilities, AdvisorHostedProviderId, AdvisorModelRuntime, AdvisorReasoningEffort, AdvisorRuntimeInput, AdvisorSwarmSynthesisInput, AdvisorSwarmSynthesisResult } from './types'
 
 export type HostedAdvisorProvider = AdvisorHostedProviderId
@@ -16,7 +16,7 @@ export type HostedAdvisorProbeResult = {
 }
 export type HostedAdvisorTransport = {
   probe(provider: HostedAdvisorProvider, signal?: AbortSignal): Promise<HostedAdvisorProbeResult>
-  chat(requestId: string, payload: Record<string, unknown>, signal?: AbortSignal): Promise<{ message: { content: string; tool_calls?: Array<Record<string, unknown>> }; streamed: boolean }>
+  chat(requestId: string, payload: Record<string, unknown>, signal?: AbortSignal): Promise<{ message: { content: string; tool_calls?: Array<Record<string, unknown>> }; streamed: boolean; continuation?: MetroraAgentContinuation }>
   cancel(requestId: string): Promise<boolean>
   onEvent(callback: (event: { requestId: string; kind: string; provider: string; model: string; usage?: { inputTokens: number | null; outputTokens: number | null; totalTokens: number | null } | null; streamed?: boolean; code?: string }) => void): () => void
 }
@@ -79,11 +79,14 @@ function normalizedHostedToolCall(value: unknown): boolean {
   return args === undefined || typeof args === 'string' || isRecord(args)
 }
 
-function isNormalizedHostedResponse(value: unknown): value is { message: { content: string; tool_calls?: Array<Record<string, unknown>> }; streamed: boolean } {
+function isNormalizedHostedResponse(value: unknown): value is { message: { content: string; tool_calls?: Array<Record<string, unknown>> }; streamed: boolean; continuation?: MetroraAgentContinuation } {
   if (!isRecord(value) || typeof value.streamed !== 'boolean' || !isRecord(value.message)) return false
   if (typeof value.message.content !== 'string' || new TextEncoder().encode(value.message.content).byteLength > 32 * 1024) return false
   const toolCalls = value.message.tool_calls
   if (toolCalls !== undefined && (!Array.isArray(toolCalls) || toolCalls.length > 16 || toolCalls.some(call => !normalizedHostedToolCall(call)))) return false
+  if (value.continuation !== undefined) {
+    if (!isRecord(value.continuation) || typeof value.continuation.provider !== 'string' || typeof value.continuation.model !== 'string' || typeof value.continuation.protocol !== 'string' || typeof value.continuation.adapter !== 'string' || !Array.isArray(value.continuation.responseMessages)) return false
+  }
   return Boolean(value.message.content) || Boolean(Array.isArray(toolCalls) && toolCalls.length)
 }
 
@@ -173,6 +176,7 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
             tools: payload.tools,
             stream: false,
             messageMode: payload.messageMode as 'native' | 'flattened' | undefined,
+            continuation: payload.continuation as MetroraAgentContinuation | undefined,
             consent: true,
             harnessConformance: true,
           }, requestSignal)
@@ -180,11 +184,12 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
           return response
         },
         cancel: request => this.transport.cancel(request),
-        buildPayload: ({ messages, tools }) => ({
+        buildPayload: ({ messages, tools, continuation }) => ({
           messages: serializeMetroraAgentMessages(messages as readonly MetroraAgentMessage[]),
           tools: [...tools],
           stream: false,
           messageMode: this.capabilities.toolCall === 'supported' ? 'native' : 'flattened',
+          ...(continuation ? { continuation } : {}),
         }),
         reportConformance: true,
       },

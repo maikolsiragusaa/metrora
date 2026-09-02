@@ -10,14 +10,14 @@ import { advisorContextualSurfaceLabel, advisorScopeFromContextualLaunch, normal
 import { advisorScopeForRequestedPeriod } from '../advisor/turn-plan'
 import { advisorScopeFingerprint, type AdvisorAnswer, type AdvisorConversationTurn, type AdvisorScope, type AdvisorScopeConflictOptionV1, type AdvisorScopeConflictV1 } from '../advisor/types'
 import { contextualScopeLabel } from './advisor-scope-labels'
-import { harnessToolCheckedLabel, harnessToolLabel, type HarnessToolActivity } from '../harness/HarnessWorkTrace'
+import { createHarnessCompletedWorkTrace, harnessToolCheckedLabel, harnessToolLabel, type HarnessCompletedWorkTrace, type HarnessToolActivity } from '../harness/HarnessWorkTrace'
 import { HarnessSurface } from '../harness/HarnessSurface'
 import { isSwarmExperimentalEnabled } from '../swarm/feature-gate'
 import { useSwarmRun } from '../swarm/useSwarmRun'
 import { isAdvisorCancelled } from './useAdvisorLocalRuntime'
 import { useAdvisorRuntimeController } from './useAdvisorRuntimeController'
 type DetectedProvider = { id: string; label: string }
-type AdvisorMessage = { id: string; role: 'user' | 'assistant'; text?: string; answer?: AdvisorAnswer; scopeFingerprint: string }
+type AdvisorMessage = { id: string; role: 'user' | 'assistant'; text?: string; answer?: AdvisorAnswer; scopeFingerprint: string; workTrace?: HarnessCompletedWorkTrace }
 type AdvisorConversation = { id: string; title: string; messages: AdvisorMessage[] }
 type AdvisorFailedRequest = { question: string; scope: AdvisorScope; conversationId: string; conversation: AdvisorConversationTurn[] }
 
@@ -79,6 +79,7 @@ export function Advisor({
   const [streamPreview, setStreamPreview] = useState('')
   const [toolStatus, setToolStatus] = useState<string | null>(null)
   const [toolActivity, setToolActivity] = useState<HarnessToolActivity[]>([])
+  const toolActivityRef = useRef<HarnessToolActivity[]>([])
   const requestController = useRef<AbortController | null>(null)
   const requestGenerationRef = useRef(0)
   const invalidateAdvisorRequest = useCallback(() => {
@@ -89,6 +90,7 @@ export function Advisor({
     setStreamPreview('')
     setToolStatus(null)
     setToolActivity([])
+    toolActivityRef.current = []
   }, [])
   const [notice, setNotice] = useState<string | null>(null)
   const {
@@ -185,6 +187,7 @@ export function Advisor({
     setStreamPreview('')
     setToolStatus(null)
     setToolActivity([])
+    toolActivityRef.current = []
     try {
       let answer = await kernel.investigate({
         question,
@@ -232,7 +235,9 @@ export function Advisor({
         },
         onToolEvent: event => {
           if (!isCurrentRequest()) return
-          setToolActivity(current => [...current.filter(item => item.name !== event.name), event].slice(-4))
+          const nextActivity = [...toolActivityRef.current.filter(item => item.name !== event.name), event].slice(-4)
+          toolActivityRef.current = nextActivity
+          setToolActivity(nextActivity)
           setToolStatus(event.status === 'started' || event.status === 'queued' ? harnessToolLabel(event.name, requestedScope) + '…' : event.status === 'completed' ? harnessToolCheckedLabel(event.name) : event.status === 'unavailable' ? 'Failed' : event.status === 'cancelled' ? 'Request cancelled' : 'Failed')
         },
         onDelta: text => { if (isCurrentRequest()) setStreamPreview(current => (current + text).slice(0, 4_000)) },
@@ -276,7 +281,7 @@ export function Advisor({
         }
       }
       if (!isCurrentRequest()) return
-      const assistantMessage: AdvisorMessage = { id: makeId('assistant'), role: 'assistant', answer, scopeFingerprint: requestedScopeFingerprint }
+      const assistantMessage: AdvisorMessage = { id: makeId('assistant'), role: 'assistant', answer, scopeFingerprint: requestedScopeFingerprint, workTrace: createHarnessCompletedWorkTrace(toolActivityRef.current) }
       updateConversation(conversationId, conversation => ({ ...conversation, messages: [...conversation.messages, assistantMessage] }))
       setSelectedAnswerId(assistantMessage.id)
     } catch (caught) {

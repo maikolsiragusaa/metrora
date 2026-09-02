@@ -16,6 +16,8 @@ import type {
   FetchLike,
 } from './advisor-provider-contract'
 import { bodyFor, finalizeOpenToolCalls, protocolAdapter, streamState } from './advisor-provider-adapters'
+import { runOpenAiCompatibleStep } from './advisor-provider-ai-sdk'
+import { normalizeHostedContinuation, validReasoningEffort } from './advisor-provider-continuation'
 import {
   createMemoryAdvisorConformanceStore,
   type AdvisorConformanceStore,
@@ -47,6 +49,7 @@ export type {
   AdvisorHostedProtocol,
   AdvisorHostedProviderId,
   AdvisorHostedReasoningCapability,
+  AdvisorHostedContinuation,
   AdvisorReasoningEffort,
   AdvisorHostedToolCall,
   AdvisorHostedToolDefinition,
@@ -129,9 +132,11 @@ function normalizeMessages(value: unknown): AdvisorHostedChatMessage[] {
 function parseChatRequest(requestId: unknown, value: unknown): { requestId: string; request: AdvisorHostedChatRequest } {
   if (!validRequestId(requestId) || !isRecord(value) || value.consent !== true || !validProvider(value.provider) || !validModel(value.model)) throw new HostedAdapterError('request-malformed', 'Advisor hosted request is invalid.')
   const reasoningEffort = value.reasoningEffort
-  if (reasoningEffort !== undefined && !['default', 'low', 'medium', 'high', 'max'].includes(String(reasoningEffort))) throw new HostedAdapterError('request-malformed', 'Advisor reasoning effort is invalid.')
+  if (reasoningEffort !== undefined && !validReasoningEffort(reasoningEffort)) throw new HostedAdapterError('request-malformed', 'Advisor reasoning effort is invalid.')
   const messageMode = value.messageMode === undefined ? 'native' : value.messageMode
   if (messageMode !== 'native' && messageMode !== 'flattened') throw new HostedAdapterError('request-malformed', 'Advisor message mode is invalid.')
+  const continuation = value.continuation === undefined ? undefined : normalizeHostedContinuation(value.continuation)
+  if (value.continuation !== undefined && !continuation) throw new HostedAdapterError('request-malformed', 'Advisor provider continuation is malformed.')
   return {
     requestId,
     request: {
@@ -143,6 +148,7 @@ function parseChatRequest(requestId: unknown, value: unknown): { requestId: stri
       consent: true,
       messageMode,
       ...(reasoningEffort !== undefined ? { reasoningEffort: reasoningEffort as AdvisorReasoningEffort } : {}),
+      ...(continuation ? { continuation } : {}),
       ...(value.harnessConformance === true ? { harnessConformance: true as const } : {}),
     },
   }
@@ -277,6 +283,25 @@ async function hostedChat(
   const selectedEffort = request.reasoningEffort ?? 'default'
   if (selectedEffort !== 'default' && (!reasoningCapability || !reasoningCapability.efforts.includes(selectedEffort))) {
     throw new HostedAdapterError('request-unsupported', 'The selected model does not advertise this reasoning level.')
+  }
+  if ((provider === 'openrouter' || provider === 'opencode-zen') && protocol === 'openai-chat' && request.messageMode !== 'flattened' && request.harnessConformance === true) {
+    const timed = contract.timeoutRequest(parent, REQUEST_TIMEOUT_MS)
+    try {
+      const value = await runOpenAiCompatibleStep({ provider, secret, request, requestId, fetchImpl, signal: timed.signal, emit })
+      if (request.harnessConformance === true) {
+        conformance.set(conformanceKey(provider, request.model, protocol), {
+          state: 'verified',
+          toolCall: value.message.tool_calls.length ? 'supported' : capabilityInputs.toolCall === 'supported' ? 'supported' : 'unknown',
+          protocol,
+          fingerprint,
+          verifiedAt: new Date().toISOString(),
+        })
+        await persistConformance(conformanceStore, conformance)
+      }
+      return value
+    } finally {
+      timed.dispose()
+    }
   }
   const adapter = protocolAdapter(protocol)
   const result = await fetchResponse(fetchImpl, providerUrl(provider, DESCRIPTORS[provider].chatPath(request.model, stream, protocol)), {

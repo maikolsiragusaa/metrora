@@ -27,6 +27,7 @@ import type {
 } from './types'
 import type { ProjectBridge } from './project-bridge-types'
 import type { AdvisorLocalRuntimeId, AdvisorReasoningEffort, AdvisorRuntimeProbe } from '../advisor/types'
+import type { MetroraAgentContinuation } from '../agent-loop/contracts'
 import type { HarnessActionEvent } from '../../electron/act-bridge'
 import type { PerformanceRunV1 } from '../../../src/bench/performance-contract-v1'
 import type { PerformanceComparisonV1 } from '../../../src/bench/performance-compare-v1'
@@ -48,7 +49,7 @@ export type AdvisorHostedEvent = { requestId: string; provider: AdvisorCredentia
 /** Renderer-safe lifecycle projection; provider text and tool arguments never cross into renderer event listeners. */
 export type AdvisorHostedRendererEvent = { requestId: string; provider: AdvisorCredentialProvider; model: string; kind: AdvisorHostedEventKind; usage?: AdvisorHostedUsage | null; streamed?: boolean; code?: string }
 export type MetroraHarnessActionEvent = HarnessActionEvent
-export type AdvisorHostedChatResult = { provider: AdvisorCredentialProvider; model: string; message: { content: string; tool_calls: AdvisorHostedToolCall[] }; usage: AdvisorHostedUsage | null; streamed: boolean }
+export type AdvisorHostedChatResult = { provider: AdvisorCredentialProvider; model: string; message: { content: string; tool_calls: AdvisorHostedToolCall[] }; usage: AdvisorHostedUsage | null; streamed: boolean; continuation?: MetroraAgentContinuation }
 export type BenchTaskResult = {
   taskId: string
   attempted: boolean

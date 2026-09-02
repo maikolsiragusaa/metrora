@@ -40,6 +40,34 @@ llama.cpp build supports every optional capability.
 
 Source repository: `https://github.com/ggml-org/llama.cpp`
 
+## Vercel AI SDK OpenAI-compatible runtime substrate
+
+Metrora includes the following exact Apache-2.0 runtime packages from the
+Vercel AI SDK family: `ai@7.0.90` and
+`@ai-sdk/openai-compatible@3.0.43`. The reviewed Vercel AI source reference
+was commit `72435300083e28d5027747eddd04e542edb5b0be`. Metrora uses these
+packages only behind the Metrora-owned provider adapter; the Metrora agent
+loop remains the authority for Tools, evidence, bounds, and continuation.
+
+The resolved runtime dependency closure also includes:
+
+| Package | Version | Licence |
+| --- | --- | --- |
+| `@ai-sdk/gateway` | 4.0.72 | Apache-2.0 |
+| `@ai-sdk/provider` | 4.0.10 | Apache-2.0 |
+| `@ai-sdk/provider-utils` | 5.0.36 | Apache-2.0 |
+| `@vercel/oidc` | 3.2.0 | Apache-2.0 |
+| `@workflow/serde` | 4.1.0 | Apache-2.0 |
+| `@standard-schema/spec` | 1.1.0 | MIT |
+| `eventsource-parser` | 3.1.1 | MIT |
+| `undici` | 7.29.0 | MIT |
+| `zod` (peer) | 4.5.4 | MIT |
+| `json-schema` | 0.4.0 | AFL-2.1 OR BSD-3-Clause |
+
+The Apache-2.0 terms are preserved in
+[`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt); the package
+distributions retain the applicable MIT, AFL-2.1, and BSD-3-Clause notices.
+
 ## OpenHands Agent Canvas UI primitives
 
 Metrora Wave 001 adapts small, generic UI mechanics from

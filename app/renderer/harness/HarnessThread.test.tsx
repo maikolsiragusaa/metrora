@@ -58,6 +58,33 @@ describe('Harness V3 thread composition', () => {
     expect(screen.getByText('In progress')).toBeInTheDocument()
   })
 
+  it('retains a compact completed work trace without provider payloads', () => {
+    const answer: AdvisorAnswer = {
+      conclusion: 'The measured result is available for review.',
+      scopeLabel: 'Last 7 days',
+      periodLabel: 'Last 7 days',
+      evidence: [],
+      coverage: { level: 'high', label: 'High coverage', detail: 'Measured evidence is available.' },
+      assumptions: [],
+      unknown: [],
+      nextInvestigations: [],
+      details: [],
+      runtime: { id: 'fixture', label: 'Fixture', mode: 'ollama-local' },
+    }
+    const workTrace = {
+      schemaVersion: 1 as const,
+      items: [
+        { id: 'thinking', label: 'Thinking', status: 'completed' as const },
+        { id: 'check-1', label: 'Usage checked', status: 'completed' as const },
+        { id: 'done', label: 'Done', status: 'completed' as const },
+      ],
+    }
+    render(<HarnessThread {...baseProps} messages={[{ id: 'question', role: 'user', text: 'Inspect usage' }, { id: 'answer', role: 'assistant', answer, workTrace }]} />)
+    expect(screen.getByLabelText('Completed Harness work trace')).toHaveTextContent('1 source checked · Done')
+    expect(screen.getByText('Usage checked')).toBeInTheDocument()
+    expect(screen.queryByText(/reasoning_content|system prompt|provider payload/iu)).not.toBeInTheDocument()
+  })
+
   it('keeps the Swarm work block in the same conversation thread as the user task', () => {
     render(<HarnessThread {...baseProps} mode="swarm" messages={[{ id: 'task-1', role: 'user', text: 'Investigate current spend' }]} />)
     expect(screen.getByText('Investigate current spend')).toBeInTheDocument()

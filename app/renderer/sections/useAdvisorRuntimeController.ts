@@ -16,19 +16,20 @@ import { loadHarnessRuntimeProfile, runtimeReasoningKey, saveHarnessRuntimeProfi
 
 const DEFAULT_REASONING_EFFORTS: readonly AdvisorReasoningEffort[] = ['default']
 const REASONING_EFFORT_STORAGE_KEY = 'metrora.harness.reasoning-effort'
+const PERSISTED_REASONING_EFFORTS = new Set<AdvisorReasoningEffort>(['default', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
 
 function storedReasoningEffort(profile: HarnessRuntimeProfile, key: string): AdvisorReasoningEffort {
   const scoped = profile.reasoningEfforts[key]
-  if (scoped === 'low' || scoped === 'medium' || scoped === 'high' || scoped === 'max' || scoped === 'default') return scoped
+  if (PERSISTED_REASONING_EFFORTS.has(scoped)) return scoped
   try {
     const value = window.localStorage.getItem(REASONING_EFFORT_STORAGE_KEY)
-    return value === 'low' || value === 'medium' || value === 'high' || value === 'max' || value === 'default' ? value : 'default'
+    return PERSISTED_REASONING_EFFORTS.has(value as AdvisorReasoningEffort) ? value as AdvisorReasoningEffort : 'default'
   } catch { return 'default' }
 }
 
 function storedScopedReasoningEffort(profile: HarnessRuntimeProfile, key: string): AdvisorReasoningEffort {
   const scoped = profile.reasoningEfforts[key]
-  return scoped === 'low' || scoped === 'medium' || scoped === 'high' || scoped === 'max' || scoped === 'default' ? scoped : 'default'
+  return PERSISTED_REASONING_EFFORTS.has(scoped) ? scoped : 'default'
 }
 
 type UseAdvisorRuntimeControllerOptions = {

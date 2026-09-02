@@ -719,7 +719,9 @@ describe('Advisor hosted provider authority', () => {
     const handlers = readyHandlers(fetchImpl)
     const probe = await handlers['metrora:advisorHostedProbe']!('opencode-zen') as { ok: boolean; value: any }
     expect(probe.value.models).toEqual(OPENCODE_ZEN_OBSERVED_MODEL_ROWS.map(row => expect.objectContaining({ id: row.id, state: 'unverified' })))
-    expect(probe.value.models.find((model: { id: string }) => model.id === 'mimo-v2.5-free')?.capabilities).not.toHaveProperty('reasoningEfforts')
+    expect(probe.value.models.find((model: { id: string }) => model.id === 'mimo-v2.5-free')?.capabilities).toHaveProperty('reasoningEfforts', ['default'])
+    expect(probe.value.models.find((model: { id: string }) => model.id === 'nemotron-3-ultra-free')?.capabilities).toHaveProperty('reasoningEfforts', ['default'])
+    expect(probe.value.models.find((model: { id: string }) => model.id === 'muse-spark-1.2-contributor-free')?.capabilities).toHaveProperty('reasoningEfforts', ['default', 'minimal', 'low', 'medium', 'high', 'xhigh'])
 
     const result = await handlers['metrora:advisorHostedChat']!('zen-observed-mimo', {
       provider: 'opencode-zen',

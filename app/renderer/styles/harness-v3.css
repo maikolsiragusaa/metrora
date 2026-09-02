@@ -234,6 +234,10 @@
 .harness-v3-work-dot.completed { background: var(--metrora-status-success); }
 .harness-v3-work-dot.failed { background: var(--metrora-status-danger); }
 .harness-v3-work-dot.cancelled { background: var(--metrora-text-muted); }
+.harness-v3-completed-work-trace { margin: 12px 0 2px; color: var(--metrora-text-muted); font-size: var(--metrora-text-xs); }
+.harness-v3-completed-work-trace summary { width: fit-content; cursor: pointer; list-style-position: inside; }
+.harness-v3-completed-work-trace summary::marker { color: var(--metrora-text-subtle); }
+.harness-v3-completed-work-trace .harness-v3-work-trace { margin-top: 6px; padding-left: 18px; }
 .harness-v3-pending-turn { padding: 20px 0; }
 .harness-v3-pending-status { margin: 11px 0 0 28px; color: var(--metrora-text-secondary); font-size: var(--metrora-text-md); }
 .harness-v3-stream-preview { margin: 10px 0 12px 28px; color: var(--metrora-text-muted); font-size: var(--metrora-text-sm); white-space: pre-wrap; }

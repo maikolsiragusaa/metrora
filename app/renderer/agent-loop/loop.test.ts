@@ -101,6 +101,28 @@ describe('MetroraAgentLoop', () => {
     expect(output.finalText).toContain('natural explanation')
   })
 
+  it('passes an opaque provider continuation to the next model step without putting it in the ledger', async () => {
+    const continuation = {
+      provider: 'opencode-zen',
+      model: 'mimo-v2.5-free',
+      protocol: 'openai-chat',
+      adapter: 'ai-sdk-openai-compatible-v1',
+      responseMessages: [{ role: 'assistant', content: [{ type: 'reasoning', text: 'opaque provider state' }] }],
+    }
+    const seen: Array<unknown> = []
+    const output = await run({
+      complete: async context => {
+        seen.push(context.continuation)
+        return context.step === 1
+          ? { ...toolStep(call('continuation-1')), continuation }
+          : step('The same bounded turn continued with the canonical result.')
+      },
+    })
+    expect(seen[0]).toBeUndefined()
+    expect(seen[1]).toEqual(continuation)
+    expect(output.ledger.every(message => !Object.prototype.hasOwnProperty.call(message, 'continuation'))).toBe(true)
+  })
+
   it('continues after one Tool round exactly fills the turn budget', async () => {
     const executed: string[] = []
     const output = await run({
@@ -309,5 +331,21 @@ describe('Metrora provenance classification', () => {
     const result = classifyMetroraProvenance('GPT-5.6 caused the $4,122.20 spend.', 'How much did I spend?', [spendEvidence])
     expect(result.accepted).toBe(false)
     expect(result.diagnostics).toContain('unsupported_causality')
+  })
+
+  it('accepts natural multilingual connective prose without a phrase allowlist', () => {
+    const result = classifyMetroraProvenance('Questo quadro merita un controllo più attento. Je recommande de vérifier les détails avant de décider.', 'How much did I spend?', [spendEvidence])
+    expect(result.accepted).toBe(true)
+    expect(result.removedClauses).toBe(0)
+    expect(result.usedInterpretation).toBe(true)
+  })
+
+  it('removes an unsupported named entity while retaining ordinary prose', () => {
+    const result = classifyMetroraProvenance('Project Z was involved in the spend. I would investigate the breakdown next.', 'How much did I spend?', [spendEvidence])
+    expect(result.accepted).toBe(true)
+    expect(result.removedClauses).toBe(1)
+    expect(result.text).not.toContain('Project Z')
+    expect(result.text).toContain('investigate the breakdown')
+    expect(result.diagnostics).toContain('unsupported_subject_claim')
   })
 })

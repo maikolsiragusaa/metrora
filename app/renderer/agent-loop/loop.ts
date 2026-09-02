@@ -5,6 +5,7 @@ import type {
   MetroraAgentLoopOptions,
   MetroraAgentLoopResult,
   MetroraAgentMessage,
+  MetroraAgentContinuation,
   MetroraAgentModelStep,
   MetroraAgentToolCall,
   MetroraAgentToolResult,
@@ -66,6 +67,18 @@ function cloneMessage(message: MetroraAgentMessage): MetroraAgentMessage {
     ...(message.toolCalls ? { toolCalls: message.toolCalls.map(cloneCall) } : {}),
     ...(message.toolCallId ? { toolCallId: message.toolCallId } : {}),
     ...(message.toolName ? { toolName: message.toolName } : {}),
+  }
+}
+
+function cloneContinuation(value: MetroraAgentContinuation | undefined): MetroraAgentContinuation | undefined {
+  if (!value || typeof value !== 'object' || typeof value.provider !== 'string' || typeof value.model !== 'string' || typeof value.protocol !== 'string' || typeof value.adapter !== 'string' || !Array.isArray(value.responseMessages)) return undefined
+  try {
+    const encoded = JSON.stringify(value)
+    if (new TextEncoder().encode(encoded).byteLength > 64 * 1024) return undefined
+    const cloned = JSON.parse(encoded) as MetroraAgentContinuation
+    return cloned.responseMessages.length <= 4 && cloned.responseMessages.every(message => Boolean(message && typeof message === 'object' && !Array.isArray(message))) ? cloned : undefined
+  } catch {
+    return undefined
   }
 }
 
@@ -140,6 +153,7 @@ export class MetroraAgentLoop {
     let streamed = false
     let disposed = false
     let timedOut = false
+    let continuation: MetroraAgentContinuation | undefined
     const controller = new AbortController()
     const forwardAbort = () => controller.abort()
     if (options.signal?.aborted) controller.abort()
@@ -235,7 +249,7 @@ export class MetroraAgentLoop {
         emit('model-started', { step: modelSteps })
         let step: MetroraAgentModelStep
         try {
-          step = await raceAbort(Promise.resolve().then(() => options.complete({ ledger: ledger.map(cloneMessage), tools: options.tools, step: modelSteps, signal: controller.signal })), controller.signal)
+          step = await raceAbort(Promise.resolve().then(() => options.complete({ ledger: ledger.map(cloneMessage), tools: options.tools, step: modelSteps, signal: controller.signal, ...(continuation ? { continuation: cloneContinuation(continuation) } : {}) })), controller.signal)
         } catch (error) {
           if (isAbortLike(error) || controller.signal.aborted) throw error
           const diagnostic = error && typeof error === 'object' && 'diagnostic' in error && typeof (error as { diagnostic?: unknown }).diagnostic === 'string'
@@ -252,6 +266,7 @@ export class MetroraAgentLoop {
         }
         emit('model-completed', { step: modelSteps, detail: step.kind })
         streamed ||= step.streamed === true
+        continuation = cloneContinuation(step.continuation)
         append({ role: 'assistant', content: step.content, ...(step.calls.length ? { toolCalls: step.calls } : {}) })
         if (step.kind === 'tool-calls') {
           if (toolRounds >= bounds.maxToolRounds) {

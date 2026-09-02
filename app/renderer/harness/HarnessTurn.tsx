@@ -3,6 +3,7 @@ import type { MetroraHarnessActionEvent } from '../lib/metrora-bridge-types'
 import { MetroraMark } from '../components/MetroraMark'
 import { HarnessChartBlock } from './HarnessChartBlock'
 import { HarnessEvidenceDetails } from './HarnessEvidenceDetails'
+import { HarnessCompletedWorkTraceView, type HarnessCompletedWorkTrace } from './HarnessWorkTrace'
 
 type HarnessActionDisplay = Pick<MetroraHarnessActionEvent, 'actionId' | 'proposalDigest' | 'model' | 'status'> & {
   runtime: MetroraHarnessActionEvent['runtime'] | null
@@ -88,9 +89,10 @@ function ScopeConflictActions({ question, conflict, onChoose }: { question?: str
   return <div className="harness-v3-scope-conflict" aria-label="Scope clarification options">{conflict.options.map(option => <button type="button" className="harness-v3-quiet-button" key={option.id} onClick={event => { event.stopPropagation(); onChoose(question, conflict, option) }}>{option.label}</button>)}</div>
 }
 
-export function HarnessTurn({ answer, question, selected, onSelect, onFollowUp, onNextInvestigation, onScopeConflictOption, harnessAction, actionBusy, onConfirmHarnessAction, onCancelHarnessAction }: {
+export function HarnessTurn({ answer, question, workTrace, selected, onSelect, onFollowUp, onNextInvestigation, onScopeConflictOption, harnessAction, actionBusy, onConfirmHarnessAction, onCancelHarnessAction }: {
   answer: AdvisorAnswer
   question?: string
+  workTrace?: HarnessCompletedWorkTrace
   selected: boolean
   onSelect: () => void
   onFollowUp: (next: string) => void
@@ -119,9 +121,10 @@ export function HarnessTurn({ answer, question, selected, onSelect, onFollowUp, 
     : null
   return (
     <article className={selected ? 'harness-v3-turn harness-v3-assistant-turn selected assistant-message' : 'harness-v3-turn harness-v3-assistant-turn assistant-message'} onClick={onSelect}>
-      <div className="harness-v3-turn-label"><MetroraMark size={20} /><span>Metrora Harness</span><small>{answer.generatedByModel ? (answer.evidence.length ? 'model-assisted explanation' : 'model-assisted chat') : 'Metrora facts'}</small></div>
+      <div className="harness-v3-turn-label"><MetroraMark size={20} /><span>Metrora Harness</span><small>{answer.generatedByModel ? (answer.evidence.length ? 'model-assisted explanation' : 'model-assisted chat') : 'verified answer'}</small></div>
       <p className="harness-v3-conclusion">{answer.conclusion}</p>
       <div className="harness-v3-answer-meta"><span className={'harness-v3-coverage-pill ' + answer.coverage.level}>{answer.coverage.label}</span><span>{answer.scopeLabel}</span></div>
+      {workTrace ? <HarnessCompletedWorkTraceView trace={workTrace} /> : null}
       {answer.understanding?.scopeConflict ? <ScopeConflictActions question={question} conflict={answer.understanding.scopeConflict} onChoose={onScopeConflictOption} /> : null}
       {answer.presentation?.length ? <PresentationBlocks blocks={answer.presentation} /> : null}
       {answer.actionProposal?.kind === 'run-core-compatibility' && action ? <HarnessActionBlock action={action} busy={actionBusy} onConfirm={() => onConfirmHarnessAction(action.actionId, action.proposalDigest)} onCancel={() => onCancelHarnessAction(action.actionId)} /> : null}

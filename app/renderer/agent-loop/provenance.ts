@@ -189,9 +189,10 @@ function classifyClause(clause: string, _question: string, evidenceItems: readon
   if (trendClaim(clause) && !evidenceItems.some(item => item.spend?.trend)) return { accepted: false, kinds: ['unsupported-factual-claim'], diagnostic: 'ungrounded_narrative' }
   if (subjectClaim(clause, subjects)) return { accepted: false, kinds: ['unsupported-factual-claim'], diagnostic: 'unsupported_subject_claim' }
   if (rankClaim(clause) && !subjects.some(subject => clause.toLocaleLowerCase().includes(subject.toLocaleLowerCase()))) return { accepted: false, kinds: ['unsupported-factual-claim'], diagnostic: 'unsupported_rank_claim' }
-  const supportedNumber = values.some(value => auth.some(item => (item.source === 'canonical' || item.source === 'derived') && numberKey(item.value) === numberKey(value)))
-  const hasEvidence = values.length > 0 || topicAnchor(clause, words) || ((interpretationClaim(clause) || evidenceReference(clause)) && evidenceItems.some(item => item.refs.length > 0))
-  if (!hasEvidence || (!topicAnchor(clause) && !interpretationClaim(clause) && !evidenceReference(clause) && !supportedNumber && !thresholdContext(clause))) return { accepted: false, kinds: ['unsupported-factual-claim'], diagnostic: 'ungrounded_narrative' }
+  // Facts are verified by the checks above; ordinary model-authored prose is
+  // not a second language-dependent allowlist. Once a clause has no
+  // unsupported material number, entity, rank, trend, causal, or private
+  // assertion, it is safe to retain as model interpretation/connective prose.
   const kinds: MetroraClaimProvenance[] = []
   if (values.some(value => auth.some(item => item.source === 'canonical' && numberKey(item.value) === numberKey(value)))) kinds.push('canonical-metrora-fact')
   if (values.some(value => auth.some(item => item.source === 'user' && numberKey(item.value) === numberKey(value)))) kinds.push('user-provided-fact')

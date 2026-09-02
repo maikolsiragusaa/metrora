@@ -22,7 +22,7 @@ type StorageSurface = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
 
 const PROVIDERS = new Set<AdvisorHostedProviderId>(['openai', 'anthropic', 'gemini', 'openrouter', 'opencode-zen'])
 const LOCAL_RUNTIMES = new Set<AdvisorLocalRuntimeId>(['ollama', 'lmstudio', 'llama-server'])
-const REASONING_EFFORTS = new Set<AdvisorReasoningEffort>(['default', 'low', 'medium', 'high', 'max'])
+const REASONING_EFFORTS = new Set<AdvisorReasoningEffort>(['default', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
 const MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,160}$/u
 const DEFAULT_PORT = 8080
 

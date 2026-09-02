@@ -21,6 +21,7 @@ import type {
   MetroraAgentLoopBounds,
   MetroraAgentLoopEvent,
   MetroraAgentMessage,
+  MetroraAgentContinuation,
   MetroraAgentToolCall,
   MetroraAgentToolResult,
 } from './contracts'
@@ -34,6 +35,7 @@ export type AdvisorAgentTransport = {
     messages: readonly MetroraAgentMessage[]
     tools: readonly AdvisorToolDefinition[]
     stream: boolean
+    continuation?: MetroraAgentContinuation
   }) => Record<string, unknown>
   reportConformance?: boolean
 }
@@ -230,7 +232,7 @@ export async function runAdvisorRuntimeAgentLoop(options: AdvisorAgentLoopOption
     complete: async context => {
       const id = requestId('metrora-agent-step')
       active.requestId = id
-      const payload = transport.buildPayload({ model: options.model, messages: context.ledger, tools: nativeToolCalls ? definitions : [], stream: streamTurn })
+      const payload = transport.buildPayload({ model: options.model, messages: context.ledger, tools: nativeToolCalls ? definitions : [], stream: streamTurn, ...(context.continuation ? { continuation: context.continuation } : {}) })
       try {
         const response = await transport.complete(id, payload, context.signal)
         if (context.signal.aborted) throw new DOMException('Metrora model step cancelled', 'AbortError')

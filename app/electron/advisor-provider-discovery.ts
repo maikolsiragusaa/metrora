@@ -23,6 +23,7 @@ import {
   providerUrl,
   readJson,
   reasoningCapabilityFromMetadata,
+  resolveOpenCodeZenProtocolFromMetadata,
   safeModelLabel,
   statusCheck,
   validModel,
@@ -34,6 +35,7 @@ import {
   type AdvisorConformanceCapabilities,
   type AdvisorConformanceRecord,
 } from './advisor-conformance-store'
+import { reviewedModelsDevCapability, reviewedModelsDevMetadata } from './models-dev-capabilities'
 
 export type HostedProtocolRegistry = Map<string, AdvisorHostedProtocol | null>
 export type HostedReasoningRegistry = Map<string, AdvisorHostedReasoningCapability | null>
@@ -62,7 +64,7 @@ export function conformanceCapabilities(
   }
 }
 
-function advertisedToolCapability(kind: AdvisorHostedModelListKind, row: Record<string, unknown>): AdvisorHostedCapabilityState {
+function advertisedToolCapability(kind: AdvisorHostedModelListKind, row: Record<string, unknown>, reviewedToolCall?: AdvisorHostedCapabilityState): AdvisorHostedCapabilityState {
   const explicit = [row.tool_call, row.toolCall, row.supports_tools, row.supportsTools].filter(value => typeof value === 'boolean') as boolean[]
   if (explicit.length && explicit.every(value => value === explicit[0])) return explicit[0] ? 'supported' : 'unsupported'
   if (explicit.length) return 'unknown'
@@ -71,7 +73,7 @@ function advertisedToolCapability(kind: AdvisorHostedModelListKind, row: Record<
     if (parameters.includes('tools') || parameters.includes('tool_choice')) return 'supported'
     return 'unsupported'
   }
-  return 'unknown'
+  return reviewedToolCall ?? 'unknown'
 }
 
 export function currentConformanceFingerprint(
@@ -113,13 +115,23 @@ function modelRows(
       ? row.supportedGenerationMethods.filter(item => typeof item === 'string')
       : []
     const key = modelKey(provider, id)
-    const protocol = DESCRIPTORS[provider].protocolForModel(id, row)
+    const reviewed = reviewedModelsDevCapability(provider, id)
+    const explicitProtocol = kind === 'opencode-zen' ? resolveOpenCodeZenProtocolFromMetadata(row) : undefined
+    const protocol = kind === 'opencode-zen' && explicitProtocol === undefined
+      ? reviewed?.protocol ?? DESCRIPTORS[provider].protocolForModel(id, row)
+      : kind === 'opencode-zen' && explicitProtocol !== undefined
+        ? explicitProtocol
+        : DESCRIPTORS[provider].protocolForModel(id, row)
     const previousProtocol = protocols.get(key)
     if (protocols.has(key) && previousProtocol !== protocol && previousProtocol) {
       conformance.delete(conformanceKey(provider, id, previousProtocol))
     }
     protocols.set(key, protocol)
-    const reasoningCapability = protocol ? reasoningCapabilityFromMetadata(row, protocol) : null
+    const reviewedMetadata = reviewed ? reviewedModelsDevMetadata(reviewed) : null
+    const liveReasoningKeys = ['reasoning', 'thinking', 'reasoning_options', 'reasoningOptions', 'reasoningEfforts', 'reasoning_efforts', 'supportedReasoningEfforts', 'supported_reasoning_efforts', 'reasoningEffortValues', 'reasoning_effort_values', 'reasoningParameter', 'reasoning_parameter', 'reasoningMode', 'reasoning_mode', 'supported_parameters']
+    const hasLiveReasoningDeclaration = liveReasoningKeys.some(key => Object.prototype.hasOwnProperty.call(row, key))
+    const reasoningMetadata = reviewedMetadata && !hasLiveReasoningDeclaration ? { ...reviewedMetadata, ...row } : row
+    const reasoningCapability = protocol ? reasoningCapabilityFromMetadata(reasoningMetadata, protocol) : null
     reasoning.set(key, reasoningCapability)
     const supported = kind !== 'gemini' || methods.length === 0 || methods.includes('generateContent')
     const conversational: AdvisorHostedModelCapabilities['conversational'] = kind === 'gemini'
@@ -130,7 +142,7 @@ function modelRows(
       : 'unknown'
     const advertisedToolCall = kind === 'opencode-zen' && !protocol
       ? 'unsupported'
-      : advertisedToolCapability(kind, row)
+      : advertisedToolCapability(kind, row, reviewed?.toolCall ?? undefined)
     const capabilityInputs = conformanceCapabilities(conversational, streaming, advertisedToolCall, reasoningCapability?.efforts)
     capabilitiesByModel.set(key, capabilityInputs)
     const fingerprint = protocol ? currentConformanceFingerprint(provider, id, protocol, capabilityInputs) : null

@@ -172,7 +172,8 @@ export type AdvisorCredentialState = 'not-configured' | 'ready' | 'locked-unavai
 export type AdvisorCredentialStatus = { provider: AdvisorCredentialProvider; state: AdvisorCredentialState }
 export type AdvisorHostedModelState = 'discovered' | 'unverified' | 'verified' | 'limited' | 'unsupported' | 'failed-conformance'
 export type AdvisorHostedCapabilityState = 'supported' | 'unsupported' | 'unknown' | 'failed-conformance'
-export type AdvisorReasoningEffort = 'default' | 'low' | 'medium' | 'high' | 'max'
+/** Provider-declared reasoning option; Metrora does not invent a universal scale. */
+export type AdvisorReasoningEffort = 'default' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | (string & {})
 export type AdvisorHostedModelCapabilities = { conversational: 'available' | 'unavailable' | 'unknown'; streaming: 'supported' | 'unsupported' | 'unknown'; toolCall: AdvisorHostedCapabilityState; reasoningEfforts?: readonly AdvisorReasoningEffort[] }
 export type AdvisorHostedModel = { id: string; label: string; state: AdvisorHostedModelState; limitation: string | null; capabilities?: AdvisorHostedModelCapabilities }
 export type AdvisorHostedProbe = { provider: AdvisorHostedProviderId; available: boolean; models: AdvisorHostedModel[]; detail: string; credentialState: 'not-configured' | 'ready' | 'locked-unavailable' | 'invalid' | 'needs-reentry' }

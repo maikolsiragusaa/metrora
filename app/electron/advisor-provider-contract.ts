@@ -6,7 +6,12 @@ export type AdvisorHostedCredentialStatus = { provider: AdvisorHostedProviderId;
 export type AdvisorHostedModelState = 'discovered' | 'unverified' | 'verified' | 'limited' | 'unsupported' | 'failed-conformance'
 export type AdvisorHostedProtocol = 'openai-responses' | 'openai-chat' | 'anthropic-messages' | 'gemini-content'
 export type AdvisorHostedCapabilityState = 'supported' | 'unsupported' | 'unknown' | 'failed-conformance'
-export type AdvisorReasoningEffort = 'default' | 'low' | 'medium' | 'high' | 'max'
+/**
+ * Reasoning is a provider-declared vocabulary, not a universal Metrora scale.
+ * The common values keep the UI readable while the string escape hatch lets a
+ * reviewed provider publish exact options such as `minimal` or `xhigh`.
+ */
+export type AdvisorReasoningEffort = 'default' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | (string & {})
 export type AdvisorHostedReasoningParameter = 'openai-effort' | 'reasoning-object'
 export type AdvisorHostedReasoningCapability = {
   efforts: readonly AdvisorReasoningEffort[]
@@ -52,8 +57,20 @@ export type AdvisorHostedChatMessage =
   | { role: 'assistant'; content: string; toolCalls?: AdvisorHostedToolCall[] }
   | { role: 'tool'; content: string; toolCallId: string; toolName?: string }
 export type AdvisorHostedMessageMode = 'native' | 'flattened'
-export type AdvisorHostedChatRequest = { provider: AdvisorHostedProviderId; model: string; messages: AdvisorHostedChatMessage[]; tools?: AdvisorHostedToolDefinition[]; stream?: boolean; consent: true; reasoningEffort?: AdvisorReasoningEffort; messageMode?: AdvisorHostedMessageMode; /** Set only for bounded Harness evidence/conformance calls. */ harnessConformance?: true }
-export type AdvisorHostedChatResult = { provider: AdvisorHostedProviderId; model: string; message: { content: string; tool_calls: AdvisorHostedToolCall[] }; usage: AdvisorHostedUsage | null; streamed: boolean }
+/**
+ * Opaque continuation retained only for the next compatible native provider
+ * step. It is deliberately bounded and sanitized before it crosses IPC; the
+ * UI, evidence ledger, and event projection never render it.
+ */
+export type AdvisorHostedContinuation = {
+  provider: AdvisorHostedProviderId
+  model: string
+  protocol: 'openai-chat'
+  adapter: 'ai-sdk-openai-compatible-v1'
+  responseMessages: readonly Record<string, unknown>[]
+}
+export type AdvisorHostedChatRequest = { provider: AdvisorHostedProviderId; model: string; messages: AdvisorHostedChatMessage[]; tools?: AdvisorHostedToolDefinition[]; stream?: boolean; consent: true; reasoningEffort?: AdvisorReasoningEffort; messageMode?: AdvisorHostedMessageMode; continuation?: AdvisorHostedContinuation; /** Set only for bounded Harness evidence/conformance calls. */ harnessConformance?: true }
+export type AdvisorHostedChatResult = { provider: AdvisorHostedProviderId; model: string; message: { content: string; tool_calls: AdvisorHostedToolCall[] }; usage: AdvisorHostedUsage | null; streamed: boolean; continuation?: AdvisorHostedContinuation }
 export type AdvisorHostedEnvelope = { ok: true; value: unknown } | { ok: false; error: { kind: string; message: string } }
 
 export type FetchLike = typeof fetch
@@ -213,7 +230,6 @@ export function resolveOpenCodeZenProtocolFromMetadata(metadata: Record<string, 
   return protocol
 }
 
-const REASONING_EFFORTS = new Set<AdvisorReasoningEffort>(['default', 'low', 'medium', 'high', 'max'])
 const REASONING_EFFORT_KEYS = ['reasoningEfforts', 'reasoning_efforts', 'supportedReasoningEfforts', 'supported_reasoning_efforts', 'reasoningEffortValues', 'reasoning_effort_values'] as const
 const REASONING_PARAMETER_KEYS = ['reasoningParameter', 'reasoning_parameter', 'reasoningMode', 'reasoning_mode'] as const
 
@@ -228,14 +244,38 @@ function isRecordLike(value: unknown): value is Record<string, unknown> {
 
 function declaredReasoningEfforts(sources: readonly Record<string, unknown>[]): AdvisorReasoningEffort[] | null | undefined {
   for (const source of sources) {
+    if (Object.prototype.hasOwnProperty.call(source, 'reasoning_options')) {
+      const options = source.reasoning_options
+      if (!Array.isArray(options)) return null
+      const efforts = options.flatMap(option => {
+        if (typeof option === 'string') return [option]
+        if (!isRecordLike(option) || option.type !== 'effort' || !Array.isArray(option.values)) return []
+        return option.values
+      }).filter((value): value is string => typeof value === 'string')
+        .map(value => value.trim().toLowerCase())
+        .filter(value => /^[a-z][a-z0-9_-]{0,32}$/u.test(value))
+      return Array.from(new Set(efforts))
+    }
+    if (Object.prototype.hasOwnProperty.call(source, 'reasoningOptions')) {
+      const options = source.reasoningOptions
+      if (!Array.isArray(options)) return null
+      const efforts = options.flatMap(option => {
+        if (typeof option === 'string') return [option]
+        if (!isRecordLike(option) || option.type !== 'effort' || !Array.isArray(option.values)) return []
+        return option.values
+      }).filter((value): value is string => typeof value === 'string')
+        .map(value => value.trim().toLowerCase())
+        .filter(value => /^[a-z][a-z0-9_-]{0,32}$/u.test(value))
+      return Array.from(new Set(efforts))
+    }
     for (const key of REASONING_EFFORT_KEYS) {
       if (!Object.prototype.hasOwnProperty.call(source, key)) continue
       if (!Array.isArray(source[key])) return null
       const efforts = source[key]
         .filter((value): value is string => typeof value === 'string')
         .map(value => value.trim().toLowerCase())
-        .filter((value): value is AdvisorReasoningEffort => REASONING_EFFORTS.has(value as AdvisorReasoningEffort))
-      if (!efforts.length) return null
+        .filter(value => /^[a-z][a-z0-9_-]{0,32}$/u.test(value))
+      if (!efforts.length && source[key].length > 0) return null
       return Array.from(new Set(efforts))
     }
   }
@@ -271,14 +311,18 @@ export function reasoningCapabilityFromMetadata(metadata: Record<string, unknown
   if (!metadata || !protocol) return null
   const sources = reasoningSources(metadata)
   const parameter = declaredReasoningParameter(sources, protocol)
-  if (!parameter) return null
+  const explicitReasoning = sources.some(source => source.reasoning === true || source.thinking === true || Object.prototype.hasOwnProperty.call(source, 'reasoning_options') || Object.prototype.hasOwnProperty.call(source, 'reasoningOptions'))
+  const resolvedParameter = parameter ?? (explicitReasoning && (protocol === 'openai-chat' || protocol === 'openai-responses')
+    ? protocol === 'openai-responses' ? 'reasoning-object' : 'openai-effort'
+    : null)
+  if (!resolvedParameter) return null
   const declared = declaredReasoningEfforts(sources)
   if (declared === null) return null
   // A provider parameter is not enough to invent a universal low/medium/high
   // scale.  Without explicit values the only truthful control is Default.
   const efforts = declared ?? ['default']
   if (!efforts.includes('default')) efforts.unshift('default')
-  return { efforts: Array.from(new Set(efforts)), parameter }
+  return { efforts: Array.from(new Set(efforts)), parameter: resolvedParameter }
 }
 
 function openCodeZenProtocol(model: string, metadata?: Record<string, unknown>): AdvisorHostedProtocol | null {
@@ -335,6 +379,7 @@ export function validProvider(value: unknown): value is AdvisorHostedProviderId 
 export function validRequestId(value: unknown): value is string { return typeof value === 'string' && /^[A-Za-z0-9._:-]{1,128}$/u.test(value) }
 export function validModel(value: unknown): value is string { return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,160}$/u.test(value) }
 export function safeModelLabel(value: string): string { return value.replace(/^models\//u, '') }
+
 export function abortError(): Error {
   const error = new Error('Advisor request cancelled.')
   error.name = 'AbortError'

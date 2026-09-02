@@ -1,11 +1,12 @@
 import { normalizeAdvisorRuntimeToolCall } from '../advisor/contract'
 import { parseAdvisorPlanningDraft, runtimeGuardPlan, validateAdvisorPlanningDraft } from '../advisor/planner'
 import type { AdvisorRuntimeInput, AdvisorToolDefinition } from '../advisor/types'
-import type { MetroraAgentModelStep, MetroraAgentToolCall } from './contracts'
+import type { MetroraAgentContinuation, MetroraAgentModelStep, MetroraAgentToolCall } from './contracts'
 
 export type AdvisorProviderModelResponse = {
   message?: { content?: unknown; tool_calls?: unknown }
   streamed?: unknown
+  continuation?: MetroraAgentContinuation
 }
 
 export class MetroraModelStepError extends Error {
@@ -88,20 +89,21 @@ export function normalizeAdvisorModelStep(
   const message = record(record(response)?.message)
   if (!message) throw new MetroraModelStepError('malformed_output', 'The provider returned no model message.')
   const content = typeof message.content === 'string' ? message.content : message.content === undefined ? '' : (() => { throw new MetroraModelStepError('malformed_output', 'The provider returned malformed model text.') })()
+  const withContinuation = <T extends MetroraAgentModelStep>(step: T): T => response.continuation ? { ...step, continuation: response.continuation } : step
   const rawCalls = message.tool_calls
   if (Array.isArray(rawCalls) && rawCalls.length) {
     if (!allowNativeToolCalls) {
       const fallbackCalls = structuredCalls(content, input, definitions)
-      if (fallbackCalls) return { kind: 'tool-calls', content: '', calls: fallbackCalls, streamed: response.streamed === true }
+      if (fallbackCalls) return withContinuation({ kind: 'tool-calls', content: '', calls: fallbackCalls, streamed: response.streamed === true })
       throw new MetroraModelStepError('malformed_tool_call', 'Native Tool calls are not verified for this model.')
     }
     const calls = nativeCalls(rawCalls, definitions)
-    return { kind: 'tool-calls', content, calls, streamed: response.streamed === true }
+    return withContinuation({ kind: 'tool-calls', content, calls, streamed: response.streamed === true })
   }
   const calls = structuredCalls(content, input, definitions)
-  if (calls) return { kind: 'tool-calls', content: '', calls, streamed: response.streamed === true }
+  if (calls) return withContinuation({ kind: 'tool-calls', content: '', calls, streamed: response.streamed === true })
   if (!content.trim()) throw new MetroraModelStepError('malformed_output', 'The provider returned an empty model message.')
-  return { kind: 'final-text', content, calls: [], streamed: response.streamed === true }
+  return withContinuation({ kind: 'final-text', content, calls: [], streamed: response.streamed === true })
 }
 
 export const normalizeMetroraModelStep = normalizeAdvisorModelStep

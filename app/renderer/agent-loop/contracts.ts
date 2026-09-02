@@ -21,6 +21,19 @@ export type MetroraAgentMessage = {
 }
 
 /**
+ * Provider-neutral handoff for one opaque native response. The loop may pass
+ * it to the next compatible adapter step, but it is never part of the
+ * semantic ledger or a renderer-facing answer.
+ */
+export type MetroraAgentContinuation = {
+  provider: string
+  model: string
+  protocol: string
+  adapter: string
+  responseMessages: readonly Record<string, unknown>[]
+}
+
+/**
  * Serialize the semantic ledger for an IPC/runtime adapter without choosing a
  * provider wire format.  In particular, tool calls and results remain
  * structured and keep their exact IDs until the selected adapter projects
@@ -53,6 +66,7 @@ export type MetroraAgentModelStep = {
   content: string
   calls: readonly MetroraAgentToolCall[]
   streamed?: boolean
+  continuation?: MetroraAgentContinuation
 }
 
 export type MetroraAgentToolResult = {
@@ -124,6 +138,7 @@ export type MetroraAgentModelContext = {
   readonly tools: readonly unknown[]
   readonly step: number
   readonly signal: AbortSignal
+  readonly continuation?: MetroraAgentContinuation
 }
 
 export type MetroraAgentToolValidation =

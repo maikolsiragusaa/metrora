@@ -43,14 +43,14 @@ export type AdvisorConformanceStore = {
   save: (entries: readonly AdvisorConformanceEntry[]) => Promise<void>
 }
 
-const EFFORTS = new Set<AdvisorReasoningEffort>(['default', 'low', 'medium', 'high', 'max'])
+const EFFORTS = new Set<AdvisorReasoningEffort>(['default', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
 const CAPABILITY_STATES = new Set<AdvisorHostedCapabilityState>(['supported', 'unsupported', 'unknown', 'failed-conformance'])
 const PROTOCOLS = new Set<AdvisorHostedProtocol>(['openai-responses', 'openai-chat', 'anthropic-messages', 'gemini-content'])
 const MAX_FILE_BYTES = 512 * 1024
 const MAX_ENTRIES = 256
 
 function uniqueEfforts(value: readonly AdvisorReasoningEffort[]): AdvisorReasoningEffort[] {
-  const efforts = value.filter(effort => EFFORTS.has(effort))
+  const efforts = value.filter(effort => EFFORTS.has(effort) || /^[a-z][a-z0-9_-]{0,32}$/u.test(effort))
   return Array.from(new Set(efforts.includes('default') ? efforts : ['default', ...efforts]))
 }
 
