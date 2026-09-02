@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   HOSTED_CONTINUATION_ADAPTER,
+  HOSTED_CONTINUATION_RESPONSES_ADAPTER,
   type AdvisorHostedContinuationPayload,
 } from './advisor-provider-continuation'
 import {
@@ -95,5 +96,33 @@ describe('Electron hosted provider continuation store', () => {
     expect(MAX_LIVE_HOSTED_CONTINUATIONS).toBeGreaterThan(0)
     expect(MAX_HOSTED_CONTINUATION_STORE_BYTES).toBeGreaterThan(64 * 1024)
     expect(HOSTED_CONTINUATION_TTL_MS).toBeGreaterThan(0)
+  })
+
+  it('keeps bounded Responses metadata in Electron while returning only an opaque reference', () => {
+    const responsesIdentity = {
+      provider: 'opencode-zen' as const,
+      model: 'muse-spark-1.2-contributor-free',
+      protocol: 'openai-responses' as const,
+      adapter: HOSTED_CONTINUATION_RESPONSES_ADAPTER,
+    }
+    const store = createHostedContinuationStore({ idFactory: () => 'opaque-responses-ref' })
+    try {
+      const reference = store.put({
+        ...responsesIdentity,
+        responseMessages: [{
+          role: 'assistant',
+          content: [
+            { type: 'reasoning', text: 'private reasoning', providerMetadata: { openai: { itemId: 'rs-1', reasoningEncryptedContent: 'encrypted-reasoning' } } },
+            { type: 'tool-call', toolCallId: 'responses-call-1', toolName: 'get_spend_snapshot', input: {}, providerMetadata: { openai: { itemId: 'fc-1' } } },
+          ],
+        }],
+      })!
+
+      expect(Object.keys(reference).sort()).toEqual(['adapter', 'id', 'model', 'protocol', 'provider'])
+      expect(JSON.stringify(reference)).not.toContain('encrypted-reasoning')
+      expect(store.acquire(reference, responsesIdentity)).toMatchObject({ protocol: 'openai-responses', adapter: HOSTED_CONTINUATION_RESPONSES_ADAPTER })
+    } finally {
+      store.dispose()
+    }
   })
 })

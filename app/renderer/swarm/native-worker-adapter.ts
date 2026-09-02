@@ -5,7 +5,7 @@ import { ADVISOR_TOOL_CONTRACT, ADVISOR_TOOL_OUTPUT_MAX_BYTES } from '../advisor
 import { createAdvisorToolRegistry, type AdvisorOverviewSnapshot } from '../advisor/tools'
 import { DeterministicAdvisorRuntime } from '../advisor/runtime'
 import { mergeEvidence } from '../advisor/merge-evidence'
-import { requiredAdvisorToolRequests } from '../advisor/required-reads'
+import { executeRequiredAdvisorReads, requiredAdvisorToolRequests } from '../advisor/required-reads'
 import type {
   AdvisorDataSource,
   AdvisorEvidence,
@@ -270,6 +270,7 @@ export class NativeHarnessWorkerAdapter implements WorkerAdapterV1 {
       let toolCalls = 0
       const successfulToolNames = new Set<string>()
       const unavailableToolNames = new Set<string>()
+      const evidenceItems: AdvisorEvidence[] = []
       const onToolEvent = (event: AdvisorToolEvent) => {
         activityEvents.push(event)
         if (event.status === 'started' || event.status === 'queued') {
@@ -281,10 +282,43 @@ export class NativeHarnessWorkerAdapter implements WorkerAdapterV1 {
       const requiredToolRequests = requiredAdvisorToolRequests(plan, definitions, question)
       const requiredToolNames = requiredToolRequests.map(request => request.tool)
       const evidence = { ...buildConversationEvidence(question, scope), understanding: plan.understanding, plan: plan.plan }
-      const evidenceItems: AdvisorEvidence[] = []
+      const requiredReads = await executeRequiredAdvisorReads({
+        source: this.source,
+        scope,
+        question,
+        plan,
+        suppliedOverview: this.overview,
+        allowedToolNames: allowed,
+        definitions,
+        registry,
+        allowedPeriods,
+        limits: { maxCalls: request.limits.maxToolCalls },
+        signal,
+        onToolEvent,
+      })
+      evidenceItems.push(...requiredReads.evidence)
+      const baselineExecutions = new Map<string, AdvisorToolExecution>()
+      const baselineRequests = new Map<string, string>()
+      for (const read of requiredReads.reads) {
+        if (read.status === 'completed' && read.evidence.refs.length) successfulToolNames.add(read.request.tool)
+        else unavailableToolNames.add(read.request.tool)
+        if (read.execution && read.status === 'completed') {
+          baselineExecutions.set(read.request.tool, read.execution)
+          baselineRequests.set(read.request.tool, JSON.stringify(read.request.arguments))
+        }
+      }
+      const reusedBaseline = new Set<string>()
       const executeTool = async (name: string, args: Record<string, unknown>, toolSignal?: AbortSignal): Promise<AdvisorToolExecution> => {
         throwIfAborted(signal)
         if (!allowed.has(name) || !definitions.some(definition => definition.function.name === name)) throw new SwarmBoundsError('Worker requested a Tool outside its immutable allowlist.')
+        const baseline = baselineExecutions.get(name)
+        const baselineArguments = baselineRequests.get(name)
+        const sameBaseline = baseline && !reusedBaseline.has(name) && (Object.keys(args).length === 0 || baselineArguments === JSON.stringify(args))
+        if (sameBaseline) {
+          reusedBaseline.add(name)
+          toolCalls += 1
+          return baseline
+        }
         if (toolCalls >= request.limits.maxToolCalls) throw new SwarmBoundsError('Worker Tool-call limit reached.')
         toolCalls += 1
         const execution = await registry.execute(name, args, toolSignal ?? signal)
@@ -304,6 +338,7 @@ export class NativeHarnessWorkerAdapter implements WorkerAdapterV1 {
         fallbackIntent: plan.intent,
         tools: definitions,
         toolContract: contract,
+        requiredEvidence: requiredReads.evidence,
         executeTool,
         onToolEvent,
         agentLoopBounds: {

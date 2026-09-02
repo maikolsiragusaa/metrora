@@ -6,6 +6,7 @@ import type {
   AdvisorHostedProtocol,
   AdvisorHostedProviderId,
   AdvisorHostedReasoningCapability,
+  AdvisorHostedRoute,
   AdvisorReasoningEffort,
   FetchLike,
 } from './advisor-provider-contract'
@@ -23,7 +24,9 @@ import {
   providerUrl,
   readJson,
   reasoningCapabilityFromMetadata,
+  resolveOpenCodeZenRouteFromMetadata,
   resolveOpenCodeZenProtocolFromMetadata,
+  routeForProtocol,
   safeModelLabel,
   statusCheck,
   validModel,
@@ -41,6 +44,7 @@ export type HostedProtocolRegistry = Map<string, AdvisorHostedProtocol | null>
 export type HostedReasoningRegistry = Map<string, AdvisorHostedReasoningCapability | null>
 export type HostedConformanceRegistry = Map<string, AdvisorConformanceRecord>
 export type HostedCapabilityRegistry = Map<string, AdvisorConformanceCapabilities>
+export type HostedRouteRegistry = Map<string, AdvisorHostedRoute | null>
 
 export function modelKey(provider: AdvisorHostedProviderId, model: string): string {
   return provider + '\u0000' + model
@@ -81,15 +85,41 @@ export function currentConformanceFingerprint(
   model: string,
   protocol: AdvisorHostedProtocol,
   capabilities: AdvisorConformanceCapabilities,
+  route?: AdvisorHostedRoute | null,
 ): string {
   return advisorConformanceFingerprint({
     provider,
     model,
     protocol,
     capabilities,
+    ...(route ? { route } : {}),
     adapter: 'metrora-hosted-provider-v1',
     runtimeContractVersion: ADVISOR_RUNTIME_CONTRACT_VERSION,
   })
+}
+
+export function reviewedRouteForModel(provider: AdvisorHostedProviderId, model: string, protocol: AdvisorHostedProtocol | null): AdvisorHostedRoute | null {
+  const reviewed = reviewedModelsDevCapability(provider, model)
+  if (!reviewed || !protocol || reviewed.protocol !== protocol) return null
+  return {
+    providerPackage: reviewed.providerPackage,
+    providerFamily: reviewed.providerFamily,
+    protocol: reviewed.protocol,
+    endpointFamily: reviewed.endpointFamily,
+    ...(reviewed.interleavedField ? { interleavedField: reviewed.interleavedField } : {}),
+  }
+}
+
+function reviewedRouteCanCompleteLiveMetadata(row: Record<string, unknown>, route: AdvisorHostedRoute): boolean {
+  const provider = isRecord(row.provider) ? row.provider : undefined
+  const packageValue = row.providerPackage ?? row.provider_package ?? provider?.npm
+  const familyValue = row.providerFamily ?? row.provider_family ?? provider?.family
+  const endpointValue = row.endpointFamily ?? row.endpoint_family
+  const interleavedValue = isRecord(row.interleaved) ? row.interleaved.field : undefined
+  return (packageValue === undefined || packageValue === route.providerPackage)
+    && (familyValue === undefined || familyValue === route.providerFamily)
+    && (endpointValue === undefined || endpointValue === route.endpointFamily)
+    && (interleavedValue === undefined || interleavedValue === route.interleavedField)
 }
 
 function modelRows(
@@ -101,6 +131,7 @@ function modelRows(
   reasoning: HostedReasoningRegistry,
   conformance: HostedConformanceRegistry,
   capabilitiesByModel: HostedCapabilityRegistry,
+  routes: HostedRouteRegistry,
 ): string | null {
   const kind = DESCRIPTORS[provider].modelListKind
   const rows = kind === 'gemini' ? payload.models : payload.data
@@ -122,6 +153,13 @@ function modelRows(
       : kind === 'opencode-zen' && explicitProtocol !== undefined
         ? explicitProtocol
         : DESCRIPTORS[provider].protocolForModel(id, row)
+    const explicitRoute = kind === 'opencode-zen' ? resolveOpenCodeZenRouteFromMetadata(row, protocol) : undefined
+    const reviewedRoute = kind === 'opencode-zen' ? reviewedRouteForModel(provider, id, protocol) : null
+    const route = kind === 'opencode-zen'
+      ? explicitRoute === null
+        ? reviewedRoute && reviewedRouteCanCompleteLiveMetadata(row, reviewedRoute) ? reviewedRoute : null
+        : explicitRoute ?? reviewedRoute ?? (protocol ? routeForProtocol(provider, protocol) : null)
+      : protocol ? routeForProtocol(provider, protocol) : null
     const previousProtocol = protocols.get(key)
     if (protocols.has(key) && previousProtocol !== protocol && previousProtocol) {
       conformance.delete(conformanceKey(provider, id, previousProtocol))
@@ -145,7 +183,8 @@ function modelRows(
       : advertisedToolCapability(kind, row, reviewed?.toolCall ?? undefined)
     const capabilityInputs = conformanceCapabilities(conversational, streaming, advertisedToolCall, reasoningCapability?.efforts)
     capabilitiesByModel.set(key, capabilityInputs)
-    const fingerprint = protocol ? currentConformanceFingerprint(provider, id, protocol, capabilityInputs) : null
+    routes.set(key, route)
+    const fingerprint = protocol ? currentConformanceFingerprint(provider, id, protocol, capabilityInputs, route) : null
     const storedConformance = protocol ? conformance.get(conformanceKey(provider, id, protocol)) : undefined
     const conformanceRecord = storedConformance && fingerprint && storedConformance.fingerprint === fingerprint ? storedConformance : undefined
     if (storedConformance && !conformanceRecord) conformance.delete(conformanceKey(provider, id, protocol!))
@@ -192,7 +231,7 @@ function modelRows(
           : kind === 'opencode-zen'
             ? 'Discovered from OpenCode Zen; the model protocol is documented, but Metrora Harness conformance and tool capability are not verified.'
             : 'Discovered from the provider model listing; Metrora Harness compatibility is not verified.'
-    models.push({ id, label, state, limitation, capabilities })
+    models.push({ id, label, state, limitation, capabilities, ...(route ? { route } : {}) })
     seen.add(id)
     if (models.length >= MAX_MODELS) break
   }
@@ -227,6 +266,7 @@ export async function discover(
   reasoning: HostedReasoningRegistry,
   conformance: HostedConformanceRegistry,
   capabilitiesByModel: HostedCapabilityRegistry,
+  routes: HostedRouteRegistry,
 ): Promise<AdvisorHostedModel[]> {
   const descriptor = DESCRIPTORS[provider]
   const models: AdvisorHostedModel[] = []
@@ -245,7 +285,7 @@ export async function discover(
     const response = await fetchResponse(fetchImpl, providerUrl(provider, url.pathname + url.search), { method: 'GET', headers: { Accept: 'application/json', ...authHeaders(provider, secret) } }, PROBE_TIMEOUT_MS, parent)
     try {
       statusCheck(response.response)
-      nextToken = modelRows(provider, await readJson(response.response, response.signal), models, seen, protocols, reasoning, conformance, capabilitiesByModel)
+      nextToken = modelRows(provider, await readJson(response.response, response.signal), models, seen, protocols, reasoning, conformance, capabilitiesByModel, routes)
     } finally { response.dispose() }
     if (!nextToken || seenTokens.has(nextToken)) break
     seenTokens.add(nextToken)

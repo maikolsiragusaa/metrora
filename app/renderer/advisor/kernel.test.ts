@@ -36,8 +36,10 @@ describe('Advisor model planning boundary', () => {
     await createAdvisorKernel(data, capturingRuntime(inputs)).investigate({ question: 'What changed in spend?', scope })
 
     expect(data.getOverview).toHaveBeenCalledOnce()
-    expect(inputs[0]?.evidence).toMatchObject({ intent: 'social', refs: [], coverage: { level: 'high' } })
+    expect(inputs[0]?.evidence).toMatchObject({ intent: 'spend-change', refs: [expect.objectContaining({ id: 'overview.current' })], coverage: { level: 'high' } })
+    expect(inputs[0]?.requiredEvidence).toEqual([expect.objectContaining({ intent: 'spend-change', refs: [expect.objectContaining({ id: 'overview.current' })] })])
     expect(inputs[0]?.requiredToolRequests).toEqual([{ tool: 'get_spend_snapshot', arguments: {} }])
+    expect(inputs[0]?.tools?.map(tool => tool.function.name)).toEqual(expect.arrayContaining(['get_spend_snapshot', 'get_project_drivers', 'get_session_highlights']))
     expect(inputs[0]?.guard?.intent).toBe('unknown')
     expect(inputs[0]?.plan?.questionFamily).toBe('spend')
   })
@@ -76,7 +78,7 @@ describe('Advisor model planning boundary', () => {
     expect(answer.conclusion).not.toContain('0.96')
   })
 
-  it('executes the mandatory spend read inside the loop and returns natural same-turn synthesis', async () => {
+  it('executes the mandatory spend read before the first model step and returns natural same-turn synthesis', async () => {
     const fixture = createAdvisorConformanceFixture()
     const events: Array<{ name: string; status: string }> = []
     const requests: Array<Record<string, unknown>> = []
@@ -90,9 +92,7 @@ describe('Advisor model planning boundary', () => {
         chat: async (_requestId, payload) => {
           requests.push(payload)
           calls += 1
-          return calls === 1
-            ? { streamed: false, message: { content: 'I will check the measured spend first.', tool_calls: [] } }
-            : { streamed: false, message: { content: 'Metrora measured $12.00, which is below your $4,000 threshold.' } }
+          return { streamed: false, message: { content: 'Metrora measured $12.00 in lifetime spend; that is the verified total for the selected scope.' } }
         },
       },
     })
@@ -109,10 +109,15 @@ describe('Advisor model planning boundary', () => {
       { name: 'get_spend_snapshot', status: 'started' },
       { name: 'get_spend_snapshot', status: 'completed' },
     ])
-    expect(requests).toHaveLength(2)
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'user' }),
+      expect.objectContaining({ role: 'system', content: expect.stringContaining('Canonical evidence already verified') }),
+    ]))
+    expect((requests[0]?.messages as Array<Record<string, unknown>>).some(message => message.role === 'assistant' && message.toolCalls)).toBe(false)
     expect(answer.evidence).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'overview.current' })]))
     expect(answer.coverage.level).toBe('high')
-    expect(answer.conclusion).toContain('below your $4,000 threshold')
+    expect(answer.conclusion).toContain('$12.00')
     expect(answer.generatedByModel).toBe(true)
     expect(answer.conclusion).not.toMatch(/Buongiorno|Hello\. I can help you understand spend/i)
   })
@@ -156,6 +161,55 @@ describe('Advisor model planning boundary', () => {
 
     expect(data.getOverview).not.toHaveBeenCalled()
     expect(inputs[0]?.evidence).toMatchObject({ intent: 'social', coverage: { level: 'high', label: 'Conversation' }, refs: [] })
+    expect(inputs[0]?.tools).toBeUndefined()
+    expect(inputs[0]?.toolContract).toBeUndefined()
+  })
+
+  it('lets the model request one bounded follow-up Tool after the controller baseline read', async () => {
+    const fixture = createAdvisorConformanceFixture()
+    const events: Array<{ name: string; status: string }> = []
+    const requests: Array<Record<string, unknown>> = []
+    let calls = 0
+    const runtime = new OllamaAdvisorRuntime({
+      model: 'follow-up-model',
+      transport: {
+        probe: async () => ({ available: true, models: ['follow-up-model'], detail: 'ready' }),
+        cancel: async () => true,
+        onDelta: () => () => {},
+        chat: async (_requestId, payload) => {
+          requests.push(payload)
+          calls += 1
+          return calls === 1
+            ? { streamed: false, message: { content: '', tool_calls: [{ function: { name: 'get_project_drivers', arguments: '{}' } }] } }
+            : { streamed: false, message: { content: 'Metrora measured $12.00 in lifetime spend; Project A is the observed project contributing to it.' } }
+        },
+      },
+    })
+    const answer = await createAdvisorKernel(fixture.source, runtime).investigate({
+      question: 'Which projects are contributing most to lifetime spend?',
+      scope: { ...fixture.scope, period: 'lifetime' },
+      onToolEvent: event => events.push(event),
+    })
+
+    expect(fixture.reads.overviews).toHaveLength(2)
+    expect(events).toEqual([
+      { name: 'get_spend_snapshot', status: 'queued' },
+      { name: 'get_spend_snapshot', status: 'started' },
+      { name: 'get_spend_snapshot', status: 'completed' },
+      { name: 'get_project_drivers', status: 'queued' },
+      { name: 'get_project_drivers', status: 'started' },
+      { name: 'get_project_drivers', status: 'completed' },
+    ])
+    expect(requests).toHaveLength(2)
+    expect(requests[0]?.tools).toEqual(expect.arrayContaining([
+      expect.objectContaining({ function: expect.objectContaining({ name: 'get_project_drivers' }) }),
+    ]))
+    expect(requests[1]?.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'assistant', toolCalls: expect.arrayContaining([expect.objectContaining({ name: 'get_project_drivers' })]) }),
+      expect.objectContaining({ role: 'tool', toolCallId: expect.any(String) }),
+    ]))
+    expect(answer.generatedByModel).toBe(true)
+    expect(answer.conclusion).toContain('$12.00')
   })
 
   it('reports a selected-model failure without switching into deterministic evidence mode', async () => {
@@ -193,7 +247,9 @@ describe('Advisor model planning boundary', () => {
       scope,
     })
 
-    expect(fixtureSource.getOverview).not.toHaveBeenCalled()
+    expect(fixtureSource.getOverview).toHaveBeenCalledTimes(2)
+    expect(fixtureSource.getOverview).toHaveBeenNthCalledWith(1, expect.objectContaining({ period: 'week' }))
+    expect(fixtureSource.getOverview).toHaveBeenNthCalledWith(2, expect.objectContaining({ period: 'lifetime' }))
     expect(answer.conclusion).toContain('selected model could not finish')
     expect(answer.conclusion).not.toContain('offline evidence')
     expect(answer.runtimeFailure).toBe(true)

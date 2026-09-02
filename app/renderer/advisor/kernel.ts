@@ -4,10 +4,10 @@ import { createAdvisorModelGuardV1, resolveAdvisorQuestion } from './comprehensi
 import { deterministicPlanningFallback, explicitAdvisorPeriodHints } from './planner'
 import { createAdvisorToolRegistry, type AdvisorOverviewSnapshot } from './tools'
 import { DeterministicAdvisorRuntime } from './runtime'
-import { advisorQuestionRequiresCanonicalReads, requiredAdvisorToolRequests } from './required-reads'
+import { advisorAnswerUsesCanonicalEvidence, advisorQuestionRequiresCanonicalReads, executeRequiredAdvisorReads, requiredAdvisorToolRequests } from './required-reads'
 import { mergeEvidence } from './merge-evidence'
 import type { MenubarPayload } from '../lib/types'
-import type { AdvisorAnswer, AdvisorBenchEvidence, AdvisorConversationTurn, AdvisorDataSource, AdvisorEvidence, AdvisorIntent, AdvisorModelRuntime, AdvisorPeriodFilter, AdvisorRuntimeInput, AdvisorScope, AdvisorUiContextV1, AdvisorToolEvent, AdvisorToolExecution } from './types'
+import type { AdvisorAnswer, AdvisorBenchEvidence, AdvisorConversationTurn, AdvisorDataSource, AdvisorEvidence, AdvisorIntent, AdvisorModelRuntime, AdvisorPeriodFilter, AdvisorRuntimeInput, AdvisorScope, AdvisorUiContextV1, AdvisorToolContract, AdvisorToolEvent, AdvisorToolExecution } from './types'
 
 export class AdvisorCancelledError extends Error {
   constructor() { super('Advisor investigation cancelled'); this.name = 'AdvisorCancelledError' }
@@ -161,7 +161,30 @@ export function createAdvisorKernel(source: AdvisorDataSource, runtime: AdvisorM
       const requiredToolRequests = advisorQuestionRequiresCanonicalReads(plan)
         ? requiredAdvisorToolRequests(plan, toolRegistry.definitions, question)
         : []
-      const modelTools = advisorQuestionRequiresCanonicalReads(plan) ? toolRegistry : null
+      const requiresCanonicalReads = advisorQuestionRequiresCanonicalReads(plan)
+      const plannedToolRequests = requiresCanonicalReads
+        ? deterministicPlanningFallback(plan.plan, toolRegistry.definitions, question).toolRequests
+        : []
+      const modelToolNames = new Set<string>([
+        ...requiredToolRequests.map(request => request.tool),
+        ...plannedToolRequests.map(request => request.tool),
+      ])
+      const modelToolDefinitions = requiresCanonicalReads
+        ? toolRegistry.definitions.filter(definition => modelToolNames.has(definition.function.name))
+        : []
+      const modelToolContract: AdvisorToolContract | undefined = requiresCanonicalReads
+        ? {
+            ...toolRegistry.contract,
+            tools: modelToolDefinitions,
+            scope: {
+              ...toolRegistry.contract.scope,
+              allowedFilters: Object.fromEntries(modelToolDefinitions.map(definition => [
+                definition.function.name,
+                toolRegistry.contract.scope.allowedFilters[definition.function.name as keyof AdvisorToolContract['scope']['allowedFilters']] ?? [],
+              ])) as AdvisorToolContract['scope']['allowedFilters'],
+            },
+          }
+        : undefined
       const modelEvidenceItems: AdvisorEvidence[] = []
       const executeTool = async (name: string, args: Record<string, unknown>, toolSignal?: AbortSignal): Promise<AdvisorToolExecution> => {
         const execution = await toolRegistry.execute(name, args, toolSignal ?? signal)
@@ -171,9 +194,28 @@ export function createAdvisorKernel(source: AdvisorDataSource, runtime: AdvisorM
         return unavailable ? { ...execution, evidence } : execution
       }
       try {
-      const answer = await runtime.generate({
+        if (requiresCanonicalReads) {
+          const requiredReads = await executeRequiredAdvisorReads({
+            source,
+            scope,
+            question,
+            plan,
+            suppliedOverview,
+            definitions: toolRegistry.definitions,
+            registry: toolRegistry,
+            allowedPeriods,
+            signal,
+            onToolEvent,
+          })
+          modelEvidenceItems.push(...requiredReads.evidence)
+        }
+        const evidenceForModel = modelEvidenceItems.length
+          ? mergeEvidence(modelEvidenceItems, modelEvidenceItems[0]!)
+          : modelEvidence
+        const answer = await runtime.generate({
           question,
-          evidence: attachPlan(modelEvidence, plan),
+          evidence: attachPlan(evidenceForModel, plan),
+          ...(requiresCanonicalReads ? { requiredEvidence: modelEvidenceItems } : {}),
           requiredToolRequests,
           conversation,
           uiContext,
@@ -181,15 +223,15 @@ export function createAdvisorKernel(source: AdvisorDataSource, runtime: AdvisorM
           fallbackIntent: plan.intent,
           guard: modelGuard,
           allowedPeriods,
-          tools: modelTools?.definitions,
-          toolContract: modelTools?.contract,
+          tools: requiresCanonicalReads ? modelToolDefinitions : undefined,
+          toolContract: modelToolContract,
           executeTool,
           onConformance,
           onToolEvent,
           onAgentEvent,
           onDelta,
         }, signal)
-        if (!advisorQuestionRequiresCanonicalReads(plan)) return answer
+        if (!requiresCanonicalReads) return answer
         // A selected model failure is a runtime failure, not permission to
         // silently switch the user into a deterministic evidence-only mode.
         // The loop already retains any reads completed before the failure.
@@ -202,6 +244,22 @@ export function createAdvisorKernel(source: AdvisorDataSource, runtime: AdvisorM
           }
         }
         const authoritative = mergeEvidence(modelEvidenceItems, modelEvidenceItems[0]!)
+        if (!advisorAnswerUsesCanonicalEvidence(answer, authoritative)) {
+          const fallback = await new DeterministicAdvisorRuntime().generate({
+            question,
+            evidence: attachPlan(authoritative, plan),
+            conversation,
+            uiContext,
+            plan: plan.plan,
+            fallbackIntent: plan.intent,
+            guard: modelGuard,
+            allowedPeriods,
+          }, signal)
+          return {
+            ...fallback,
+            materialLimits: [...(fallback.materialLimits ?? []), 'The selected model answer was not grounded in the verified Metrora evidence; the verified closeout is shown instead.'],
+          }
+        }
         return attachAuthoritativeEvidence(answer, authoritative, plan)
       } catch (error) {
         rethrowCancellation(error, signal)

@@ -1,5 +1,6 @@
 import { periodLabel } from '../advisor/evidence'
 import type { AdvisorScope, AdvisorToolEvent } from '../advisor/types'
+import type { MetroraAgentLoopEvent } from '../agent-loop/contracts'
 
 export type HarnessToolActivity = AdvisorToolEvent
 
@@ -12,6 +13,10 @@ export type HarnessCompletedWorkTraceItem = {
 export type HarnessCompletedWorkTrace = {
   schemaVersion: 1
   items: readonly HarnessCompletedWorkTraceItem[]
+  /** Safe lifecycle counts; no model content, reasoning, or tool arguments. */
+  modelSteps?: number
+  modelCompletions?: number
+  toolEvents?: number
 }
 
 const TOOL_LABELS: Record<string, string> = {
@@ -40,25 +45,41 @@ export function harnessToolCheckedLabel(name: string): string {
   return 'Sources checked'
 }
 
-export function createHarnessCompletedWorkTrace(items: readonly HarnessToolActivity[]): HarnessCompletedWorkTrace {
+export function createHarnessCompletedWorkTrace(items: readonly HarnessToolActivity[], events: readonly MetroraAgentLoopEvent[] = []): HarnessCompletedWorkTrace {
   const trace: HarnessCompletedWorkTraceItem[] = [
     { id: 'thinking', label: 'Thinking', status: 'completed' },
   ]
+  const modelStarts = events.filter(event => event.type === 'model-started').length
+  const modelCompletions = events.filter(event => event.type === 'model-completed').length
+  const modelToolNames = new Set(events.filter(event => event.type.startsWith('tool-') && event.tool).map(event => event.tool!))
   const seenTools = new Set<string>()
-  for (const item of items) {
-    if (seenTools.has(item.name)) continue
-    seenTools.add(item.name)
-    const completed = item.status === 'completed'
-    trace.push({
-      id: 'check-' + String(seenTools.size),
-      label: completed ? harnessToolCheckedLabel(item.name) : item.status === 'unavailable' ? 'Unavailable' : 'Failed',
-      status: completed ? 'completed' : 'failed',
-    })
+  const appendTools = (candidates: readonly HarnessToolActivity[]) => {
+    for (const item of candidates) {
+      if (seenTools.has(item.name)) continue
+      seenTools.add(item.name)
+      const completed = item.status === 'completed'
+      trace.push({
+        id: 'check-' + String(seenTools.size),
+        label: completed ? harnessToolCheckedLabel(item.name) : item.status === 'unavailable' ? 'Unavailable' : 'Failed',
+        status: completed ? 'completed' : 'failed',
+      })
+    }
   }
+  // Controller-owned pre-reads are not loop Tool events, so they remain in the
+  // first factual phase. A later model-owned read gets its own safe Thinking
+  // marker; provider output and reasoning are never copied into the trace.
+  appendTools(items.filter(item => !modelToolNames.has(item.name)))
+  const modelTools = items.filter(item => modelToolNames.has(item.name))
+  if (modelTools.length || modelStarts > 1) trace.push({ id: 'thinking-2', label: 'Thinking', status: 'completed' })
+  appendTools(modelTools)
   trace.push({ id: 'preparing-answer', label: 'Preparing answer', status: 'completed' })
   trace.push({ id: 'done', label: 'Done', status: 'completed' })
   const checks = trace.slice(0, -2).slice(0, 8)
-  return { schemaVersion: 1, items: [...checks, trace[trace.length - 2]!, trace[trace.length - 1]!] }
+  return {
+    schemaVersion: 1,
+    items: [...checks, trace[trace.length - 2]!, trace[trace.length - 1]!],
+    ...(events.length ? { modelSteps: modelStarts, modelCompletions, toolEvents: events.filter(event => event.type.startsWith('tool-')).length } : {}),
+  }
 }
 
 function activityStatus(status: HarnessToolActivity['status']): string {

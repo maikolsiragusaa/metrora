@@ -1,10 +1,24 @@
 import type { AdvisorCredentialProvider, AdvisorCredentialState } from './advisor-credentials'
+import { openCodeZenChatPath, openCodeZenProtocol } from './advisor-provider-routing'
+export {
+  reasoningCapabilityFromMetadata,
+  resolveOpenCodeZenProtocolFromMetadata,
+  resolveOpenCodeZenRouteFromMetadata,
+  routeForProtocol,
+} from './advisor-provider-routing'
 
 
 export type AdvisorHostedProviderId = AdvisorCredentialProvider
 export type AdvisorHostedCredentialStatus = { provider: AdvisorHostedProviderId; state: AdvisorCredentialState }
 export type AdvisorHostedModelState = 'discovered' | 'unverified' | 'verified' | 'limited' | 'unsupported' | 'failed-conformance'
 export type AdvisorHostedProtocol = 'openai-responses' | 'openai-chat' | 'anthropic-messages' | 'gemini-content'
+export type AdvisorHostedRoute = {
+  providerPackage: string
+  providerFamily: string
+  protocol: AdvisorHostedProtocol
+  endpointFamily: string
+  interleavedField?: 'reasoning_content'
+}
 export type AdvisorHostedCapabilityState = 'supported' | 'unsupported' | 'unknown' | 'failed-conformance'
 /**
  * Reasoning is a provider-declared vocabulary, not a universal Metrora scale.
@@ -29,6 +43,7 @@ export type AdvisorHostedModel = {
   state: AdvisorHostedModelState
   limitation: string | null
   capabilities?: AdvisorHostedModelCapabilities
+  route?: AdvisorHostedRoute
 }
 export type AdvisorHostedProbe = { provider: AdvisorHostedProviderId; available: boolean; models: AdvisorHostedModel[]; detail: string; credentialState: AdvisorCredentialState }
 export type AdvisorHostedUsage = { inputTokens: number | null; outputTokens: number | null; totalTokens: number | null }
@@ -50,6 +65,11 @@ export type AdvisorHostedEvent = {
   code?: string
   message?: string
 }
+export type AdvisorHostedDiagnostic = {
+  status?: number
+  stage: string
+  category: string
+}
 export type AdvisorHostedToolDefinition = { type: 'function'; function: { name: string; description?: string; parameters?: Record<string, unknown> } }
 /** Provider-neutral semantic history accepted at the Electron boundary. */
 export type AdvisorHostedChatMessage =
@@ -66,8 +86,8 @@ export type AdvisorHostedContinuationReference = {
   readonly id: string
   readonly provider: AdvisorHostedProviderId
   readonly model: string
-  readonly protocol: 'openai-chat'
-  readonly adapter: 'ai-sdk-openai-compatible-v1'
+  readonly protocol: 'openai-chat' | 'openai-responses'
+  readonly adapter: 'ai-sdk-openai-compatible-v1' | 'ai-sdk-openai-responses-v1'
 }
 export type AdvisorHostedChatRequest = { provider: AdvisorHostedProviderId; model: string; messages: AdvisorHostedChatMessage[]; tools?: AdvisorHostedToolDefinition[]; stream?: boolean; consent: true; reasoningEffort?: AdvisorReasoningEffort; messageMode?: AdvisorHostedMessageMode; continuation?: AdvisorHostedContinuationReference; /** Set only for bounded Harness evidence/conformance calls. */ harnessConformance?: true }
 export type AdvisorHostedChatResult = { provider: AdvisorHostedProviderId; model: string; message: { content: string; tool_calls: AdvisorHostedToolCall[] }; usage: AdvisorHostedUsage | null; streamed: boolean; continuation?: AdvisorHostedContinuationReference }
@@ -109,233 +129,8 @@ export const TOOL_NAMES = new Set([
   'get_project_drivers',
   'get_session_highlights',
   'get_coverage_report',
+  'get_bench_evidence',
 ])
-
-const OPENCODE_ZEN_PROTOCOLS: Readonly<Record<string, AdvisorHostedProtocol>> = {
-  'gpt-5.6-sol': 'openai-responses',
-  'gpt-5.6-terra': 'openai-responses',
-  'gpt-5.6-luna': 'openai-responses',
-  'gpt-5.5': 'openai-responses',
-  'gpt-5.5-pro': 'openai-responses',
-  'gpt-5.4': 'openai-responses',
-  'gpt-5.4-pro': 'openai-responses',
-  'gpt-5.4-mini': 'openai-responses',
-  'gpt-5.4-nano': 'openai-responses',
-  'gpt-5.3-codex': 'openai-responses',
-  'gpt-5.3-codex-spark': 'openai-responses',
-  'gpt-5.2': 'openai-responses',
-  'gpt-5.2-codex': 'openai-responses',
-  'gpt-5.1': 'openai-responses',
-  'gpt-5.1-codex': 'openai-responses',
-  'gpt-5.1-codex-max': 'openai-responses',
-  'gpt-5.1-codex-mini': 'openai-responses',
-  'gpt-5': 'openai-responses',
-  'gpt-5-codex': 'openai-responses',
-  'gpt-5-nano': 'openai-responses',
-  'claude-fable-5': 'anthropic-messages',
-  'claude-opus-5': 'anthropic-messages',
-  'claude-opus-4-8': 'anthropic-messages',
-  'claude-opus-4-7': 'anthropic-messages',
-  'claude-opus-4-6': 'anthropic-messages',
-  'claude-opus-4-5': 'anthropic-messages',
-  'claude-sonnet-5': 'anthropic-messages',
-  'claude-sonnet-4-6': 'anthropic-messages',
-  'claude-sonnet-4-5': 'anthropic-messages',
-  'claude-haiku-4-5': 'anthropic-messages',
-  'gemini-3.7-flash': 'gemini-content',
-  'gemini-3.6-flash': 'gemini-content',
-  'gemini-3.5-flash': 'gemini-content',
-  'gemini-3.5-flash-lite': 'gemini-content',
-  'gemini-3.1-pro': 'gemini-content',
-  'gemini-3-flash': 'gemini-content',
-  'grok-4.6': 'openai-responses',
-  'grok-4.5': 'openai-responses',
-  'grok-build-0.1': 'openai-responses',
-  'muse-spark-1.2': 'openai-responses',
-  'qwen3.7-max': 'anthropic-messages',
-  'qwen3.7-plus': 'anthropic-messages',
-  'qwen3.6-plus': 'anthropic-messages',
-  'qwen3.5-plus': 'anthropic-messages',
-  'deepseek-v4-pro': 'openai-chat',
-  'deepseek-v4-flash': 'openai-chat',
-  'minimax-m3': 'openai-chat',
-  'minimax-m2.7': 'openai-chat',
-  'minimax-m2.5': 'openai-chat',
-  'glm-5.2': 'openai-chat',
-  'glm-5.1': 'openai-chat',
-  'glm-5': 'openai-chat',
-  'kimi-k2.5': 'openai-chat',
-  'kimi-k2.6': 'openai-chat',
-  'kimi-k2.7-code': 'openai-chat',
-  'kimi-k3': 'openai-chat',
-  'big-pickle': 'openai-chat',
-  'mimo-v2.5-free': 'openai-chat',
-  'hy3-free': 'openai-chat',
-  'nemotron-3-ultra-free': 'openai-chat',
-  'nemotron-3.5-lightning-free': 'openai-chat',
-  'muse-spark-1.2-contributor-free': 'openai-responses',
-}
-
-function openCodeZenModelId(model: string): string { return model.replace(/^models\//u, '') }
-
-/**
- * Resolve only the protocol vocabulary and endpoint paths implemented by the
- * provider adapter. An absent field returns undefined so the reviewed static
- * model map can remain the fallback; a present but unknown/malformed field
- * returns null so discovery fails closed instead of guessing.
- */
-export function resolveOpenCodeZenProtocolFromMetadata(metadata: Record<string, unknown> | undefined): AdvisorHostedProtocol | null | undefined {
-  if (!metadata) return undefined
-
-  const protocolValues = ['protocol', 'protocol_id', 'protocolId']
-    .filter(key => Object.prototype.hasOwnProperty.call(metadata, key))
-    .map(key => metadata[key])
-  const endpointValues = ['endpointPath', 'endpoint', 'chatPath']
-    .filter(key => Object.prototype.hasOwnProperty.call(metadata, key))
-    .map(key => metadata[key])
-  if (protocolValues.length > 1 && protocolValues.some(value => value !== protocolValues[0])) return null
-  if (endpointValues.length > 1 && endpointValues.some(value => value !== endpointValues[0])) return null
-  if (protocolValues.some(value => value === undefined) || endpointValues.some(value => value === undefined)) return null
-
-  const rawProtocol = protocolValues[0]
-  const rawEndpoint = endpointValues[0]
-  let protocol: AdvisorHostedProtocol | null | undefined
-  if (rawProtocol !== undefined) {
-    protocol = rawProtocol === 'openai-responses' || rawProtocol === 'openai-chat' || rawProtocol === 'anthropic-messages' || rawProtocol === 'gemini-content'
-      ? rawProtocol
-      : null
-  }
-  if (rawEndpoint !== undefined) {
-    if (typeof rawEndpoint !== 'string') return null
-    try {
-      const parsed = new URL(rawEndpoint, 'https://opencode.ai')
-      if (parsed.origin !== 'https://opencode.ai' || parsed.search || parsed.hash || parsed.username || parsed.password) return null
-      const path = parsed.pathname
-      const endpointProtocol = path === '/zen/v1/responses'
-        ? 'openai-responses' as const
-        : path === '/zen/v1/messages'
-          ? 'anthropic-messages' as const
-          : path === '/zen/v1/chat/completions'
-            ? 'openai-chat' as const
-            : /^\/zen\/v1\/models\/[^/]+:generateContent$/u.test(path)
-              ? 'gemini-content' as const
-              : null
-      if (!endpointProtocol) return null
-      if (protocol !== undefined && protocol !== endpointProtocol) return null
-      protocol = endpointProtocol
-    } catch {
-      return null
-    }
-  }
-  return protocol
-}
-
-const REASONING_EFFORT_KEYS = ['reasoningEfforts', 'reasoning_efforts', 'supportedReasoningEfforts', 'supported_reasoning_efforts', 'reasoningEffortValues', 'reasoning_effort_values'] as const
-const REASONING_PARAMETER_KEYS = ['reasoningParameter', 'reasoning_parameter', 'reasoningMode', 'reasoning_mode'] as const
-
-function reasoningSources(metadata: Record<string, unknown>): Record<string, unknown>[] {
-  const nested = metadata.capabilities
-  return isRecordLike(nested) ? [metadata, nested] : [metadata]
-}
-
-function isRecordLike(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
-function declaredReasoningEfforts(sources: readonly Record<string, unknown>[]): AdvisorReasoningEffort[] | null | undefined {
-  for (const source of sources) {
-    if (Object.prototype.hasOwnProperty.call(source, 'reasoning_options')) {
-      const options = source.reasoning_options
-      if (!Array.isArray(options)) return null
-      const efforts = options.flatMap(option => {
-        if (typeof option === 'string') return [option]
-        if (!isRecordLike(option) || option.type !== 'effort' || !Array.isArray(option.values)) return []
-        return option.values
-      }).filter((value): value is string => typeof value === 'string')
-        .map(value => value.trim().toLowerCase())
-        .filter(value => /^[a-z][a-z0-9_-]{0,32}$/u.test(value))
-      return Array.from(new Set(efforts))
-    }
-    if (Object.prototype.hasOwnProperty.call(source, 'reasoningOptions')) {
-      const options = source.reasoningOptions
-      if (!Array.isArray(options)) return null
-      const efforts = options.flatMap(option => {
-        if (typeof option === 'string') return [option]
-        if (!isRecordLike(option) || option.type !== 'effort' || !Array.isArray(option.values)) return []
-        return option.values
-      }).filter((value): value is string => typeof value === 'string')
-        .map(value => value.trim().toLowerCase())
-        .filter(value => /^[a-z][a-z0-9_-]{0,32}$/u.test(value))
-      return Array.from(new Set(efforts))
-    }
-    for (const key of REASONING_EFFORT_KEYS) {
-      if (!Object.prototype.hasOwnProperty.call(source, key)) continue
-      if (!Array.isArray(source[key])) return null
-      const efforts = source[key]
-        .filter((value): value is string => typeof value === 'string')
-        .map(value => value.trim().toLowerCase())
-        .filter(value => /^[a-z][a-z0-9_-]{0,32}$/u.test(value))
-      if (!efforts.length && source[key].length > 0) return null
-      return Array.from(new Set(efforts))
-    }
-  }
-  return undefined
-}
-
-function declaredReasoningParameter(sources: readonly Record<string, unknown>[], protocol: AdvisorHostedProtocol): AdvisorHostedReasoningParameter | null | undefined {
-  if (protocol !== 'openai-responses' && protocol !== 'openai-chat') return null
-  for (const source of sources) {
-    for (const key of REASONING_PARAMETER_KEYS) {
-      if (!Object.prototype.hasOwnProperty.call(source, key)) continue
-      const value = source[key]
-      if (value === 'openai-effort' || value === 'reasoning-object') return value
-      if (value === 'reasoning_effort' || value === 'reasoning-effort') return protocol === 'openai-responses' ? 'reasoning-object' : 'openai-effort'
-      if (value === 'reasoning' || value === 'thinking') return 'reasoning-object'
-      return null
-    }
-    const parameters = source.supported_parameters
-    if (!Array.isArray(parameters)) continue
-    const names = parameters.filter((value): value is string => typeof value === 'string').map(value => value.toLowerCase())
-    if (names.includes('reasoning_effort') || names.includes('reasoning-effort')) return protocol === 'openai-responses' ? 'reasoning-object' : 'openai-effort'
-    if (names.includes('reasoning') || names.includes('thinking')) return 'reasoning-object'
-  }
-  return undefined
-}
-
-/**
- * Read reasoning support only when the provider explicitly declares both a
- * usable parameter and its supported levels. An absent declaration is not a
- * capability; callers must keep the control at Default.
- */
-export function reasoningCapabilityFromMetadata(metadata: Record<string, unknown> | undefined, protocol: AdvisorHostedProtocol | null): AdvisorHostedReasoningCapability | null {
-  if (!metadata || !protocol) return null
-  const sources = reasoningSources(metadata)
-  const parameter = declaredReasoningParameter(sources, protocol)
-  const explicitReasoning = sources.some(source => source.reasoning === true || source.thinking === true || Object.prototype.hasOwnProperty.call(source, 'reasoning_options') || Object.prototype.hasOwnProperty.call(source, 'reasoningOptions'))
-  const resolvedParameter = parameter ?? (explicitReasoning && (protocol === 'openai-chat' || protocol === 'openai-responses')
-    ? protocol === 'openai-responses' ? 'reasoning-object' : 'openai-effort'
-    : null)
-  if (!resolvedParameter) return null
-  const declared = declaredReasoningEfforts(sources)
-  if (declared === null) return null
-  // A provider parameter is not enough to invent a universal low/medium/high
-  // scale.  Without explicit values the only truthful control is Default.
-  const efforts = declared ?? ['default']
-  if (!efforts.includes('default')) efforts.unshift('default')
-  return { efforts: Array.from(new Set(efforts)), parameter: resolvedParameter }
-}
-
-function openCodeZenProtocol(model: string, metadata?: Record<string, unknown>): AdvisorHostedProtocol | null {
-  const explicit = resolveOpenCodeZenProtocolFromMetadata(metadata)
-  return explicit === undefined ? OPENCODE_ZEN_PROTOCOLS[openCodeZenModelId(model)] ?? null : explicit
-}
-
-function openCodeZenChatPath(model: string, stream: boolean, protocol: AdvisorHostedProtocol): string {
-  if (protocol === 'openai-responses') return '/zen/v1/responses'
-  if (protocol === 'anthropic-messages') return '/zen/v1/messages'
-  if (protocol === 'openai-chat') return '/zen/v1/chat/completions'
-  return '/zen/v1/models/' + encodeURIComponent(openCodeZenModelId(model)) + ':' + (stream ? 'streamGenerateContent?alt=sse' : 'generateContent')
-}
 
 export const DESCRIPTORS: Record<AdvisorHostedProviderId, AdvisorHostedProviderDescriptor> = {
   openai: { origin: 'https://api.openai.com', modelsPath: '/v1/models', modelListKind: 'openai', protocolForModel: () => 'openai-responses', chatPath: () => '/v1/responses' },
@@ -416,19 +211,22 @@ export function abortable<T>(operation: Promise<T>, signal: AbortSignal): Promis
 
 export class HostedAdapterError extends Error {
   readonly code: string
-  constructor(code: string, message: string) { super(message); this.name = 'HostedAdapterError'; this.code = code }
+  readonly diagnostic?: AdvisorHostedDiagnostic
+  constructor(code: string, message: string, diagnostic?: AdvisorHostedDiagnostic) { super(message); this.name = 'HostedAdapterError'; this.code = code; this.diagnostic = diagnostic }
 }
 export function safeError(error: unknown): { code: string; message: string } {
   if (error instanceof HostedAdapterError) return { code: error.code, message: error.message }
   if (error instanceof Error && error.name === 'AbortError') return { code: 'cancelled', message: 'Advisor request cancelled.' }
   return { code: 'provider-unavailable', message: 'The selected provider is unavailable.' }
 }
-export function providerHttpError(status: number): HostedAdapterError {
-  if (status === 401) return new HostedAdapterError('credential-invalid', 'The provider rejected the saved credential.')
-  if (status === 403) return new HostedAdapterError('provider-denied', 'The provider denied this request.')
-  if (status === 404) return new HostedAdapterError('model-unavailable', 'The selected provider model is unavailable.')
-  if (status === 429) return new HostedAdapterError('rate-limited', 'The provider rate-limited this request.')
-  return new HostedAdapterError('provider-unavailable', 'The provider request failed.')
+export function providerHttpError(status: number, stage = 'provider-request'): HostedAdapterError {
+  const diagnostic = { status, stage, category: status === 400 || status === 422 ? 'provider-request-rejected' : 'provider-http-error' }
+  if (status === 401) return new HostedAdapterError('credential-invalid', 'The provider rejected the saved credential.', diagnostic)
+  if (status === 403) return new HostedAdapterError('provider-denied', 'The provider denied this request.', diagnostic)
+  if (status === 404) return new HostedAdapterError('model-unavailable', 'The selected provider model is unavailable.', diagnostic)
+  if (status === 429) return new HostedAdapterError('rate-limited', 'The provider rate-limited this request.', diagnostic)
+  if (status === 400 || status === 422) return new HostedAdapterError('provider-request-rejected', 'The provider rejected the prepared request.', diagnostic)
+  return new HostedAdapterError('provider-unavailable', 'The provider request failed.', diagnostic)
 }
 export function providerUrl(provider: AdvisorHostedProviderId, path: string): string {
   const url = new URL(path, DESCRIPTORS[provider].origin)

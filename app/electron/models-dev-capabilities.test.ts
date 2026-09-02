@@ -12,6 +12,9 @@ const reviewed = [
   {
     model: 'mimo-v2.5-free',
     protocol: 'openai-chat',
+    providerPackage: '@ai-sdk/openai-compatible',
+    providerFamily: 'openai-compatible',
+    endpointFamily: 'chat-completions',
     toolCall: 'supported',
     reasoning: true,
     reasoningEfforts: ['default'],
@@ -22,7 +25,11 @@ const reviewed = [
   },
   {
     model: 'muse-spark-1.2-contributor-free',
+    baseModel: 'meta/muse-spark-1.2',
     protocol: 'openai-responses',
+    providerPackage: '@ai-sdk/openai',
+    providerFamily: 'openai',
+    endpointFamily: 'responses',
     toolCall: 'supported',
     reasoning: true,
     reasoningEfforts: ['default', 'minimal', 'low', 'medium', 'high', 'xhigh'],
@@ -33,6 +40,9 @@ const reviewed = [
   {
     model: 'nemotron-3-ultra-free',
     protocol: 'openai-chat',
+    providerPackage: '@ai-sdk/openai-compatible',
+    providerFamily: 'openai-compatible',
+    endpointFamily: 'chat-completions',
     toolCall: 'supported',
     reasoning: true,
     reasoningEfforts: ['default'],
@@ -61,6 +71,9 @@ describe('reviewed Models.dev capability projections', () => {
     expect(muse.contextTokens).toBe(1_048_576)
     expect(muse.outputTokens).toBe(131_072)
     expect(reviewedModelsDevMetadata(muse)).toEqual({
+      base_model: 'meta/muse-spark-1.2',
+      provider: { npm: '@ai-sdk/openai', family: 'openai' },
+      endpointFamily: 'responses',
       reasoning: true,
       reasoning_options: [{ type: 'effort', values: ['minimal', 'low', 'medium', 'high', 'xhigh'] }],
       reasoningParameter: 'reasoning-object',

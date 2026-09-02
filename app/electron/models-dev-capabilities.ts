@@ -15,7 +15,11 @@ export const MODELS_DEV_SNAPSHOT_CAPTURED_AT = '2026-09-02' as const
 export type ReviewedModelsDevCapability = {
   provider: 'opencode-zen'
   model: string
+  baseModel?: string
   protocol: 'openai-chat' | 'openai-responses'
+  providerPackage: '@ai-sdk/openai' | '@ai-sdk/openai-compatible'
+  providerFamily: 'openai' | 'openai-compatible'
+  endpointFamily: 'chat-completions' | 'responses'
   toolCall: 'supported'
   reasoning: true
   reasoningEfforts: readonly string[]
@@ -30,6 +34,9 @@ const REVIEWED_CAPABILITIES: readonly ReviewedModelsDevCapability[] = [
     provider: 'opencode-zen',
     model: 'mimo-v2.5-free',
     protocol: 'openai-chat',
+    providerPackage: '@ai-sdk/openai-compatible',
+    providerFamily: 'openai-compatible',
+    endpointFamily: 'chat-completions',
     toolCall: 'supported',
     reasoning: true,
     reasoningEfforts: ['default'],
@@ -41,7 +48,11 @@ const REVIEWED_CAPABILITIES: readonly ReviewedModelsDevCapability[] = [
   {
     provider: 'opencode-zen',
     model: 'muse-spark-1.2-contributor-free',
+    baseModel: 'meta/muse-spark-1.2',
     protocol: 'openai-responses',
+    providerPackage: '@ai-sdk/openai',
+    providerFamily: 'openai',
+    endpointFamily: 'responses',
     toolCall: 'supported',
     reasoning: true,
     reasoningEfforts: ['default', 'minimal', 'low', 'medium', 'high', 'xhigh'],
@@ -53,6 +64,9 @@ const REVIEWED_CAPABILITIES: readonly ReviewedModelsDevCapability[] = [
     provider: 'opencode-zen',
     model: 'nemotron-3-ultra-free',
     protocol: 'openai-chat',
+    providerPackage: '@ai-sdk/openai-compatible',
+    providerFamily: 'openai-compatible',
+    endpointFamily: 'chat-completions',
     toolCall: 'supported',
     reasoning: true,
     reasoningEfforts: ['default'],
@@ -71,6 +85,9 @@ export function reviewedModelsDevCapability(provider: string, model: string): Re
 
 export function reviewedModelsDevMetadata(capability: ReviewedModelsDevCapability): Record<string, unknown> {
   return {
+    ...(capability.baseModel ? { base_model: capability.baseModel } : {}),
+    provider: { npm: capability.providerPackage, family: capability.providerFamily },
+    endpointFamily: capability.endpointFamily,
     reasoning: capability.reasoning,
     reasoning_options: [{ type: 'effort', values: [...capability.reasoningEfforts].filter(value => value !== 'default') }],
     reasoningParameter: capability.reasoningParameter,

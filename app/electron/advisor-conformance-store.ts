@@ -9,7 +9,7 @@ import type {
 } from './advisor-provider-contract'
 
 /** Increment when the meaning of a hosted conformance check changes. */
-export const ADVISOR_RUNTIME_CONTRACT_VERSION = 'harness-runtime-provider-v2'
+export const ADVISOR_RUNTIME_CONTRACT_VERSION = 'harness-runtime-provider-v3'
 export const ADVISOR_CONFORMANCE_SCHEMA_VERSION = 1 as const
 
 export type AdvisorConformanceCapabilities = {
@@ -24,6 +24,13 @@ export type AdvisorConformanceFingerprintInput = {
   model: string
   protocol: AdvisorHostedProtocol
   capabilities: AdvisorConformanceCapabilities
+  route?: {
+    providerPackage: string
+    providerFamily: string
+    protocol: AdvisorHostedProtocol
+    endpointFamily: string
+    interleavedField?: string
+  }
   adapter?: string
   runtimeContractVersion?: string
 }
@@ -64,6 +71,15 @@ export function advisorConformanceFingerprint(input: AdvisorConformanceFingerpri
     model: input.model,
     adapter: input.adapter ?? 'metrora-hosted-provider-v1',
     protocol: input.protocol,
+    ...(input.route ? {
+      route: {
+        providerPackage: input.route.providerPackage,
+        providerFamily: input.route.providerFamily,
+        protocol: input.route.protocol,
+        endpointFamily: input.route.endpointFamily,
+        ...(input.route.interleavedField ? { interleavedField: input.route.interleavedField } : {}),
+      },
+    } : {}),
     capabilities: {
       conversational: input.capabilities.conversational,
       streaming: input.capabilities.streaming,

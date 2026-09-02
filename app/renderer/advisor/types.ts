@@ -175,7 +175,8 @@ export type AdvisorHostedCapabilityState = 'supported' | 'unsupported' | 'unknow
 /** Provider-declared reasoning option; Metrora does not invent a universal scale. */
 export type AdvisorReasoningEffort = 'default' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | (string & {})
 export type AdvisorHostedModelCapabilities = { conversational: 'available' | 'unavailable' | 'unknown'; streaming: 'supported' | 'unsupported' | 'unknown'; toolCall: AdvisorHostedCapabilityState; reasoningEfforts?: readonly AdvisorReasoningEffort[] }
-export type AdvisorHostedModel = { id: string; label: string; state: AdvisorHostedModelState; limitation: string | null; capabilities?: AdvisorHostedModelCapabilities }
+export type AdvisorHostedRoute = { providerPackage: string; providerFamily: string; protocol: 'openai-responses' | 'openai-chat' | 'anthropic-messages' | 'gemini-content'; endpointFamily: string; interleavedField?: 'reasoning_content' }
+export type AdvisorHostedModel = { id: string; label: string; state: AdvisorHostedModelState; limitation: string | null; capabilities?: AdvisorHostedModelCapabilities; route?: AdvisorHostedRoute }
 export type AdvisorHostedProbe = { provider: AdvisorHostedProviderId; available: boolean; models: AdvisorHostedModel[]; detail: string; credentialState: 'not-configured' | 'ready' | 'locked-unavailable' | 'invalid' | 'needs-reentry' }
 export type AdvisorDiscoveryState = 'runtime-unavailable' | 'runtime-available' | 'no-models' | 'models-discovered'
 export type AdvisorToolCapability = 'unknown' | 'supported' | 'unsupported' | 'failed-conformance'

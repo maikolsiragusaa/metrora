@@ -94,7 +94,6 @@ describe('Advisor chat-first model boundary', () => {
     const fixture = createAdvisorConformanceFixture()
     const requests: Array<Record<string, unknown>> = []
     const events: Array<{ name: string; status: string }> = []
-    let calls = 0
     const runtime = new OllamaAdvisorRuntime({
       model: 'chat-model',
       transport: {
@@ -103,10 +102,7 @@ describe('Advisor chat-first model boundary', () => {
         onDelta: () => () => {},
         chat: async (_requestId, payload) => {
           requests.push(payload)
-          calls += 1
-          return calls === 1
-            ? { streamed: false, message: { content: 'I will check the measured spend first.', tool_calls: [] } }
-            : { streamed: false, message: { content: 'Metrora measured $12.00, which is below your $4,000 threshold.' } }
+          return { streamed: false, message: { content: 'Metrora measured $12.00 in the selected period.' } }
         },
       },
     })
@@ -123,9 +119,10 @@ describe('Advisor chat-first model boundary', () => {
       { name: 'get_spend_snapshot', status: 'started' },
       { name: 'get_spend_snapshot', status: 'completed' },
     ])
-    expect(requests).toHaveLength(2)
+    expect(requests).toHaveLength(1)
+    expect((requests[0]?.messages as Array<{ content: string }>).some(message => message.content.includes('12'))).toBe(true)
     expect(answer.evidence).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'overview.current' })]))
-    expect(answer.conclusion).toContain('below your $4,000 threshold')
+    expect(answer.conclusion).toContain('$12.00')
     expect(answer.generatedByModel).toBe(true)
   })
 
@@ -176,7 +173,6 @@ describe('Advisor factual follow-up', () => {
   it('resolves a factual Italian follow-up through one bounded read and fresh synthesis', async () => {
     const fixture = createAdvisorConformanceFixture()
     const requests: Array<Record<string, unknown>> = []
-    let calls = 0
     const fingerprint = advisorScopeFingerprint(fixture.scope)
     const runtime = new OllamaAdvisorRuntime({
       model: 'chat-model',
@@ -186,23 +182,20 @@ describe('Advisor factual follow-up', () => {
         onDelta: () => () => {},
         chat: async (_requestId, payload) => {
           requests.push(payload)
-          calls += 1
-          return calls === 1
-            ? { streamed: false, message: { content: '', tool_calls: [{ function: { name: 'get_spend_snapshot', arguments: {} } }] } }
-            : {
-                streamed: false,
-                message: {
-                  content: JSON.stringify({
-                    contractVersion: 'advisor-synthesis-draft-v1',
-                    schemaVersion: 1,
-                    conclusion: { claimIds: ['measured-total-cost'] },
-                    why: [{ claimIds: ['observed-calls'] }],
-                    details: [{ claimIds: ['observed-sessions'] }],
-                    claims: [{ id: 'measured-total-cost' }, { id: 'observed-calls' }, { id: 'observed-sessions' }],
-                    presentationRequests: [],
-                  }),
-                },
-              }
+          return {
+            streamed: false,
+            message: {
+              content: JSON.stringify({
+                contractVersion: 'advisor-synthesis-draft-v1',
+                schemaVersion: 1,
+                conclusion: { claimIds: ['measured-total-cost'] },
+                why: [{ claimIds: ['observed-calls'] }],
+                details: [{ claimIds: ['observed-sessions'] }],
+                claims: [{ id: 'measured-total-cost' }, { id: 'observed-calls' }, { id: 'observed-sessions' }],
+                presentationRequests: [],
+              }),
+            },
+          }
         },
       },
     })
@@ -217,9 +210,8 @@ describe('Advisor factual follow-up', () => {
       ],
     })
 
-    expect(requests).toHaveLength(2)
+    expect(requests).toHaveLength(1)
     expect((requests[0]?.tools as Array<{ function?: { name?: string } }>).some(tool => tool.function?.name === 'get_spend_snapshot')).toBe(true)
-    expect(requests[1]?.tools).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'function' })]))
     const firstContents = (requests[0]?.messages as Array<{ content: string }>).map(message => message.content)
     expect(firstContents).toContain('Quanto ho speso oggi?')
     expect(firstContents).toContain('Hai speso 12 USD.')

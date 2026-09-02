@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { MenubarPayload } from '../lib/types'
-import type { AdvisorDataSource, AdvisorModelRuntime, AdvisorScope } from '../advisor/types'
+import type { AdvisorDataSource, AdvisorModelRuntime, AdvisorScope, AdvisorScopeConflictV1 } from '../advisor/types'
+import { resolveAdvisorQuestion } from '../advisor/comprehension'
 import type { AdvisorOverviewSnapshot } from '../advisor/tools'
 import {
   createBaselineSwarmCoordinator,
@@ -26,6 +27,7 @@ export type SwarmRunState = {
   result: SwarmRunResultV1 | null
   error: string | null
   running: boolean
+  scopeConflict?: AdvisorScopeConflictV1 | null
 }
 
 export type UseSwarmRunOptions = {
@@ -40,7 +42,7 @@ export type UseSwarmRunOptions = {
 
 export type SwarmRunController = {
   state: SwarmRunState
-  run: (task: string, workerCount?: number) => void
+  run: (task: string, workerCount?: number, scopeOverride?: AdvisorScope) => boolean
   cancel: () => void
 }
 
@@ -51,6 +53,7 @@ const INITIAL_STATE: SwarmRunState = {
   result: null,
   error: null,
   running: false,
+  scopeConflict: null,
 }
 
 function runStatusFromEvent(event: SwarmEventV1): SwarmRunStatusV1 | 'idle' {
@@ -128,16 +131,22 @@ export function useSwarmRun(options: UseSwarmRunOptions): SwarmRunController {
       : current)
   }, [])
 
-  const run = useCallback((rawTask: string, workerCount = 2) => {
-    if (!enabled) return
+  const run = useCallback((rawTask: string, workerCount = 2, scopeOverride?: AdvisorScope): boolean => {
+    if (!enabled) return false
     const task = sanitizeSwarmText(rawTask, 8 * 1024).trim()
     if (!task) {
       setState(current => ({ ...current, error: 'Enter a task for the experimental Swarm.', status: 'idle', running: false }))
-      return
+      return false
     }
     handleRef.current?.cancel()
     const generation = ++generationRef.current
-    setState({ runId: null, status: 'idle', events: [], result: null, error: null, running: true })
+    const runScope = snapshotScope(scopeOverride ?? scope)
+    const plan = resolveAdvisorQuestion(task, runScope)
+    if (plan.plan.scopeConflict) {
+      setState({ runId: null, status: 'idle', events: [], result: null, error: plan.plan.scopeConflict.message, running: false, scopeConflict: plan.plan.scopeConflict })
+      return false
+    }
+    setState({ runId: null, status: 'idle', events: [], result: null, error: null, running: true, scopeConflict: null })
     // The adapter and coordinator are execution owners, not render-time
     // derived values. Every run receives its own immutable factual/runtime
     // snapshot and keeps that owner until its terminal result arrives.
@@ -145,7 +154,6 @@ export function useSwarmRun(options: UseSwarmRunOptions): SwarmRunController {
     try {
       const runSource = snapshotSource(source)
       const runRuntime = snapshotRuntime(runtime)
-      const runScope = snapshotScope(scope)
       const runOverview = snapshotOverview(overview)
       const adapter = new NativeHarnessWorkerAdapter({ source: runSource, runtime: runRuntime, overview: runOverview })
       const coordinator: BaselineSwarmCoordinatorV1 = createBaselineSwarmCoordinator({
@@ -177,7 +185,7 @@ export function useSwarmRun(options: UseSwarmRunOptions): SwarmRunController {
           error: error instanceof Error ? error.message : 'Swarm could not start this task.',
         }))
       }
-      return
+      return false
     }
     handleRef.current = handle
     setState(current => ({ ...current, runId: handle.runId }))
@@ -190,6 +198,7 @@ export function useSwarmRun(options: UseSwarmRunOptions): SwarmRunController {
       handleRef.current = null
       setState(current => ({ ...current, status: 'failed', running: false, error: error instanceof Error ? error.message : 'Swarm could not complete this task.' }))
     })
+    return true
   }, [enabled, modelId, modelLabel, overview, runtime, scope, source])
 
   useEffect(() => () => {

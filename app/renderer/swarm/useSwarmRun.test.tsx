@@ -80,6 +80,49 @@ async function flushMicrotasks(): Promise<void> {
 }
 
 describe('useSwarmRun execution ownership', () => {
+  it('blocks a Swarm run when the task explicitly widens the pinned Today scope', () => {
+    const generate = vi.fn(async () => answer('fixture', 'must not start'))
+    const { result } = renderHook(() => useSwarmRun(options({ runtime: runtime('fixture', generate) })))
+
+    let started = true
+    act(() => { started = result.current.run('How much have I spent in lifetime?', 2) })
+
+    expect(started).toBe(false)
+    expect(generate).not.toHaveBeenCalled()
+    expect(result.current.state.running).toBe(false)
+    expect(result.current.state.scopeConflict).toMatchObject({ currentPeriod: 'today', requestedPeriod: 'lifetime' })
+    expect(result.current.state.error).toMatch(/scope|period|lifetime/i)
+  })
+
+  it('gives both resolved Lifetime workers the same immutable scope and synthesizes their natural closeout', async () => {
+    const fixture = createAdvisorConformanceFixture()
+    const workerScopes: string[] = []
+    const generate = vi.fn(async (input: AdvisorRuntimeInput) => {
+      workerScopes.push(input.evidence.scope.period)
+      return answer('fixture', 'Metrora measured $12.00 in lifetime spend.')
+    })
+    const generateSwarmSynthesis = vi.fn(async () => ({
+      answer: 'Lifetime Metrora spend is $12.00; both workers verified the measured total.',
+      evidenceSummary: 'Both workers used the same Lifetime scope.',
+    }))
+    const { result } = renderHook(() => useSwarmRun(options({
+      runtime: runtime('fixture', generate, generateSwarmSynthesis),
+      source: fixture.source,
+      overview: fixture.overview,
+    })))
+
+    let started = false
+    act(() => { started = result.current.run('How much have I spent in lifetime?', 2, { ...options().scope, period: 'lifetime' }) })
+
+    expect(started).toBe(true)
+    await waitFor(() => expect(result.current.state.running).toBe(false), { timeout: 1_000, interval: 5 })
+    expect(workerScopes).toEqual(['lifetime', 'lifetime'])
+    expect(generateSwarmSynthesis).toHaveBeenCalledOnce()
+    expect(result.current.state.status).toBe('completed')
+    expect(result.current.state.result?.workers).toHaveLength(2)
+    expect(result.current.state.result?.synthesis?.answer).toContain('$12.00')
+  })
+
   it('keeps one run alive across polling and runtime-promotion replacements and closes after synthesis', async () => {
     const workerOne = deferred<AdvisorAnswer>()
     const workerTwo = deferred<AdvisorAnswer>()

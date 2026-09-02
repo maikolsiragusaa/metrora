@@ -1,10 +1,9 @@
 import { assertStrictBoundedAdvisorToolContent, normalizeAdvisorRuntimeToolCall } from '../advisor/contract'
 import { resolveAdvisorQuestion } from '../advisor/comprehension'
 import { hasMixedEvidenceScopes, mergeEvidence } from '../advisor/merge-evidence'
-import { evidenceUsable, buildAdvisorChatMessages, buildAdvisorConversationMessages, finalizeAdvisorConversationAnswer, finalizeModelAnswer } from '../advisor/model-flow'
+import { evidenceUsable, buildAdvisorChatMessages, buildAdvisorConversationMessages, buildAdvisorEvidenceSynthesisMessages, finalizeAdvisorConversationAnswer, finalizeModelAnswer } from '../advisor/model-flow'
 import { runtimeGuardPlan } from '../advisor/planner'
 import { advisorQuestionRequiresCanonicalReads, requiredAdvisorToolRequests } from '../advisor/required-reads'
-import { contentMinimalEvidence } from '../advisor/privacy'
 import { HARNESS_TOOL_LOOP_LIMITS } from '../advisor/limits'
 import type {
   AdvisorAnswer,
@@ -82,7 +81,7 @@ function loopBounds(input: AdvisorRuntimeInput): MetroraAgentLoopBounds {
   }
 }
 
-function normalizedPromptLedger(input: AdvisorRuntimeInput, nativeToolCalls: boolean): MetroraAgentMessage[] {
+function normalizedPromptLedger(input: AdvisorRuntimeInput, nativeToolCalls: boolean, seededEvidence: readonly AdvisorEvidence[]): MetroraAgentMessage[] {
   const { fallbackPlan, guard } = runtimeGuardPlan(input)
   const isConversation = fallbackPlan.turnKind === 'social' || fallbackPlan.turnKind === 'boundary' || guard.authorization !== 'read-only'
   const conversationKind = guard.authorization === 'proposal-required'
@@ -90,9 +89,12 @@ function normalizedPromptLedger(input: AdvisorRuntimeInput, nativeToolCalls: boo
     : fallbackPlan.turnKind === 'boundary'
       ? 'boundary' as const
       : 'social' as const
-  const messages = isConversation
-    ? buildAdvisorConversationMessages(input, conversationKind)
-    : buildAdvisorChatMessages(input, fallbackPlan, guard, { nativeToolCalls, textPlanningFallback: !nativeToolCalls })
+  const suppliedEvidence = seededEvidence.length ? mergeEvidence([...seededEvidence], seededEvidence[0]!) : null
+  const messages = suppliedEvidence
+    ? buildAdvisorEvidenceSynthesisMessages(input, fallbackPlan, guard, suppliedEvidence)
+    : isConversation
+      ? buildAdvisorConversationMessages(input, conversationKind)
+      : buildAdvisorChatMessages(input, fallbackPlan, guard, { nativeToolCalls, textPlanningFallback: !nativeToolCalls })
   return messages.map(message => ({ role: message.role, content: message.content }))
 }
 
@@ -110,23 +112,6 @@ function requiredCalls(requests: readonly AdvisorToolRequestV1[]): MetroraAgentT
     name: request.tool,
     arguments: { ...request.arguments },
   }))
-}
-
-function seedEvidenceLedger(ledger: MetroraAgentMessage[], evidenceItems: readonly AdvisorEvidence[], calls: readonly MetroraAgentToolCall[]): void {
-  evidenceItems.forEach((evidence, index) => {
-    const call = calls[index] ?? { id: 'controller-evidence-' + index, name: 'canonical_metrora_evidence', arguments: {} }
-    ledger.push({
-      role: 'assistant',
-      content: 'Metrora supplied a verified read result for this turn.',
-      toolCalls: [call],
-    })
-    ledger.push({
-      role: 'tool',
-      content: JSON.stringify(contentMinimalEvidence(evidence, { preserveEvidenceIds: true, modelFacing: true })),
-      toolCallId: call.id,
-      toolName: call.name,
-    })
-  })
 }
 
 function toolEventStatus(event: MetroraAgentLoopEvent): 'queued' | 'started' | 'completed' | 'unavailable' | 'failed' | 'cancelled' | null {
@@ -196,10 +181,13 @@ export async function runAdvisorRuntimeAgentLoop(options: AdvisorAgentLoopOption
   const definitions = toolDefinitions(input)
   const nativeToolCalls = transport.nativeToolCalls
   const requests = requiredRequests(input, definitions)
-  const required = requiredCalls(requests)
   const seededEvidence = [...(input.requiredEvidence ?? [])]
-  const ledger = normalizedPromptLedger(input, nativeToolCalls)
-  seedEvidenceLedger(ledger, seededEvidence, required)
+  // A controller-first baseline read is already complete (or truthfully
+  // unavailable). Do not replay it as a fabricated provider-native tool call;
+  // the model sees the bounded canonical evidence directly and may request
+  // only an additional real Tool through the loop.
+  const required = seededEvidence.length ? [] : requiredCalls(requests)
+  const ledger = normalizedPromptLedger(input, nativeToolCalls, seededEvidence)
   const conformance = { reported: false }
   const active = { requestId: null as string | null }
   const seenRounds = new Set<number>()

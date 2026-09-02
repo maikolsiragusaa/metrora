@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { advisorHostedProviderDescriptors, createAdvisorHostedHandlers, type AdvisorHostedEvent, type AdvisorHostedProviderId } from './advisor-provider'
 import { createMemoryAdvisorConformanceStore, type AdvisorConformanceStore } from './advisor-conformance-store'
-import { reasoningCapabilityFromMetadata, resolveOpenCodeZenProtocolFromMetadata } from './advisor-provider-contract'
+import { reasoningCapabilityFromMetadata, resolveOpenCodeZenProtocolFromMetadata, resolveOpenCodeZenRouteFromMetadata } from './advisor-provider-contract'
 
 const providers: AdvisorHostedProviderId[] = ['openai', 'anthropic', 'gemini']
 const request = (provider: AdvisorHostedProviderId, stream = false) => ({
@@ -43,7 +43,7 @@ function modelPayload(provider: AdvisorHostedProviderId): Record<string, unknown
 function textPayload(provider: AdvisorHostedProviderId): Record<string, unknown> {
   if (provider === 'gemini') return { candidates: [{ content: { parts: [{ text: 'Measured response.' }] } }], usageMetadata: { promptTokenCount: 4, candidatesTokenCount: 3, totalTokenCount: 7 } }
   if (provider === 'anthropic') return { content: [{ type: 'text', text: 'Measured response.' }], usage: { input_tokens: 4, output_tokens: 3 } }
-  return { output: [{ type: 'message', content: [{ type: 'output_text', text: 'Measured response.' }] }], usage: { input_tokens: 4, output_tokens: 3, total_tokens: 7 } }
+  return { id: 'resp-test', object: 'response', created_at: 1_778_307_756, model: 'gpt-test', output: [{ type: 'message', role: 'assistant', id: 'msg-test', status: 'completed', content: [{ type: 'output_text', text: 'Measured response.', annotations: [] }] }], usage: { input_tokens: 4, output_tokens: 3, total_tokens: 7 } }
 }
 
 // Observed from GET https://opencode.ai/zen/v1/models on 2026-09-02. The
@@ -697,9 +697,9 @@ describe('Advisor hosted provider authority', () => {
     const handlers = readyHandlers(fetchImpl)
     const probe = await handlers['metrora:advisorHostedProbe']!('opencode-zen') as { ok: boolean; value: any }
     expect(probe.value.models).toEqual([
-      expect.objectContaining({ id: 'muse-spark-1.2-contributor-free', state: 'unverified' }),
-      expect.objectContaining({ id: 'mimo-v2.5-free', state: 'unverified' }),
-      expect.objectContaining({ id: 'nemotron-3-ultra-free', state: 'unverified' }),
+      expect.objectContaining({ id: 'muse-spark-1.2-contributor-free', state: 'unverified', route: { providerPackage: '@ai-sdk/openai', providerFamily: 'openai', protocol: 'openai-responses', endpointFamily: 'responses' } }),
+      expect.objectContaining({ id: 'mimo-v2.5-free', state: 'unverified', route: { providerPackage: '@ai-sdk/openai-compatible', providerFamily: 'openai-compatible', protocol: 'openai-chat', endpointFamily: 'chat-completions', interleavedField: 'reasoning_content' } }),
+      expect.objectContaining({ id: 'nemotron-3-ultra-free', state: 'unverified', route: { providerPackage: '@ai-sdk/openai-compatible', providerFamily: 'openai-compatible', protocol: 'openai-chat', endpointFamily: 'chat-completions', interleavedField: 'reasoning_content' } }),
     ])
     for (const item of cases) {
       await expect(handlers['metrora:advisorHostedChat']!('zen-metadata-' + item.model, {
@@ -813,5 +813,7 @@ describe('Advisor hosted provider authority', () => {
     expect(resolveOpenCodeZenProtocolFromMetadata({ protocol: 'openai-chat', endpointPath: '/zen/v1/responses' })).toBeNull()
     expect(resolveOpenCodeZenProtocolFromMetadata({ protocol: undefined })).toBeNull()
     expect(resolveOpenCodeZenProtocolFromMetadata({ endpointPath: '/zen/v1/chat/completions?redirect=1' })).toBeNull()
+    expect(resolveOpenCodeZenRouteFromMetadata({ protocol: 'openai-chat', provider: { npm: '@ai-sdk/openai-compatible', family: 'openai-compatible' }, endpointFamily: 'chat-completions', interleaved: { field: 'reasoning_content' } })).toMatchObject({ providerPackage: '@ai-sdk/openai-compatible', providerFamily: 'openai-compatible', endpointFamily: 'chat-completions', interleavedField: 'reasoning_content' })
+    expect(resolveOpenCodeZenRouteFromMetadata({ protocol: 'openai-responses', provider: { npm: '@ai-sdk/openai' }, endpointFamily: 'chat-completions' })).toBeNull()
   })
 })

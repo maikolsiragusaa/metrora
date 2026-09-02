@@ -6,6 +6,7 @@ import type { MetroraHarnessActionEvent } from '../lib/metrora-bridge-types'
 import { createAdvisorDataSource } from '../advisor/source'
 import { createAdvisorKernel } from '../advisor/kernel'
 import { createAdvisorOverviewSnapshot } from '../advisor/tools'
+import { resolveAdvisorQuestion } from '../advisor/comprehension'
 import { advisorContextualSurfaceLabel, advisorScopeFromContextualLaunch, normalizeAdvisorContextualLaunch, type AdvisorContextualLaunchV1, type AdvisorContextualScopeMode } from '../advisor/context'
 import { advisorScopeForRequestedPeriod } from '../advisor/turn-plan'
 import { advisorScopeFingerprint, type AdvisorAnswer, type AdvisorConversationTurn, type AdvisorScope, type AdvisorScopeConflictOptionV1, type AdvisorScopeConflictV1 } from '../advisor/types'
@@ -14,6 +15,7 @@ import { createHarnessCompletedWorkTrace, harnessToolCheckedLabel, harnessToolLa
 import { HarnessSurface } from '../harness/HarnessSurface'
 import { isSwarmExperimentalEnabled } from '../swarm/feature-gate'
 import { useSwarmRun } from '../swarm/useSwarmRun'
+import type { MetroraAgentLoopEvent } from '../agent-loop/contracts'
 import { isAdvisorCancelled } from './useAdvisorLocalRuntime'
 import { useAdvisorRuntimeController } from './useAdvisorRuntimeController'
 type DetectedProvider = { id: string; label: string }
@@ -80,6 +82,7 @@ export function Advisor({
   const [toolStatus, setToolStatus] = useState<string | null>(null)
   const [toolActivity, setToolActivity] = useState<HarnessToolActivity[]>([])
   const toolActivityRef = useRef<HarnessToolActivity[]>([])
+  const agentEventsRef = useRef<MetroraAgentLoopEvent[]>([])
   const requestController = useRef<AbortController | null>(null)
   const requestGenerationRef = useRef(0)
   const invalidateAdvisorRequest = useCallback(() => {
@@ -91,6 +94,7 @@ export function Advisor({
     setToolStatus(null)
     setToolActivity([])
     toolActivityRef.current = []
+    agentEventsRef.current = []
   }, [])
   const [notice, setNotice] = useState<string | null>(null)
   const {
@@ -111,6 +115,7 @@ export function Advisor({
   const swarmExperimentalEnabled = isSwarmExperimentalEnabled()
   const [mode, setMode] = useState<'chat' | 'swarm'>('chat')
   const [swarmConversationId, setSwarmConversationId] = useState<string | null>(null)
+  const pendingSwarmConflictRef = useRef<{ question: string; workerCount: number } | null>(null)
   const swarm = useSwarmRun({
     source,
     runtime: activeRuntime,
@@ -219,6 +224,7 @@ export function Advisor({
         },
         onAgentEvent: event => {
           if (!isCurrentRequest()) return
+          agentEventsRef.current = [...agentEventsRef.current, { type: event.type, turnId: event.turnId, ...(event.step !== undefined ? { step: event.step } : {}), ...(event.tool ? { tool: event.tool } : {}), at: event.at }].slice(-128)
           if (event.type === 'turn-started' || event.type === 'model-started' || (event.type === 'model-completed' && event.detail === 'tool-calls')) {
             setToolStatus('Thinking…')
           } else if (event.type === 'tool-queued' || event.type === 'tool-started') {
@@ -281,7 +287,7 @@ export function Advisor({
         }
       }
       if (!isCurrentRequest()) return
-      const assistantMessage: AdvisorMessage = { id: makeId('assistant'), role: 'assistant', answer, scopeFingerprint: requestedScopeFingerprint, workTrace: createHarnessCompletedWorkTrace(toolActivityRef.current) }
+      const assistantMessage: AdvisorMessage = { id: makeId('assistant'), role: 'assistant', answer, scopeFingerprint: requestedScopeFingerprint, workTrace: createHarnessCompletedWorkTrace(toolActivityRef.current, agentEventsRef.current) }
       updateConversation(conversationId, conversation => ({ ...conversation, messages: [...conversation.messages, assistantMessage] }))
       setSelectedAnswerId(assistantMessage.id)
     } catch (caught) {
@@ -307,6 +313,19 @@ export function Advisor({
   const handleScopeConflictOption = useCallback((question: string, conflict: AdvisorScopeConflictV1, option: AdvisorScopeConflictOptionV1) => {
     if (loadingQuestion) return
     const requestedScope = advisorScopeForRequestedPeriod(scope, conflict.requestedPeriod)
+    const pendingSwarm = pendingSwarmConflictRef.current
+    if (pendingSwarm?.question === question) {
+      pendingSwarmConflictRef.current = null
+      if (option.id === 'change-scope') {
+        invalidateAdvisorRequest()
+        setScope(requestedScope)
+        setNotice('Scope changed. Review the selected context, then run Swarm again.')
+        return
+      }
+      setNotice(null)
+      swarm.run(question, pendingSwarm.workerCount, requestedScope)
+      return
+    }
     if (option.id === 'change-scope') {
       invalidateAdvisorRequest()
       setScope(requestedScope)
@@ -314,7 +333,7 @@ export function Advisor({
       return
     }
     void ask(question, undefined, requestedScope)
-  }, [ask, invalidateAdvisorRequest, loadingQuestion, scope])
+  }, [ask, invalidateAdvisorRequest, loadingQuestion, scope, swarm.run])
   const confirmHarnessAction = useCallback(async (actionId: string, digest: string) => {
     if (harnessActionBusyId || typeof metrora.harnessApproveCoreCompatibility !== 'function') {
       if (!harnessActionBusyId) setNotice('This desktop build cannot confirm a Core Compatibility action.')
@@ -353,8 +372,10 @@ export function Advisor({
   }
   const newConversation = () => {
     const next: AdvisorConversation = { id: makeId('chat'), title: 'New chat', messages: [] }
+    pendingSwarmConflictRef.current = null
     setConversations(current => [next, ...current])
     setActiveConversationId(next.id)
+    setSwarmConversationId(null)
     setSelectedAnswerId(null)
     setError(null)
     setNotice(null)
@@ -370,7 +391,7 @@ export function Advisor({
       void ask(failedRequest.question, failedRequest)
     }
   }
-  const runSwarm = useCallback((rawTask: string, workerCount = 2): boolean => {
+  const runSwarm = useCallback((rawTask: string, workerCount = 2, scopeOverride?: AdvisorScope): boolean => {
     const task = rawTask.trim()
     if (!task || !swarmExperimentalEnabled || swarm.state.running) return false
     if (runtimeChoice === 'hosted' && hostedSubmitBlockReason) {
@@ -378,7 +399,16 @@ export function Advisor({
       return false
     }
     const conversationId = activeConversationId
-    const requestedScopeFingerprint = advisorScopeFingerprint(scope)
+    const effectiveScope = scopeOverride ?? scope
+    const plan = resolveAdvisorQuestion(task, effectiveScope)
+    if (plan.plan.scopeConflict) {
+      pendingSwarmConflictRef.current = { question: task, workerCount }
+      setSwarmConversationId(conversationId)
+      void ask(task, undefined, effectiveScope)
+      return true
+    }
+    pendingSwarmConflictRef.current = null
+    const requestedScopeFingerprint = advisorScopeFingerprint(effectiveScope)
     updateConversation(conversationId, conversation => ({
       ...conversation,
       title: conversation.messages.length === 0 ? task.slice(0, 42) : conversation.title,
@@ -390,12 +420,12 @@ export function Advisor({
     setFailedRequest(null)
     setNotice(null)
     setComposer('')
-    swarm.run(task, workerCount)
-    return true
-  }, [activeConversationId, hostedSubmitBlockReason, runtimeChoice, scope, swarm, swarmExperimentalEnabled, updateConversation])
+    return swarm.run(task, workerCount, effectiveScope)
+  }, [activeConversationId, ask, hostedSubmitBlockReason, runtimeChoice, scope, swarm, swarmExperimentalEnabled, updateConversation])
   const changeMode = (next: 'chat' | 'swarm') => {
     if (next === 'swarm' && !swarmExperimentalEnabled) return
     if (next === mode) return
+    pendingSwarmConflictRef.current = null
     invalidateAdvisorRequest()
     swarm.cancel()
     setMode(next)
@@ -421,7 +451,10 @@ export function Advisor({
       contextualScopeMode={contextualScopeMode}
       contextualOrigin={normalizedContextualLaunch ? advisorContextualSurfaceLabel(normalizedContextualLaunch.originatingSection) : null}
       scopeSummary={contextualScopeLabel(scope, contextualScopeMode)}
-      onScopeChange={update => setScope(update)}
+      onScopeChange={update => {
+        pendingSwarmConflictRef.current = null
+        setScope(update)
+      }}
       runtimeUnavailable={runtimeChoice !== 'hosted' && runtimeState.status === 'unavailable'}
       onRetryRuntime={() => void checkLocalRuntime()}
       overviewError={overview.error && !overview.data ? overview.error.message : null}

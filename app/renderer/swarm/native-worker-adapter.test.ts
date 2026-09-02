@@ -271,12 +271,13 @@ describe('Native Harness Swarm worker adapter', () => {
     expect(inputs.map(input => input.workerContext?.role)).toEqual(['investigator', 'verifier'])
     expect(inputs[0]?.workerContext?.responsibility).not.toBe(inputs[1]?.workerContext?.responsibility)
     expect(inputs[1]?.workerContext?.instruction).toMatch(/Repeat the bounded canonical verification read/)
+    expect(inputs.every(input => input.requiredEvidence?.some(evidence => evidence.refs.some(ref => ref.id === 'overview.current')))).toBe(true)
     expect(results.every(result => result.status === 'completed')).toBe(true)
     expect(results.every(result => result.evidenceResult?.status === 'usable')).toBe(true)
     expect(results.every(result => result.evidenceRefs.some(ref => ref.id === 'overview.current'))).toBe(true)
     expect(results[0]?.answer).not.toBe(results[1]?.answer)
-    expect(events.filter(event => event.kind === 'worker' && event.status === 'tool-started')).toHaveLength(4)
-    expect(events.filter(event => event.kind === 'worker' && event.status === 'tool-completed')).toHaveLength(2)
+    expect(events.filter(event => event.kind === 'worker' && event.status === 'tool-started')).toHaveLength(8)
+    expect(events.filter(event => event.kind === 'worker' && event.status === 'tool-completed')).toHaveLength(4)
   })
 
   it('does not reuse a cached Today overview for a Lifetime worker read', async () => {

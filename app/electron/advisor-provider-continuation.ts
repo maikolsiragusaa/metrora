@@ -14,6 +14,7 @@ import {
 } from './advisor-provider-contract'
 
 export const HOSTED_CONTINUATION_ADAPTER = 'ai-sdk-openai-compatible-v1' as const
+export const HOSTED_CONTINUATION_RESPONSES_ADAPTER = 'ai-sdk-openai-responses-v1' as const
 export const MAX_HOSTED_CONTINUATION_PAYLOAD_BYTES = 64 * 1024
 export const MAX_HOSTED_CONTINUATION_MESSAGES = 4
 export const MAX_HOSTED_CONTINUATION_PARTS = 32
@@ -22,8 +23,8 @@ export const MAX_HOSTED_CONTINUATION_PARTS = 32
 export type AdvisorHostedContinuationPayload = {
   readonly provider: AdvisorHostedProviderId
   readonly model: string
-  readonly protocol: 'openai-chat'
-  readonly adapter: typeof HOSTED_CONTINUATION_ADAPTER
+  readonly protocol: 'openai-chat' | 'openai-responses'
+  readonly adapter: typeof HOSTED_CONTINUATION_ADAPTER | typeof HOSTED_CONTINUATION_RESPONSES_ADAPTER
   readonly responseMessages: readonly Record<string, unknown>[]
 }
 
@@ -42,21 +43,47 @@ function validContinuationReferenceKeys(value: Record<string, unknown>): boolean
  * being silently copied or stripped at the boundary.
  */
 export function normalizeHostedContinuationReference(value: unknown): AdvisorHostedContinuationReference | null {
-  if (!isRecord(value) || !validContinuationReferenceKeys(value) || !validRequestId(value.id) || !validProvider(value.provider) || !validModel(value.model) || value.protocol !== 'openai-chat' || value.adapter !== HOSTED_CONTINUATION_ADAPTER) return null
+  if (!isRecord(value) || !validContinuationReferenceKeys(value) || !validRequestId(value.id) || !validProvider(value.provider) || !validModel(value.model)) return null
+  const validPair = (value.protocol === 'openai-chat' && value.adapter === HOSTED_CONTINUATION_ADAPTER)
+    || (value.protocol === 'openai-responses' && value.adapter === HOSTED_CONTINUATION_RESPONSES_ADAPTER)
+  if (!validPair) return null
   return {
     id: value.id,
     provider: value.provider,
     model: value.model,
-    protocol: 'openai-chat',
-    adapter: HOSTED_CONTINUATION_ADAPTER,
+    protocol: value.protocol as 'openai-chat' | 'openai-responses',
+    adapter: value.adapter as 'ai-sdk-openai-compatible-v1' | 'ai-sdk-openai-responses-v1',
   }
 }
 
-function continuationPart(value: unknown): Record<string, unknown> | null {
+function boundedResponsesMetadata(value: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(value)) return undefined
+  const source = isRecord(value.providerOptions)
+    ? value.providerOptions
+    : isRecord(value.providerMetadata)
+      ? value.providerMetadata
+      : value
+  if (!isRecord(source.openai)) return undefined
+  const openai: Record<string, unknown> = {}
+  for (const key of ['itemId', 'reasoningEncryptedContent', 'namespace', 'phase'] as const) {
+    const item = source.openai[key]
+    if (typeof item === 'string' && byteLength(item) <= MAX_TOOL_ARGUMENT_BYTES) openai[key] = item
+  }
+  const caller = source.openai.caller
+  if (isRecord(caller) && caller.type === 'direct') openai.caller = { type: 'direct' }
+  else if (isRecord(caller) && caller.type === 'program' && typeof caller.callerId === 'string' && byteLength(caller.callerId) <= MAX_TOOL_ARGUMENT_BYTES) {
+    openai.caller = { type: 'program', callerId: caller.callerId }
+  }
+  return Object.keys(openai).length ? { openai } : undefined
+}
+
+function continuationPart(value: unknown, protocol: AdvisorHostedContinuationPayload['protocol']): Record<string, unknown> | null {
   if (!isRecord(value) || typeof value.type !== 'string') return null
   if (value.type === 'text' || value.type === 'reasoning') {
-    return typeof value.text === 'string' && byteLength(value.text) <= MAX_TEXT_BYTES
-      ? { type: value.type, text: value.text }
+    const providerMetadata = protocol === 'openai-responses' ? boundedResponsesMetadata(value) : undefined
+    const text = protocol === 'openai-responses' && value.type === 'reasoning' ? '' : value.text
+    return typeof text === 'string' && byteLength(text) <= MAX_TEXT_BYTES
+      ? { type: value.type, text, ...(providerMetadata ? { providerOptions: providerMetadata } : {}) }
       : null
   }
   if (value.type !== 'tool-call' || !validRequestId(value.toolCallId) || typeof value.toolName !== 'string' || !TOOL_NAMES.has(value.toolName)) return null
@@ -79,23 +106,30 @@ function continuationPart(value: unknown): Record<string, unknown> | null {
   } catch {
     return null
   }
-  return { type: 'tool-call', toolCallId: value.toolCallId, toolName: value.toolName, input: normalizedInput }
+  const providerMetadata = protocol === 'openai-responses' ? boundedResponsesMetadata(value) : undefined
+  return { type: 'tool-call', toolCallId: value.toolCallId, toolName: value.toolName, input: normalizedInput, ...(providerMetadata ? { providerOptions: providerMetadata } : {}) }
 }
 
 /**
  * Accept only the small continuation subset needed to replay an assistant
- * reasoning/tool turn. Provider metadata, raw chunks, and hidden payloads are
- * intentionally dropped before this value is retained in Electron memory.
+ * reasoning/tool turn. Responses item metadata is retained only in the
+ * Electron-only store because the Responses adapter needs bounded item IDs and
+ * encrypted reasoning content to replay a tool continuation. Raw chunks,
+ * reasoning summary text, and unrelated provider payloads are dropped.
  */
 export function normalizeHostedContinuationPayload(value: unknown): AdvisorHostedContinuationPayload | null {
-  if (!isRecord(value) || !validProvider(value.provider) || !validModel(value.model) || value.protocol !== 'openai-chat' || value.adapter !== HOSTED_CONTINUATION_ADAPTER || !Array.isArray(value.responseMessages) || value.responseMessages.length > MAX_HOSTED_CONTINUATION_MESSAGES) return null
+  if (!isRecord(value) || !validProvider(value.provider) || !validModel(value.model) || !Array.isArray(value.responseMessages) || value.responseMessages.length > MAX_HOSTED_CONTINUATION_MESSAGES) return null
+  const validPair = (value.protocol === 'openai-chat' && value.adapter === HOSTED_CONTINUATION_ADAPTER)
+    || (value.protocol === 'openai-responses' && value.adapter === HOSTED_CONTINUATION_RESPONSES_ADAPTER)
+  if (!validPair) return null
+  const protocol = value.protocol as AdvisorHostedContinuationPayload['protocol']
   const responseMessages: Record<string, unknown>[] = []
   for (const message of value.responseMessages) {
     if (!isRecord(message) || message.role !== 'assistant') return null
     const rawContent = message.content
     const parts = typeof rawContent === 'string' ? [{ type: 'text', text: rawContent }] : rawContent
     if (!Array.isArray(parts) || parts.length > MAX_HOSTED_CONTINUATION_PARTS) return null
-    const normalizedParts = parts.map(part => continuationPart(part)).filter((part): part is Record<string, unknown> => part !== null)
+    const normalizedParts = parts.map(part => continuationPart(part, protocol)).filter((part): part is Record<string, unknown> => part !== null)
     if (normalizedParts.length !== parts.length) return null
     if (!normalizedParts.some(part => part.type === 'tool-call')) continue
     responseMessages.push({ role: 'assistant', content: normalizedParts })
@@ -104,8 +138,8 @@ export function normalizeHostedContinuationPayload(value: unknown): AdvisorHoste
   const normalized: AdvisorHostedContinuationPayload = {
     provider: value.provider,
     model: value.model,
-    protocol: 'openai-chat',
-    adapter: HOSTED_CONTINUATION_ADAPTER,
+    protocol,
+    adapter: value.adapter as AdvisorHostedContinuationPayload['adapter'],
     responseMessages,
   }
   try {

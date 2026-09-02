@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto'
 
 import type { AdvisorHostedContinuationReference } from './advisor-provider-contract'
 import {
-  HOSTED_CONTINUATION_ADAPTER,
   MAX_HOSTED_CONTINUATION_PAYLOAD_BYTES,
   normalizeHostedContinuationReference,
   normalizeHostedContinuationPayload,
@@ -104,8 +103,8 @@ export function createHostedContinuationStore(options: {
         id,
         provider: payload.provider,
         model: payload.model,
-        protocol: 'openai-chat' as const,
-        adapter: HOSTED_CONTINUATION_ADAPTER,
+        protocol: payload.protocol,
+        adapter: payload.adapter,
       })
       if (!reference || entries.has(reference.id)) continue
       return Object.freeze(reference)

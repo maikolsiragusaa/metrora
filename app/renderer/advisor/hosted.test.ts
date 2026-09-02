@@ -174,9 +174,8 @@ describe('Hosted Advisor renderer runtime', () => {
       transport,
     })).investigate({ question: 'What changed in spend?', scope: fixture.scope })
 
-    expect(requests).toHaveLength(2)
-    expect((requests[0]?.messages as Array<{ content: string }>).some(message => message.content.includes('12'))).toBe(false)
-    expect((requests[1]?.messages as Array<{ content: string }>).some(message => message.content.includes('12'))).toBe(true)
+    expect(requests).toHaveLength(1)
+    expect((requests[0]?.messages as Array<{ content: string }>).some(message => message.content.includes('12'))).toBe(true)
     expect(fixture.reads.overviews).toHaveLength(1)
     expect(answer.generatedByModel).toBe(true)
     expect(answer.conclusion).toContain('meaningful amount')
@@ -205,11 +204,10 @@ describe('Hosted Advisor renderer runtime', () => {
       transport,
     })).investigate({ question: 'What changed in spend and which projects contributed?', scope: fixture.scope })
 
-    expect(requests).toHaveLength(3)
+    expect(requests).toHaveLength(2)
     expect(fixture.reads.overviews).toHaveLength(2)
-    expect((requests[0]?.messages as Array<{ content: string }>).some(message => message.content.includes('12'))).toBe(false)
+    expect((requests[0]?.messages as Array<{ content: string }>).some(message => message.content.includes('12'))).toBe(true)
     expect((requests[1]?.messages as Array<{ content: string }>).some(message => message.content.includes('Project A'))).toBe(true)
-    expect((requests[2]?.messages as Array<{ content: string }>).some(message => message.content.includes('12'))).toBe(true)
     expect(answer.generatedByModel).toBe(true)
     expect(answer.conclusion).toContain('Project A')
   })

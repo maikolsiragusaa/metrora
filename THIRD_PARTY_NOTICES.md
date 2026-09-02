@@ -43,9 +43,10 @@ Source repository: `https://github.com/ggml-org/llama.cpp`
 ## Vercel AI SDK OpenAI-compatible runtime substrate
 
 Metrora includes the following exact Apache-2.0 runtime packages from the
-Vercel AI SDK family: `ai@7.0.90` and
-`@ai-sdk/openai-compatible@3.0.43`. The reviewed Vercel AI source reference
-was commit `72435300083e28d5027747eddd04e542edb5b0be`. Metrora uses these
+Vercel AI SDK family: `ai@7.0.90`, `@ai-sdk/openai-compatible@3.0.43`, and
+`@ai-sdk/openai@4.0.56`. The reviewed Vercel AI source reference is commit
+`622fa7f0488c7bee024f63691963d43fb9592cec`; the OpenAI Responses adapter is
+used only for the reviewed OpenCode Zen Muse route. Metrora uses these
 packages only behind the Metrora-owned provider adapter; the Metrora agent
 loop remains the authority for Tools, evidence, bounds, and continuation.
 
@@ -53,6 +54,7 @@ The resolved runtime dependency closure also includes:
 
 | Package | Version | Licence |
 | --- | --- | --- |
+| `@ai-sdk/openai` | 4.0.56 | Apache-2.0 |
 | `@ai-sdk/gateway` | 4.0.72 | Apache-2.0 |
 | `@ai-sdk/provider` | 4.0.10 | Apache-2.0 |
 | `@ai-sdk/provider-utils` | 5.0.36 | Apache-2.0 |

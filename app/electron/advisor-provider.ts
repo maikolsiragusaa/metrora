@@ -11,14 +11,15 @@ import type {
   AdvisorHostedContinuationReference,
   AdvisorReasoningEffort,
   AdvisorHostedUsage,
+  AdvisorHostedDiagnostic,
   CredentialReader,
   CredentialStatusReader,
   EventEmitter,
   FetchLike,
 } from './advisor-provider-contract'
 import { bodyFor, finalizeOpenToolCalls, protocolAdapter, streamState } from './advisor-provider-adapters'
-import { runOpenAiCompatibleStep } from './advisor-provider-ai-sdk'
-import { HOSTED_CONTINUATION_ADAPTER, normalizeHostedContinuationReference, validReasoningEffort, type AdvisorHostedContinuationPayload } from './advisor-provider-continuation'
+import { AI_SDK_OPENAI_COMPATIBLE_ADAPTER, AI_SDK_OPENAI_RESPONSES_ADAPTER, runOpenAiCompatibleStep, runOpenAiResponsesStep } from './advisor-provider-ai-sdk'
+import { HOSTED_CONTINUATION_ADAPTER, HOSTED_CONTINUATION_RESPONSES_ADAPTER, normalizeHostedContinuationReference, validReasoningEffort, type AdvisorHostedContinuationPayload } from './advisor-provider-continuation'
 import { createHostedContinuationStore, type HostedContinuationIdentity, type HostedContinuationStore } from './advisor-provider-continuation-store'
 import {
   createMemoryAdvisorConformanceStore,
@@ -34,7 +35,9 @@ import {
   type HostedCapabilityRegistry,
   type HostedConformanceRegistry,
   type HostedProtocolRegistry,
+  type HostedRouteRegistry,
   type HostedReasoningRegistry,
+  reviewedRouteForModel,
 } from './advisor-provider-discovery'
 export type {
   AdvisorHostedChatMessage,
@@ -49,6 +52,7 @@ export type {
   AdvisorHostedModelState,
   AdvisorHostedProbe,
   AdvisorHostedProtocol,
+  AdvisorHostedRoute,
   AdvisorHostedProviderId,
   AdvisorHostedReasoningCapability,
   AdvisorHostedContinuationReference,
@@ -157,7 +161,7 @@ function parseChatRequest(requestId: unknown, value: unknown): { requestId: stri
 }
 function conformanceFailureCode(error: unknown): boolean {
   if (!(error instanceof HostedAdapterError)) return false
-  return error.code === 'response-malformed' || error.code === 'tool-malformed' || error.code === 'tool-unsupported' || error.code === 'response-too-large'
+  return error.code === 'response-malformed' || error.code === 'tool-malformed' || error.code === 'tool-unsupported' || error.code === 'response-too-large' || error.code === 'provider-request-rejected'
 }
 
 async function persistConformance(store: AdvisorConformanceStore, conformance: HostedConformanceRegistry): Promise<void> {
@@ -270,6 +274,7 @@ async function hostedChat(
   reasoning: HostedReasoningRegistry,
   conformance: HostedConformanceRegistry,
   capabilitiesByModel: HostedCapabilityRegistry,
+  routes: HostedRouteRegistry,
   conformanceStore: AdvisorConformanceStore,
   continuationStore: HostedContinuationStore,
 ): Promise<AdvisorHostedChatResult> {
@@ -281,13 +286,28 @@ async function hostedChat(
   const protocol = protocols.has(key) ? protocols.get(key) ?? null : DESCRIPTORS[provider].protocolForModel(request.model)
   if (!protocol) throw new HostedAdapterError('model-unavailable', 'The selected provider model has no approved Advisor protocol.')
   const reasoningCapability = reasoning.has(key) ? reasoning.get(key) ?? null : null
+  const route = routes.has(key)
+    ? routes.get(key) ?? null
+    : reviewedRouteForModel(provider, request.model, protocol) ?? (protocol ? contract.routeForProtocol(provider, protocol) : null)
   const capabilityInputs = capabilitiesByModel.get(key) ?? conformanceCapabilities('unknown', 'unknown', 'unknown', reasoningCapability?.efforts)
-  const fingerprint = currentConformanceFingerprint(provider, request.model, protocol, capabilityInputs)
+  const fingerprint = currentConformanceFingerprint(provider, request.model, protocol, capabilityInputs, route)
   const selectedEffort = request.reasoningEffort ?? 'default'
   if (selectedEffort !== 'default' && (!reasoningCapability || !reasoningCapability.efforts.includes(selectedEffort))) {
     throw new HostedAdapterError('request-unsupported', 'The selected model does not advertise this reasoning level.')
   }
-  const useAiSdk = (provider === 'openrouter' || provider === 'opencode-zen') && protocol === 'openai-chat' && request.messageMode !== 'flattened' && request.harnessConformance === true
+  const useCompatibleAiSdk = request.messageMode !== 'flattened'
+    && request.harnessConformance === true
+    && protocol === 'openai-chat'
+    && route?.providerPackage === '@ai-sdk/openai-compatible'
+    && route.providerFamily === 'openai-compatible'
+  const useResponsesAiSdk = request.messageMode !== 'flattened'
+    && request.harnessConformance === true
+    && protocol === 'openai-responses'
+    && provider === 'opencode-zen'
+    && route?.providerPackage === '@ai-sdk/openai'
+    && route.providerFamily === 'openai'
+    && route.endpointFamily === 'responses'
+  const useAiSdk = useCompatibleAiSdk || useResponsesAiSdk
   const continuationReference = request.continuation
   let continuationPayload: AdvisorHostedContinuationPayload | null = null
   if (continuationReference && !useAiSdk) {
@@ -297,8 +317,8 @@ async function hostedChat(
     const expected: HostedContinuationIdentity = {
       provider,
       model: request.model,
-      protocol: 'openai-chat',
-      adapter: HOSTED_CONTINUATION_ADAPTER,
+      protocol: protocol as 'openai-chat' | 'openai-responses',
+      adapter: useResponsesAiSdk ? HOSTED_CONTINUATION_RESPONSES_ADAPTER : HOSTED_CONTINUATION_ADAPTER,
     }
     continuationPayload = continuationStore.acquire(continuationReference, expected)
     if (!continuationPayload) throw new HostedAdapterError('continuation-unavailable', 'The provider continuation expired or does not match this exact provider adapter.')
@@ -307,7 +327,9 @@ async function hostedChat(
     const timed = contract.timeoutRequest(parent, REQUEST_TIMEOUT_MS)
     let committedReference: AdvisorHostedContinuationReference | undefined
     try {
-      const value = await runOpenAiCompatibleStep({ provider, secret, request, requestId, fetchImpl, signal: timed.signal, emit, ...(continuationPayload ? { continuation: continuationPayload } : {}) })
+      const value = useResponsesAiSdk
+        ? await runOpenAiResponsesStep({ provider, secret, request, requestId, fetchImpl, signal: timed.signal, emit, ...(continuationPayload ? { continuation: continuationPayload } : {}) })
+        : await runOpenAiCompatibleStep({ provider, secret, request, requestId, fetchImpl, signal: timed.signal, emit, ...(route?.interleavedField ? { interleavedField: route.interleavedField } : {}), ...(continuationPayload ? { continuation: continuationPayload } : {}) })
       contract.throwIfAborted(timed.signal)
       const { continuationPayload: nextPayload, ...publicValue } = value
       const nextReference = nextPayload
@@ -403,6 +425,8 @@ export function createAdvisorHostedHandlers(options: {
   emitEvent?: EventEmitter
   conformanceStore?: AdvisorConformanceStore
   continuationStore?: HostedContinuationStore
+  /** Safe diagnostics stay in Electron; never forward provider payloads. */
+  onDiagnostic?: (diagnostic: AdvisorHostedDiagnostic) => void
 }): Record<string, (...args: any[]) => Promise<AdvisorHostedEnvelope>> {
   const fetchImpl = options.fetchImpl ?? fetch
   const emitEvent = options.emitEvent ?? (() => {})
@@ -416,6 +440,7 @@ export function createAdvisorHostedHandlers(options: {
   const protocols: HostedProtocolRegistry = new Map()
   const reasoning: HostedReasoningRegistry = new Map()
   const capabilitiesByModel: HostedCapabilityRegistry = new Map()
+  const routes: HostedRouteRegistry = new Map()
   const conformance = new Map<string, AdvisorConformanceRecord>()
   let conformanceLoad: Promise<void> | null = null
   const ensureConformanceLoaded = async (): Promise<void> => {
@@ -455,7 +480,7 @@ export function createAdvisorHostedHandlers(options: {
         }
         throwIfCancelled(controller?.signal)
         if (!secret) return { ok: true, value: { provider: providerValue, available: false, models: [], detail: 'The saved provider credential needs to be entered again.', credentialState: 'needs-reentry' } satisfies AdvisorHostedProbe }
-        const models = await discover(providerValue, secret, fetchImpl, controller?.signal, protocols, reasoning, conformance, capabilitiesByModel)
+        const models = await discover(providerValue, secret, fetchImpl, controller?.signal, protocols, reasoning, conformance, capabilitiesByModel, routes)
         await persistConformance(conformanceStore, conformance)
         return { ok: true, value: { provider: providerValue, available: true, models, detail: models.length ? providerDetail(providerValue) : 'The provider is reachable but returned no usable models.', credentialState: 'ready' } satisfies AdvisorHostedProbe }
       } catch (error) {
@@ -492,7 +517,7 @@ export function createAdvisorHostedHandlers(options: {
         }
         throwIfCancelled(controller.signal)
         if (!secret) return { ok: false, error: { kind: 'credential-unavailable', message: 'The saved provider credential needs to be entered again.' } }
-        const value = await hostedChat(parsed.request.provider, secret, parsed.requestId, parsed.request, fetchImpl, emit, controller.signal, protocols, reasoning, conformance, capabilitiesByModel, conformanceStore, continuationStore)
+        const value = await hostedChat(parsed.request.provider, secret, parsed.requestId, parsed.request, fetchImpl, emit, controller.signal, protocols, reasoning, conformance, capabilitiesByModel, routes, conformanceStore, continuationStore)
         return { ok: true, value }
       } catch (error) {
         if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
@@ -507,16 +532,20 @@ export function createAdvisorHostedHandlers(options: {
           if (protocol) {
             const key = modelKey(parsed.request.provider, parsed.request.model)
             const capabilityInputs = capabilitiesByModel.get(key) ?? conformanceCapabilities('unknown', 'unknown', 'unknown', reasoning.get(key)?.efforts)
+            const route = routes.has(key)
+              ? routes.get(key) ?? null
+              : reviewedRouteForModel(parsed.request.provider, parsed.request.model, protocol) ?? (protocol ? contract.routeForProtocol(parsed.request.provider, protocol) : null)
             conformance.set(conformanceKey(parsed.request.provider, parsed.request.model, protocol), {
               state: 'failed-conformance',
               toolCall: 'failed-conformance',
               protocol,
-              fingerprint: currentConformanceFingerprint(parsed.request.provider, parsed.request.model, protocol, capabilityInputs),
+              fingerprint: currentConformanceFingerprint(parsed.request.provider, parsed.request.model, protocol, capabilityInputs, route),
               verifiedAt: new Date().toISOString(),
             })
             await persistConformance(conformanceStore, conformance)
           }
         }
+        if (error instanceof HostedAdapterError && error.diagnostic) options.onDiagnostic?.(error.diagnostic)
         const safe = safeError(error)
         emit({ requestId: parsed.requestId, provider: parsed.request.provider, model: parsed.request.model, kind: 'failed', code: safe.code, message: safe.message })
         return { ok: false, error: { kind: safe.code, message: safe.message } }
