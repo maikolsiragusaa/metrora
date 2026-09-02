@@ -35,4 +35,18 @@ describe('Advisor tool scope isolation', () => {
     expect(result.evidence.scope.provider).toBe('codex')
     expect(result.evidence.quota?.measuredSpendUSD).toBe(6)
   })
+
+  it.each(['lifetime', 'week'] as const)('binds model-selected Tool arguments and evidence to the resolved %s scope', async period => {
+    const getOverview = vi.fn(async () => overview(4))
+    const source = { getOverview, getModels: vi.fn(async () => []), getQuota: vi.fn(async () => []) } satisfies AdvisorDataSource
+    const taskScope = { ...scope, period }
+    const registry = createAdvisorToolRegistry(source, taskScope, null, { allowedPeriods: [period] })
+    const result = await registry.execute('get_project_drivers', { period })
+
+    expect(getOverview).toHaveBeenCalledWith(taskScope)
+    expect(result.evidence.scope).toMatchObject({ period })
+    expect(result.envelope?.scope).toMatchObject({ period })
+    expect(result.envelope?.arguments).toEqual({ period })
+    await expect(registry.execute('get_project_drivers', { period: period === 'lifetime' ? 'week' : 'lifetime' })).rejects.toMatchObject({ code: 'invalid-scope' })
+  })
 })

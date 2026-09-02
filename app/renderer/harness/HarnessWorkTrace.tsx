@@ -1,4 +1,3 @@
-import { periodLabel } from '../advisor/evidence'
 import type { AdvisorScope, AdvisorToolEvent } from '../advisor/types'
 import type { MetroraAgentLoopEvent } from '../agent-loop/contracts'
 
@@ -29,8 +28,8 @@ const TOOL_LABELS: Record<string, string> = {
   get_coverage_report: 'Checking Sources',
   get_bench_evidence: 'Checking Bench results',
 }
-export function harnessToolLabel(name: string, scope: AdvisorScope): string {
-  return (TOOL_LABELS[name] ?? 'Checking Metrora Sources') + ' · ' + periodLabel(scope)
+export function harnessToolLabel(name: string, _scope?: AdvisorScope): string {
+  return TOOL_LABELS[name] ?? 'Checking Metrora Sources'
 }
 
 export function harnessToolCheckedLabel(name: string): string {
@@ -70,9 +69,8 @@ export function createHarnessCompletedWorkTrace(items: readonly HarnessToolActiv
   // marker; provider output and reasoning are never copied into the trace.
   appendTools(items.filter(item => !modelToolNames.has(item.name)))
   const modelTools = items.filter(item => modelToolNames.has(item.name))
-  if (modelStarts > 0 || modelTools.length) trace.push({ id: 'thinking-2', label: 'Thinking', status: 'completed' })
+  if (modelTools.length || (modelStarts > 0 && seenTools.size > 0)) trace.push({ id: 'thinking-2', label: 'Thinking', status: 'completed' })
   appendTools(modelTools)
-  if (modelCompletions > 0) trace.push({ id: 'models-checked', label: 'Models checked', status: 'completed' })
   trace.push({ id: 'preparing-answer', label: 'Preparing answer', status: 'completed' })
   trace.push({ id: 'done', label: 'Done', status: 'completed' })
   const checks = trace.slice(0, -2).slice(0, 8)
@@ -92,7 +90,7 @@ function activityStatus(status: HarnessToolActivity['status']): string {
   return 'Failed'
 }
 
-export function HarnessWorkTrace({ items, scope, events = [] }: { items: readonly HarnessToolActivity[]; scope: AdvisorScope; events?: readonly MetroraAgentLoopEvent[] }) {
+export function HarnessWorkTrace({ items, scope: _scope, events = [] }: { items: readonly HarnessToolActivity[]; scope: AdvisorScope; events?: readonly MetroraAgentLoopEvent[] }) {
   const hasModelLifecycle = events.some(event => event.type === 'model-started' || event.type === 'model-completed')
   if (!items.length && !hasModelLifecycle) return null
   const modelStarted = events.some(event => event.type === 'model-started')
@@ -102,7 +100,7 @@ export function HarnessWorkTrace({ items, scope, events = [] }: { items: readonl
   const modelItems = items.filter(item => modelToolNames.has(item.name))
   const activityRow = (item: HarnessToolActivity) => <div className="harness-v3-work-trace-row" key={item.name}>
     <span aria-hidden="true" className={'harness-v3-work-dot ' + item.status} />
-    <span>{harnessToolLabel(item.name, scope)}</span>
+    <span>{harnessToolLabel(item.name)}</span>
     <small>{activityStatus(item.status)}</small>
   </div>
   return (
@@ -114,11 +112,6 @@ export function HarnessWorkTrace({ items, scope, events = [] }: { items: readonl
         <small>{modelCompleted ? 'Done' : 'In progress'}</small>
       </div> : null}
       {modelItems.map(activityRow)}
-      {modelCompleted ? <div className="harness-v3-work-trace-row" key="model-checked">
-        <span aria-hidden="true" className="harness-v3-work-dot completed" />
-        <span>Models checked</span>
-        <small>Done</small>
-      </div> : null}
     </div>
   )
 }

@@ -123,15 +123,10 @@ export function HarnessTurn({ answer, question, workTrace, selected, onSelect, o
     <article className={selected ? 'harness-v3-turn harness-v3-assistant-turn selected assistant-message' : 'harness-v3-turn harness-v3-assistant-turn assistant-message'} onClick={onSelect}>
       <div className="harness-v3-turn-label"><MetroraMark size={20} /><span>Metrora Harness</span>{answer.generatedByModel ? <small>{answer.evidence.length ? 'model-assisted explanation' : 'model-assisted chat'}</small> : null}</div>
       <p className="harness-v3-conclusion">{answer.conclusion}</p>
-      <div className="harness-v3-answer-meta"><span className={'harness-v3-coverage-pill ' + answer.coverage.level}>{answer.coverage.label}</span><span>{answer.scopeLabel}</span></div>
       {workTrace ? <HarnessCompletedWorkTraceView trace={workTrace} /> : null}
       {answer.understanding?.scopeConflict ? <ScopeConflictActions question={question} conflict={answer.understanding.scopeConflict} onChoose={onScopeConflictOption} /> : null}
-      {answer.presentation?.length ? <PresentationBlocks blocks={answer.presentation} /> : null}
       {answer.actionProposal?.kind === 'run-core-compatibility' && action ? <HarnessActionBlock action={action} busy={actionBusy} onConfirm={() => onConfirmHarnessAction(action.actionId, action.proposalDigest)} onCancel={() => onCancelHarnessAction(action.actionId)} /> : null}
-      {answer.why?.length ? <section className="harness-v3-answer-section"><h4>Why</h4>{answer.why.slice(0, 2).map((item, index) => <p key={index}>{item}</p>)}</section> : null}
-      {answer.materialLimits?.length ? <section className="harness-v3-answer-section harness-v3-answer-limit"><h4>Important limit</h4>{answer.materialLimits.slice(0, 2).map((item, index) => <p key={index}>{item}</p>)}</section> : null}
-      {answer.nextInvestigations.length ? <div className="harness-v3-followups"><span>Next step</span>{answer.nextInvestigations.map(next => <button type="button" key={next} onClick={event => { event.stopPropagation(); onFollowUp(next) }}>{next}</button>)}</div> : null}
-      <HarnessEvidenceDetails answer={answer} onNextInvestigation={onNextInvestigation} />
+      <HarnessEvidenceDetails answer={answer} onNextInvestigation={onNextInvestigation} advanced={answer.presentation?.length ? <PresentationBlocks blocks={answer.presentation} /> : undefined} />
     </article>
   )
 }

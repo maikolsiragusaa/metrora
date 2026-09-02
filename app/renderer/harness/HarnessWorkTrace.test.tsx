@@ -29,7 +29,6 @@ describe('Harness completed work trace', () => {
       'Usage checked',
       'Thinking',
       'Project breakdown checked',
-      'Models checked',
       'Preparing answer',
       'Done',
     ])
@@ -47,7 +46,7 @@ describe('Harness completed work trace', () => {
       event('turn-completed'),
     ])
 
-    expect(trace.items.map(item => item.label)).toEqual(['Thinking', 'Thinking', 'Models checked', 'Preparing answer', 'Done'])
+    expect(trace.items.map(item => item.label)).toEqual(['Thinking', 'Preparing answer', 'Done'])
     expect(trace.toolEvents).toBe(0)
   })
 })

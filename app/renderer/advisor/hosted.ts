@@ -1,5 +1,5 @@
 import { metrora } from '../lib/ipc'
-import { buildAdvisorSwarmSynthesisMessages } from './model-flow'
+import { buildAdvisorGroundedRepairMessages, buildAdvisorSwarmSynthesisMessages, type AdvisorGroundedRepairRequest } from './model-flow'
 import { createAdvisorTurnDeadline, raceAdvisorAbort } from './abort'
 import { HARNESS_TOOL_LOOP_LIMITS } from './limits'
 import { runAdvisorRuntimeAgentLoop } from '../agent-loop/advisor-runtime'
@@ -125,6 +125,36 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
     return this.reasoningEffort === 'default' ? {} : { reasoningEffort: this.reasoningEffort }
   }
 
+  private async generateGroundedRepair(request: AdvisorGroundedRepairRequest, signal?: AbortSignal): Promise<string> {
+    if (signal?.aborted) throw new DOMException('Advisor request cancelled', 'AbortError')
+    if (!this.consent) throw new Error('Hosted evidence sharing consent is required.')
+    const deadline = createAdvisorTurnDeadline(signal, HARNESS_TOOL_LOOP_LIMITS.turnTimeoutMs)
+    const turnSignal = deadline.signal
+    const activeRequestId = requestId('hosted-grounded-repair')
+    const cancel = () => { void this.transport.cancel(activeRequestId).catch(() => {}) }
+    turnSignal.addEventListener('abort', cancel, { once: true })
+    try {
+      const response = await raceAdvisorAbort(this.transport.chat(activeRequestId, {
+        provider: this.provider,
+        model: this.model,
+        ...this.reasoningRequest(),
+        messages: buildAdvisorGroundedRepairMessages(request),
+        tools: [],
+        stream: false,
+        messageMode: this.capabilities.toolCall === 'supported' ? 'native' : 'flattened',
+        consent: true,
+        harnessConformance: true,
+      }, turnSignal), turnSignal)
+      throwIfAborted(turnSignal)
+      if (!isNormalizedHostedResponse(response) || response.message.tool_calls?.length) throw new Error('The grounded repair response was malformed.')
+      if (!response.message.content.trim()) throw new Error('Grounded repair returned no usable answer.')
+      return response.message.content
+    } finally {
+      turnSignal.removeEventListener('abort', cancel)
+      deadline.dispose()
+    }
+  }
+
   async generateSwarmSynthesis(input: AdvisorSwarmSynthesisInput, signal?: AbortSignal): Promise<AdvisorSwarmSynthesisResult> {
     if (signal?.aborted) throw new DOMException('Advisor request cancelled', 'AbortError')
     if (!this.consent) throw new Error('Hosted evidence sharing consent is required.')
@@ -192,6 +222,7 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
           messageMode: this.capabilities.toolCall === 'supported' ? 'native' : 'flattened',
           ...(continuation ? { continuation } : {}),
         }),
+        repair: (request, requestSignal) => this.generateGroundedRepair(request, requestSignal),
         reportConformance: true,
       },
     })

@@ -263,6 +263,16 @@ export function nextMetroraToolScope(scope: MetroraToolScope, name: MetroraToolN
   const next = { ...scope, range: scope.range ? { ...scope.range } : null }
   const explicitlyRequestedPeriods = new Set(options.allowedPeriods ?? [])
   if (typeof args.period === 'string') {
+    const requested = args.period as MetroraToolPeriod
+    const periodIsAllowed = explicitlyRequestedPeriods.has(requested)
+    // When the caller supplies a turn-local period allowlist, every model
+    // read must stay in that allowlist. Without this check, a lifetime task
+    // could silently narrow to a week merely because the model supplied a
+    // period argument. An explicitly user-requested comparison remains
+    // possible because its period is included in the allowlist.
+    if (explicitlyRequestedPeriods.size > 0 && !periodIsAllowed && requested !== scope.period) {
+      throw new MetroraToolContractError('invalid-scope', 'A Metrora tool request cannot change the resolved turn period.')
+    }
     if (args.period === 'yesterday') {
       if (scope.period === 'today' && !scope.range && !explicitlyRequestedPeriods.has('yesterday')) throw new MetroraToolContractError('invalid-scope', 'A Metrora tool request cannot widen today to yesterday.')
       const date = new Date()
@@ -274,7 +284,6 @@ export function nextMetroraToolScope(scope: MetroraToolScope, name: MetroraToolN
       next.range = { from: value, to: value }
     } else {
       const periodOrder: Record<MetroraToolPeriod, number> = { today: 0, week: 1, '30days': 2, month: 3, all: 4, lifetime: 5 }
-      const requested = args.period as MetroraToolPeriod
       const explicitComparison = explicitlyRequestedPeriods.has(requested) && !scope.range
       if ((scope.range && requested !== scope.period) || (periodOrder[requested] > periodOrder[scope.period] && !explicitComparison)) throw new MetroraToolContractError('invalid-scope', 'A Metrora tool request cannot widen the selected Metrora scope without an explicit bounded comparison request.')
       next.period = requested

@@ -151,7 +151,7 @@ describe('Ollama Advisor renderer state machine', () => {
     expect(answer.streamed).toBe(false)
     expect(answer.evidence.map(ref => ref.id)).toEqual(['spend', 'quota'])
     expect(answer.details.some(detail => detail.includes('provider credits remaining'))).toBe(true)
-    expect(answer.conclusion).toContain('Metrora measured')
+    expect(answer.conclusion).toContain('observed pattern')
     expect(answer.conclusion).not.toContain('99 calls')
     expect(answer.conclusion).not.toContain('Local model context')
     expect(deltas).toEqual([])
@@ -180,7 +180,8 @@ describe('Ollama Advisor renderer state machine', () => {
       })
       expect(answer.conclusion).not.toContain('Local model context')
       expect(answer.conclusion).not.toContain(narrative)
-      expect(answer.conclusion).toContain('Metrora measured')
+      expect(answer.conclusion).toContain('could not be safely finalized')
+      expect(answer.generatedByModel).toBe(false)
     },
   )
 
@@ -193,6 +194,42 @@ describe('Ollama Advisor renderer state machine', () => {
     expect(answer.conclusion).not.toContain('Local model context')
   })
 
+  it('uses exactly one bounded grounded repair and keeps the repaired text model-authored', async () => {
+    const requests: Array<Record<string, unknown>> = []
+    let calls = 0
+    const transport: OllamaTransport = {
+      probe: async () => ({ available: true, models: ['llama3.2'], detail: 'ready' }),
+      cancel: async () => true,
+      onDelta: () => () => {},
+      chat: async (_requestId, payload) => {
+        requests.push(payload)
+        calls += 1
+        return calls === 1
+          ? { streamed: false, message: { content: 'The total was $99.00.' } }
+          : { streamed: false, message: { content: 'Metrora measured $12.00 in the selected period. API key: sk-secret-1234567890. I would review the breakdown next.' } }
+      },
+    }
+    const answer = await new OllamaAdvisorRuntime({ model: 'llama3.2', transport }).generate({
+      question: 'How much did I spend?',
+      evidence: spendEvidence,
+      requiredEvidence: [spendEvidence],
+      requiredToolRequests: [],
+      tools: [],
+    })
+
+    expect(requests).toHaveLength(2)
+    expect(requests[1]?.tools).toEqual([])
+    expect(requests[1]?.stream).toBe(false)
+    const repairMessages = (requests[1]?.messages as Array<{ content: string }>).map(message => message.content).join('\n')
+    expect(repairMessages).toContain('How much did I spend?')
+    expect(repairMessages).toContain('12')
+    expect(repairMessages).not.toContain('99.00')
+    expect(answer.generatedByModel).toBe(true)
+    expect(answer.conclusion).toContain('review the breakdown')
+    expect(answer.conclusion).toBe('Metrora measured $12.00 in the selected period. I would review the breakdown next.')
+    expect(answer.conclusion).not.toContain('sk-secret')
+  })
+
   it('does not append contradictory qualitative prose in Ollama or LM Studio', async () => {
     const narrative = 'Claude was not the main driver.'
     const runtimes = [
@@ -203,7 +240,8 @@ describe('Ollama Advisor renderer state machine', () => {
       const answer = await runtime.generate({
         question: 'What changed in spend?', evidence: spendEvidence, tools: [],
       })
-      expect(answer.conclusion).toContain('Metrora measured')
+      expect(answer.conclusion).toContain('could not be safely finalized')
+      expect(answer.generatedByModel).toBe(false)
       expect(answer.conclusion).not.toContain(narrative)
       expect(answer.streamed).toBe(false)
     }

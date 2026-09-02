@@ -35,6 +35,14 @@ function explicitScopePeriods(value: string): AdvisorPeriodFilter[] {
 }
 
 function selectedScopeMatchesRequestedPeriod(scope: AdvisorScope, requested: AdvisorPeriodFilter): boolean {
+  if (requested === 'yesterday') {
+    if (scope.period !== 'today' || !scope.range || scope.range.from !== scope.range.to) return false
+    const yesterday = new Date()
+    yesterday.setHours(12, 0, 0, 0)
+    yesterday.setDate(yesterday.getDate() - 1)
+    const date = yesterday.getFullYear() + '-' + String(yesterday.getMonth() + 1).padStart(2, '0') + '-' + String(yesterday.getDate()).padStart(2, '0')
+    return scope.range.from === date
+  }
   if (requested === 'lifetime') return scope.period === 'lifetime'
   return scope.period === requested
 }
@@ -89,8 +97,15 @@ export function advisorPinnedScopeForRequestedPeriod(scope: AdvisorScope, reques
  * ranged or intentionally pinned scope remains restrictive.
  */
 export function advisorAllowedPeriods(scope: AdvisorScope, question = ''): AdvisorPeriodFilter[] {
-  if (scope.range || advisorScopeIsPinned(scope, 'period') || advisorScopeIsPinned(scope, 'range')) return [scope.period]
-  return [...ADVISOR_PERIOD_FILTERS]
+  const requestedPeriods = explicitScopePeriods(normalize(question))
+  if (scope.range || advisorScopeIsPinned(scope, 'period') || advisorScopeIsPinned(scope, 'range')) {
+    return requestedPeriods.includes('yesterday') && scope.period === 'today' ? [scope.period, 'yesterday'] : [scope.period]
+  }
+  // An unpinned shell may choose a period for the current turn, but a model
+  // tool call must stay inside that same turn-local choice. If the user did
+  // not name a new period, the resolved scope period is the only allowed
+  // period for required and model-selected reads.
+  return requestedPeriods.length ? requestedPeriods : [scope.period]
 }
 
 function sameTaskScopeDimensions(left: AdvisorScope, right: AdvisorScope): boolean {

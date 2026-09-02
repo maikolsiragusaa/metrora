@@ -21,7 +21,15 @@ export type HarnessContextPopoverProps = {
 function compactSummary(scopeSummary: string, mode: AdvisorContextualScopeMode | null, scope: AdvisorScope): string {
   if (mode === 'capacity') return 'Provider capacity · All providers'
   if (mode === 'compare') return 'Compare · ' + scopeSummary
-  return advisorHarnessContext(scope).mode === 'pinned' ? 'Pinned context' : 'Unpinned context'
+  const context = advisorHarnessContext(scope)
+  if (context.mode !== 'pinned') return 'Context'
+  const pinnedItems = [
+    context.pins.includes('period') || context.pins.includes('range') ? periodLabel(scope) : null,
+    context.pins.includes('project') ? scope.projectName : null,
+    context.pins.includes('provider') ? scope.provider === 'all' ? 'All providers' : scope.provider : null,
+    context.pins.includes('model') ? scope.model : null,
+  ].filter((item): item is string => Boolean(item))
+  return pinnedItems.length ? 'Pinned · ' + pinnedItems.join(' · ') : 'Pinned context'
 }
 
 function pinDimension(scope: AdvisorScope, dimension: AdvisorScopePin): AdvisorScope {
@@ -48,7 +56,7 @@ export function HarnessContextPopover({ projectOptions, modelOptions, providerOp
         <span className="harness-v3-context-trigger-label">{compactSummary(scopeSummary, contextualScopeMode, scope)}</span><span aria-hidden="true" className="harness-v3-chevron">⌄</span>
       </button>
       {open ? <div className="harness-v3-context-popover" id="harness-context-popover" role="dialog" aria-label="Harness context details">
-        <div className="harness-v3-popover-head"><strong>{pinned ? 'Pinned conversation context' : 'Unpinned conversation context'}</strong><p>{pinned ? 'Pinned context stays restrictive until you choose a bounded change.' : 'Each question may choose its own bounded factual period; the conversation does not preload lifetime data.'}</p></div>
+        <div className="harness-v3-popover-head"><strong>{pinned ? 'Pinned conversation context' : 'Conversation context'}</strong><p>{pinned ? 'Pinned context stays restrictive until you choose a bounded change.' : 'Each question may choose its own bounded factual period; no period is preloaded for the conversation.'}</p></div>
         {contextualOrigin ? <p className="harness-v3-context-origin">From {contextualOrigin}</p> : null}
         {contextualScopeMode === 'capacity' ? <p className="harness-v3-context-authority">Provider-reported now · All providers; Project and history do not scope Capacity.</p> : <>
           <div className="harness-v3-context-fields">

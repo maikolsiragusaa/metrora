@@ -1,5 +1,5 @@
 import { buildAdvisorVerifiedClaimAtoms } from '../advisor/claim-atoms'
-import { containsAdvisorForbiddenOutputClass, containsAdvisorSensitiveText, sanitizeAdvisorDisplayText } from '../advisor/privacy'
+import { containsAdvisorForbiddenOutputClass, containsAdvisorSensitiveText, sanitizeAdvisorModelOutput } from '../advisor/privacy'
 import type { AdvisorEvidence } from '../advisor/types'
 
 export type MetroraClaimProvenance =
@@ -30,43 +30,82 @@ export type MetroraProvenanceResult = {
 
 type NumberSource = 'canonical' | 'user' | 'derived'
 type AuthorizedNumber = { value: number; source: NumberSource; unit: string | null; derivedFrom?: readonly NumberSource[] }
+type NumberSuffix = '' | 'k' | 'm' | 'b'
+type NumberToken = {
+  raw: string
+  value: number
+  decimals: number
+  scale: number
+  suffix: NumberSuffix
+}
 
 function numberKey(value: number): string {
   return Number(value.toFixed(6)).toString()
 }
 
-function parseNumberToken(token: string): number | null {
-  const suffix = /[kKmMbB]$/u.test(token) ? token.slice(-1).toLowerCase() : ''
-  const raw = suffix ? token.slice(0, -1) : token
+function parseNumberToken(token: string): NumberToken | null {
+  const suffix = /[kKmMbB]$/u.test(token) ? token.slice(-1).toLowerCase() as NumberSuffix : ''
+  const unsigned = suffix ? token.slice(0, -1) : token
+  const negative = unsigned.startsWith('-')
+  const raw = unsigned.replace(/^[+-]/u, '')
   let normalized = raw
+  let decimals = 0
   const comma = raw.lastIndexOf(',')
   const dot = raw.lastIndexOf('.')
   if (comma >= 0 && dot >= 0) {
     const decimal = comma > dot ? ',' : '.'
     const thousands = decimal === ',' ? '.' : ','
     normalized = raw.replaceAll(thousands, '').replace(decimal, '.')
+    decimals = raw.slice(Math.max(comma, dot) + 1).length
   } else if (comma >= 0) {
-    normalized = /,\d{3}(?:,\d{3})*$/u.test(raw) ? raw.replaceAll(',', '') : raw.replace(',', '.')
+    if (/,\d{3}(?:,\d{3})*$/u.test(raw)) normalized = raw.replaceAll(',', '')
+    else {
+      normalized = raw.replace(',', '.')
+      decimals = raw.slice(comma + 1).length
+    }
   } else if (dot >= 0) {
-    normalized = /\.\d{3}(?:\.\d{3})*$/u.test(raw) ? raw.replaceAll('.', '') : raw
+    if (/\.\d{3}(?:\.\d{3})*$/u.test(raw)) normalized = raw.replaceAll('.', '')
+    else {
+      normalized = raw
+      decimals = raw.slice(dot + 1).length
+    }
   }
-  const value = Number(normalized)
-  if (!Number.isFinite(value)) return null
-  const multiplier = suffix === 'k' ? 1_000 : suffix === 'm' ? 1_000_000 : suffix === 'b' ? 1_000_000_000 : 1
-  return value * multiplier
+  const parsed = Number(normalized)
+  if (!Number.isFinite(parsed)) return null
+  const scale = suffix === 'k' ? 1_000 : suffix === 'm' ? 1_000_000 : suffix === 'b' ? 1_000_000_000 : 1
+  const value = (negative ? -1 : 1) * parsed * scale
+  return { raw: token, value, decimals, scale, suffix }
 }
 
-function numberTokens(value: string): number[] {
+function numberTokens(value: string): NumberToken[] {
   return Array.from(value.matchAll(/\d+(?:[.,]\d+)*(?:[kKmMbB])?/gu)).flatMap(match => {
     const index = match.index ?? -1
-    const token = match[0]
-    const before = index > 0 ? value[index - 1] : ''
-    const after = value[index + token.length] ?? ''
+    const sign = index > 0 && /[+-]/u.test(value[index - 1] ?? '') && !/[\p{L}\d_]/u.test(value[index - 2] ?? '') ? value[index - 1] : ''
+    const token = sign + match[0]
+    const before = sign ? (index > 1 ? value[index - 2] : '') : index > 0 ? value[index - 1] : ''
+    const after = value[index + match[0].length] ?? ''
     // Version/model identifiers such as GPT-5.6 are not numeric claims.
-    if (/[\p{L}_-]/u.test(before) || /[\p{L}_]/u.test(after) && !/[kKmMbB]$/u.test(token)) return []
+    if (/[\p{L}_-]/u.test(before) || /[\p{L}_]/u.test(after) && !/[kKmMbB]$/u.test(match[0])) return []
     const parsed = parseNumberToken(token)
     return parsed === null ? [] : [parsed]
   })
+}
+
+function roundedRepresentationKey(value: number, token: NumberToken): number | null {
+  const precision = 10 ** token.decimals
+  const quantum = token.scale / precision
+  if (!Number.isFinite(quantum) || quantum <= 0 || !Number.isFinite(value / quantum)) return null
+  // The displayed precision itself defines the only permitted bucket. This is
+  // deliberately representation-based; it is not a percentage or epsilon
+  // tolerance around the canonical value.
+  return Math.round(value / quantum)
+}
+
+function numberRepresentationMatches(token: NumberToken, authorized: AuthorizedNumber): boolean {
+  if (numberKey(token.value) === numberKey(authorized.value)) return true
+  const candidateBucket = roundedRepresentationKey(token.value, token)
+  const authorizedBucket = roundedRepresentationKey(authorized.value, token)
+  return candidateBucket !== null && authorizedBucket !== null && candidateBucket === authorizedBucket
 }
 
 function evidenceWords(evidenceItems: readonly AdvisorEvidence[]): Set<string> {
@@ -91,7 +130,7 @@ function authorizedNumbers(question: string, evidenceItems: readonly AdvisorEvid
     }
   }
   const user = numberTokens(question)
-  for (const value of user) values.push({ value, source: 'user', unit: null })
+  for (const token of user) values.push({ value: token.value, source: 'user', unit: null })
   const base = Array.from(new Map(values.map(item => [numberKey(item.value) + '\u0000' + (item.unit ?? ''), item])).values())
   for (const left of base) {
     for (const right of base) {
@@ -176,8 +215,10 @@ function topicAnchor(value: string, words: Set<string> = new Set()): boolean {
 
 function classifyClause(clause: string, _question: string, evidenceItems: readonly AdvisorEvidence[], auth: readonly AuthorizedNumber[], words: Set<string>, subjects: readonly string[]): { accepted: boolean; kinds: MetroraClaimProvenance[]; diagnostic?: MetroraProvenanceDiagnostic } {
   const values = numberTokens(clause)
+  const matchesByValue = new Map<NumberToken, AuthorizedNumber[]>()
   for (const value of values) {
-    const matches = auth.filter(item => numberKey(item.value) === numberKey(value) && numberUnitAllowed(item, clause))
+    const matches = auth.filter(item => numberRepresentationMatches(value, item) && numberUnitAllowed(item, clause))
+    matchesByValue.set(value, matches)
     const userMatch = matches.find(item => item.source === 'user')
     const derivedMatch = matches.find(item => item.source === 'derived')
     const canonicalMatch = matches.find(item => item.source === 'canonical')
@@ -194,11 +235,11 @@ function classifyClause(clause: string, _question: string, evidenceItems: readon
   // unsupported material number, entity, rank, trend, causal, or private
   // assertion, it is safe to retain as model interpretation/connective prose.
   const kinds: MetroraClaimProvenance[] = []
-  if (values.some(value => auth.some(item => item.source === 'canonical' && numberKey(item.value) === numberKey(value)))) kinds.push('canonical-metrora-fact')
-  if (values.some(value => auth.some(item => item.source === 'user' && numberKey(item.value) === numberKey(value)))) kinds.push('user-provided-fact')
-  const derivedFromUser = values.some(value => auth.some(item => item.source === 'derived' && item.derivedFrom?.includes('user') && numberKey(item.value) === numberKey(value)))
+  if (values.some(value => matchesByValue.get(value)?.some(item => item.source === 'canonical'))) kinds.push('canonical-metrora-fact')
+  if (values.some(value => matchesByValue.get(value)?.some(item => item.source === 'user'))) kinds.push('user-provided-fact')
+  const derivedFromUser = values.some(value => matchesByValue.get(value)?.some(item => item.source === 'derived' && item.derivedFrom?.includes('user')))
   if (derivedFromUser) kinds.push('user-provided-fact')
-  if (values.some(value => auth.some(item => item.source === 'derived' && numberKey(item.value) === numberKey(value)))) kinds.push('deterministic-derivation')
+  if (values.some(value => matchesByValue.get(value)?.some(item => item.source === 'derived'))) kinds.push('deterministic-derivation')
   if (interpretationClaim(clause) || evidenceReference(clause) || !values.length) kinds.push('model-interpretation')
   return { accepted: true, kinds }
 }
@@ -206,8 +247,6 @@ function classifyClause(clause: string, _question: string, evidenceItems: readon
 export function classifyMetroraProvenance(value: string, question: string, evidenceItems: readonly AdvisorEvidence[]): MetroraProvenanceResult {
   const raw = value.trim()
   if (!raw) return { text: '', accepted: false, usedCanonicalFact: false, usedUserFact: false, usedDerivation: false, usedInterpretation: false, removedClauses: 0, diagnostics: ['ungrounded_narrative'] }
-  if (containsAdvisorSensitiveText(raw) || containsAdvisorForbiddenOutputClass(raw)) return { text: '', accepted: false, usedCanonicalFact: false, usedUserFact: false, usedDerivation: false, usedInterpretation: false, removedClauses: 1, diagnostics: ['privacy_violation'] }
-  const safe = sanitizeAdvisorDisplayText(raw, Number.MAX_SAFE_INTEGER)
   const auth = authorizedNumbers(question, evidenceItems)
   const words = evidenceWords(evidenceItems)
   const subjects = subjectNames(evidenceItems)
@@ -217,7 +256,19 @@ export function classifyMetroraProvenance(value: string, question: string, evide
   let usedUserFact = false
   let usedDerivation = false
   let usedInterpretation = false
-  for (const clause of sentenceParts(safe)) {
+  const clauses = sentenceParts(raw)
+  for (const rawClause of clauses) {
+    // Inspect the raw clause before redaction. A sensitive sentence must be
+    // removed, not converted into an accepted '[redacted]' model clause.
+    if (containsAdvisorSensitiveText(rawClause) || containsAdvisorForbiddenOutputClass(rawClause)) {
+      diagnostics.push('privacy_violation')
+      continue
+    }
+    const clause = sanitizeAdvisorModelOutput(rawClause, Number.MAX_SAFE_INTEGER)
+    if (!clause) {
+      diagnostics.push('privacy_violation')
+      continue
+    }
     const result = classifyClause(clause, question, evidenceItems, auth, words, subjects)
     if (!result.accepted) {
       if (result.diagnostic) diagnostics.push(result.diagnostic)
@@ -237,7 +288,7 @@ export function classifyMetroraProvenance(value: string, question: string, evide
     usedUserFact,
     usedDerivation,
     usedInterpretation,
-    removedClauses: Math.max(0, sentenceParts(safe).length - accepted.length),
+    removedClauses: Math.max(0, clauses.length - accepted.length),
     diagnostics: [...new Set(diagnostics)],
   }
 }

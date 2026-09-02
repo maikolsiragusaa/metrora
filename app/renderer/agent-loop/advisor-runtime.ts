@@ -1,7 +1,7 @@
 import { assertStrictBoundedAdvisorToolContent, normalizeAdvisorRuntimeToolCall } from '../advisor/contract'
 import { resolveAdvisorQuestion } from '../advisor/comprehension'
 import { hasMixedEvidenceScopes, mergeEvidence } from '../advisor/merge-evidence'
-import { evidenceUsable, buildAdvisorChatMessages, buildAdvisorConversationMessages, buildAdvisorEvidenceSynthesisMessages, finalizeAdvisorConversationAnswer, finalizeModelAnswer } from '../advisor/model-flow'
+import { evidenceUsable, buildAdvisorChatMessages, buildAdvisorConversationMessages, buildAdvisorEvidenceSynthesisMessages, finalizeAdvisorConversationAnswer, finalizeModelAnswer, type AdvisorGroundedRepair } from '../advisor/model-flow'
 import { runtimeGuardPlan } from '../advisor/planner'
 import { advisorQuestionRequiresCanonicalReads, requiredAdvisorToolRequests } from '../advisor/required-reads'
 import { HARNESS_TOOL_LOOP_LIMITS } from '../advisor/limits'
@@ -36,6 +36,8 @@ export type AdvisorAgentTransport = {
     stream: boolean
     continuation?: MetroraAgentContinuation
   }) => Record<string, unknown>
+  /** One bounded no-Tool provider call for grounded finalization recovery. */
+  repair?: AdvisorGroundedRepair
   reportConformance?: boolean
 }
 
@@ -294,6 +296,7 @@ export async function runAdvisorRuntimeAgentLoop(options: AdvisorAgentLoopOption
     finalContent: content,
     modelUsed: usedModel,
     fallbackNote: note,
+    groundedRepair: transport.repair,
   }, options.signal)
   return { ...answer, streamed: streamTurn && loop.streamed }
 }

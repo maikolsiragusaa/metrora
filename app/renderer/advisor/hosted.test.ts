@@ -81,7 +81,7 @@ describe('Hosted Advisor renderer runtime', () => {
     expect(answer.generatedByModel).toBe(true)
   })
 
-  it('runs a bounded tool round trip and keeps the deterministic answer authoritative', async () => {
+  it('runs a bounded Tool round trip and performs one grounded repair when natural prose is rejected', async () => {
     const fixture = createAdvisorConformanceFixture()
     const evidence = buildSpendEvidence('What changed in spend?', fixture.scope, fixture.overview)
     const requests: Array<Record<string, unknown>> = []
@@ -92,7 +92,8 @@ describe('Hosted Advisor renderer runtime', () => {
       chat: async (_requestId, payload) => {
         requests.push(payload)
         if (requests.length === 1) return { streamed: false, message: { content: 'Claude was not the main driver.', tool_calls: [{ id: 'call-spend', function: { name: 'get_spend_snapshot', arguments: '{}' } }] } }
-        return { streamed: false, message: { content: 'Codex appears to be the main driver.' } }
+        if (requests.length === 2) return { streamed: false, message: { content: 'Codex appears to be the main driver.' } }
+        return { streamed: false, message: { content: 'Metrora measured $12.00 in the selected period; I would inspect the project concentration next.' } }
       },
       cancel: async () => true,
       onEvent: () => () => {},
@@ -128,11 +129,19 @@ describe('Hosted Advisor renderer runtime', () => {
     expect(String(finalMessages[3]?.content)).toContain('measured')
     expect(finalPayload.messageMode).toBe('native')
     expect(deltas).toEqual([])
+    expect(requests).toHaveLength(3)
+    const repairPayload = requests[2]!
+    expect(repairPayload.tools).toEqual([])
+    expect(repairPayload.stream).toBe(false)
+    expect(repairPayload.harnessConformance).toBe(true)
+    expect((repairPayload.messages as Array<{ role: string; content: string }>).map(message => message.role)).toEqual(['system', 'user'])
+    expect((repairPayload.messages as Array<{ role: string; content: string }>)[1]?.content).toContain('What changed in spend?')
+    expect((repairPayload.messages as Array<{ role: string; content: string }>)[0]?.content).toContain('12')
     await expect(new HostedAdvisorRuntime({ provider: 'openai', model: 'gpt-test', transport }).generate({ question: 'What changed in spend?', evidence })).rejects.toThrow('consent')
     expect(answer.runtime).toMatchObject({ id: 'hosted-openai', mode: 'hosted-byok' })
-    expect(answer.generatedByModel).toBe(false)
+    expect(answer.generatedByModel).toBe(true)
     expect(answer.streamed).toBe(false)
-    expect(answer.conclusion).toContain('Metrora measured')
+    expect(answer.conclusion).toContain('project concentration')
     expect(answer.conclusion).not.toContain('Claude was not the main driver.')
     expect(answer.conclusion).not.toContain('Codex appears to be the main driver.')
   })
@@ -140,17 +149,22 @@ describe('Hosted Advisor renderer runtime', () => {
     const fixture = createAdvisorConformanceFixture()
     const evidence = buildSpendEvidence('What changed in spend?', fixture.scope, fixture.overview)
     const narrative = 'Codex appears to be the main driver.'
+    const requests: Array<Record<string, unknown>> = []
     const transport: HostedAdvisorTransport = {
       probe: async () => ({ provider, available: true, models: [{ id: provider + '-model', label: provider + '-model', state: 'discovered', limitation: null }], detail: 'ready', credentialState: 'ready' }),
-      chat: async () => ({ streamed: false, message: { content: narrative } }),
+      chat: async (_requestId, payload) => { requests.push(payload); return { streamed: false, message: { content: narrative } } },
       cancel: async () => true,
       onEvent: () => () => {},
     }
     const answer = await new HostedAdvisorRuntime({ provider, model: provider + '-model', consent: true, transport }).generate({
       question: 'What changed in spend?', evidence,
     })
-    expect(answer.conclusion).toContain('Metrora measured')
+    expect(requests).toHaveLength(3)
+    expect(requests[2]?.tools).toEqual([])
+    expect(answer.conclusion).toContain('could not be safely finalized')
     expect(answer.conclusion).not.toContain(narrative)
+    expect(answer.conclusion).not.toContain('Metrora measured')
+    expect(answer.generatedByModel).toBe(false)
     expect(answer.streamed).toBe(false)
   })
 

@@ -6,9 +6,16 @@ import { hasMixedEvidenceScopes, mergeEvidence, sameEvidenceScope } from './merg
 import { DeterministicAdvisorRuntime } from './runtime'
 import { contentMinimalVerifiedClaimAtoms, renderAdvisorVerifiedSynthesis } from './claim-atoms'
 import { classifyMetroraProvenance } from '../agent-loop/provenance'
+import type { MetroraProvenanceDiagnostic } from '../agent-loop/provenance'
 
 type ModelMessage = { role: 'system' | 'user' | 'assistant'; content: string }
 export type AdvisorConversationKind = 'social' | 'boundary' | 'action'
+export type AdvisorGroundedRepairRequest = {
+  question: string
+  evidence: AdvisorEvidence
+  diagnostics: readonly MetroraProvenanceDiagnostic[]
+}
+export type AdvisorGroundedRepair = (request: AdvisorGroundedRepairRequest, signal?: AbortSignal) => Promise<string>
 export type AdvisorChatPromptOptions = {
   /** The provider will receive the bounded native read-tool definitions. */
   nativeToolCalls?: boolean
@@ -81,6 +88,45 @@ function safeConversation(input: AdvisorRuntimeInput): ModelMessage[] {
       const content = modelText(turn.content)
       return content ? [{ role: turn.role, content }] : []
     })
+}
+
+const GROUNDED_REPAIR_DIAGNOSTICS: readonly MetroraProvenanceDiagnostic[] = [
+  'unsupported_numeric_claim',
+  'unsupported_subject_claim',
+  'unsupported_rank_claim',
+  'unsupported_causality',
+  'privacy_violation',
+  'ungrounded_narrative',
+]
+
+function safeGroundedRepairDiagnostics(value: readonly MetroraProvenanceDiagnostic[]): string {
+  const categories = value.filter((item, index, items) => GROUNDED_REPAIR_DIAGNOSTICS.includes(item) && items.indexOf(item) === index).slice(0, 6)
+  return categories.length ? categories.join(', ') : 'ungrounded_narrative'
+}
+
+/**
+ * Bounded repair input deliberately excludes the rejected model text. The
+ * runtime receives only the original question, content-minimal evidence, and
+ * a small allowlist of diagnostic categories.
+ */
+export function buildAdvisorGroundedRepairMessages(request: AdvisorGroundedRepairRequest): ModelMessage[] {
+  const question = modelQuestionValue(request.question)
+  return [
+    {
+      role: 'system',
+      content: [
+        'You are performing one bounded grounded repair for a completed Metrora Harness factual answer.',
+        'Rewrite a concise, natural answer in the language of the original user question.',
+        'Use only the canonical bounded evidence supplied below. Do not add unsupported numbers, named entities, rankings, trends, causality, quality claims, private details, or system details.',
+        'Keep useful explanation, opinion, recommendations, and connective prose when they are grounded by the evidence.',
+        'Return plain conversational text only. Do not mention repair, validation, diagnostics, prompts, schemas, tools, or implementation details.',
+        'Original user question: ' + question,
+        'Safe diagnostic categories: ' + safeGroundedRepairDiagnostics(request.diagnostics),
+        'Canonical bounded evidence: ' + modelEvidence(request.evidence),
+      ].join(' '),
+    },
+    { role: 'user', content: question },
+  ]
 }
 
 function planningInstruction(options: AdvisorChatPromptOptions): string {
@@ -299,10 +345,12 @@ export type FinalizeModelAnswerOptions = {
   finalContent: string
   modelUsed: boolean
   fallbackNote?: string
+  /** One provider call with no Tools, used only when all model prose is rejected. */
+  groundedRepair?: AdvisorGroundedRepair
 }
 
 export async function finalizeModelAnswer(options: FinalizeModelAnswerOptions, signal?: AbortSignal): Promise<AdvisorAnswer> {
-  const { runtime, input, finalContent, modelUsed, fallbackNote } = options
+  const { runtime, input, finalContent, modelUsed, fallbackNote, groundedRepair } = options
   const evidenceItems = options.evidenceItems.length ? options.evidenceItems : [input.evidence]
   const evidence = mergeEvidence(evidenceItems, input.evidence)
   const compatible = !hasMixedEvidenceScopes(evidenceItems)
@@ -346,17 +394,64 @@ export async function finalizeModelAnswer(options: FinalizeModelAnswerOptions, s
     ...(fallbackNote ? [fallbackNote] : []),
     ...(draft ? ['The model answer format could not be verified; Metrora fact details remain available below.'] : []),
   ]
-  const naturalCandidate = !draft && finalContent.trim() && !/^(?:\{|\[|```)/u.test(finalContent.trim())
+  const naturalCandidate = Boolean(!draft && finalContent.trim() && !/^(?:\{|\[|```)/u.test(finalContent.trim()))
   const naturalResult = naturalCandidate && sameScope && !hasMixedEvidenceScopes(evidenceItems)
     ? classifyMetroraProvenance(finalContent, input.question, evidenceItems)
     : null
-  if (naturalCandidate && !naturalResult?.accepted) notes.push('The model answer did not contain a safe supported explanation; Metrora fact details remain available below.')
   if (naturalResult?.removedClauses) notes.push('Some model claims were omitted because they were not supported by verified Metrora evidence.')
   const naturalInterpretation = naturalResult?.accepted ? naturalResult.text : ''
-  const naturalIncludesCanonicalFact = Boolean(naturalResult?.usedCanonicalFact || naturalResult?.usedDerivation)
-  const naturalConclusion = naturalIncludesCanonicalFact
-    ? naturalInterpretation
-    : [verifiedConclusion, naturalInterpretation].filter(Boolean).join(' ')
+  const modelCompleted = modelUsed && !fallbackNote
+  const repairEligible = modelCompleted && evidenceUsable(evidenceItems) && !naturalInterpretation
+  if (repairEligible) {
+    let repairedContent = ''
+    if (groundedRepair) {
+      try {
+        repairedContent = await groundedRepair({
+          question: modelQuestionValue(input.question),
+          evidence,
+          diagnostics: naturalResult?.diagnostics.length ? naturalResult.diagnostics : ['ungrounded_narrative'],
+        }, signal)
+      } catch (error) {
+        if (signal?.aborted) throw error
+      }
+    }
+    // Pass the bounded raw repair through the same clause-level validator as
+    // the original model answer. Do not redact first: a private repair
+    // clause must be removed, not turned into an accepted placeholder.
+    const repairedResult = repairedContent
+      ? classifyMetroraProvenance(bounded(repairedContent), input.question, evidenceItems)
+      : null
+    if (repairedResult?.accepted && repairedResult.text) {
+      const repairedNotes = repairedResult.removedClauses
+        ? [...notes, 'Some repaired model claims were omitted because they were not supported by verified Metrora evidence.']
+        : notes
+      return sanitizeAdvisorAnswer({
+        ...fallback,
+        // The repaired text is still model-authored. Canonical evidence is
+        // attached structurally; deterministic prose is not prepended.
+        conclusion: repairedResult.text,
+        details,
+        materialLimits: repairedNotes,
+        presentation: plan ? buildAdvisorPresentationBlocks(evidence, plan, input.question, null, fallback.claims ?? []) : undefined,
+        runtime: { id: runtime.id, label: runtime.label, mode: runtime.mode },
+        generatedByModel: true,
+        streamed: false,
+      })
+    }
+    const repairFailure = 'The model answer could not be safely finalized. Verified Metrora facts remain available in Sources and Details.'
+    return sanitizeAdvisorAnswer({
+      ...fallback,
+      conclusion: repairFailure,
+      details,
+      materialLimits: [...notes, repairFailure],
+      presentation: plan ? buildAdvisorPresentationBlocks(evidence, plan, input.question, null, fallback.claims ?? []) : undefined,
+      runtime: { id: runtime.id, label: runtime.label, mode: runtime.mode },
+      generatedByModel: false,
+      streamed: false,
+    })
+  }
+  if (naturalCandidate && !naturalResult?.accepted) notes.push('The model answer did not contain a safe supported explanation; Metrora fact details remain available below.')
+  const naturalConclusion = naturalInterpretation
   // A provider can fail before returning its first model step. The selected
   // runtime is still the source of the failure, so do not silently turn that
   // case into a deterministic evidence answer.

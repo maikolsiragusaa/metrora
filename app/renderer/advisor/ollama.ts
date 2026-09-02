@@ -1,6 +1,7 @@
 import { metrora } from '../lib/ipc'
-import { buildAdvisorSwarmSynthesisMessages } from './model-flow'
-import { raceAdvisorAbort } from './abort'
+import { buildAdvisorGroundedRepairMessages, buildAdvisorSwarmSynthesisMessages, type AdvisorGroundedRepairRequest } from './model-flow'
+import { createAdvisorTurnDeadline, raceAdvisorAbort } from './abort'
+import { HARNESS_TOOL_LOOP_LIMITS } from './limits'
 import { runAdvisorRuntimeAgentLoop } from '../agent-loop/advisor-runtime'
 import { serializeMetroraAgentMessages, type MetroraAgentMessage } from '../agent-loop/contracts'
 import type { AdvisorAnswer, AdvisorModelRuntime, AdvisorReasoningEffort, AdvisorRuntimeInput, AdvisorSwarmSynthesisInput, AdvisorSwarmSynthesisResult } from './types'
@@ -92,6 +93,32 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
     this.nativeToolCalls = options.nativeToolCalls ?? true
   }
 
+  private async generateGroundedRepair(request: AdvisorGroundedRepairRequest, signal?: AbortSignal): Promise<string> {
+    if (this.availability !== 'ready') throw new Error(this.unavailableMessage)
+    throwIfAborted(signal)
+    const deadline = createAdvisorTurnDeadline(signal, HARNESS_TOOL_LOOP_LIMITS.turnTimeoutMs)
+    const activeRequestId = requestId('grounded-repair')
+    const cancel = () => { void this.transport.cancel(activeRequestId).catch(() => {}) }
+    deadline.signal.addEventListener('abort', cancel, { once: true })
+    try {
+      const response = await raceAdvisorAbort(this.transport.chat(activeRequestId, {
+        model: this.model,
+        messages: serializeMetroraAgentMessages(buildAdvisorGroundedRepairMessages(request) as readonly MetroraAgentMessage[]),
+        tools: [],
+        stream: false,
+        messageMode: this.nativeToolCalls ? 'native' : 'flattened',
+      }, deadline.signal), deadline.signal)
+      throwIfAborted(deadline.signal)
+      if (response.message?.tool_calls?.length) throw new Error('Grounded repair returned an unexpected Tool call.')
+      const answer = boundedModelText(response.message?.content)
+      if (!answer.trim()) throw new Error('Grounded repair returned no usable answer.')
+      return answer
+    } finally {
+      deadline.signal.removeEventListener('abort', cancel)
+      deadline.dispose()
+    }
+  }
+
   async generateSwarmSynthesis(input: AdvisorSwarmSynthesisInput, signal?: AbortSignal): Promise<AdvisorSwarmSynthesisResult> {
     if (this.availability !== 'ready') throw new Error(this.unavailableMessage)
     throwIfAborted(signal)
@@ -148,6 +175,7 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
             stream,
             messageMode: this.nativeToolCalls ? 'native' : 'flattened',
           }),
+          repair: (request, requestSignal) => this.generateGroundedRepair(request, requestSignal),
         },
       })
     } finally {

@@ -371,4 +371,77 @@ describe('Metrora provenance classification', () => {
     expect(result.text).toContain('investigate the breakdown')
     expect(result.diagnostics).toContain('unsupported_subject_claim')
   })
+
+  it.each([
+    'Metrora measured $4,130.90 in the selected period.',
+    'Metrora measured $4.130,90 in the selected period.',
+    'Metrora measured $4,130.9 in the selected period.',
+    'Metrora measured $4,131 in the selected period.',
+    'Metrora measured about $4.1k in the selected period.',
+  ])('accepts semantic numeric representations of one canonical amount: %s', text => {
+    const evidence: AdvisorEvidence = {
+      ...spendEvidence,
+      spend: { ...spendEvidence.spend!, measuredCostUSD: 4_130.90 },
+    }
+    const result = classifyMetroraProvenance(text, 'How much did I spend?', [evidence])
+    expect(result.accepted).toBe(true)
+    expect(result.usedCanonicalFact).toBe(true)
+  })
+
+  it.each([
+    'Metrora measured $68.52 in the selected period.',
+    'Metrora measured $68.5 in the selected period.',
+    'Metrora measured about $69 in the selected period.',
+  ])('accepts rounded semantic representations of a second canonical amount: %s', text => {
+    const evidence: AdvisorEvidence = {
+      ...spendEvidence,
+      spend: { ...spendEvidence.spend!, measuredCostUSD: 68.52 },
+    }
+    const result = classifyMetroraProvenance(text, 'How much did I spend?', [evidence])
+    expect(result.accepted).toBe(true)
+    expect(result.usedCanonicalFact).toBe(true)
+  })
+
+  it('keeps a deterministic threshold delta while rejecting an unrelated amount', () => {
+    const evidence: AdvisorEvidence = {
+      ...spendEvidence,
+      spend: { ...spendEvidence.spend!, measuredCostUSD: 4_130.90 },
+    }
+    const grounded = classifyMetroraProvenance('You are about $131 above your $4k threshold, so I would review the breakdown.', 'Did I exceed $4,000?', [evidence])
+    expect(grounded.accepted).toBe(true)
+    expect(grounded.usedDerivation).toBe(true)
+    const unsupported = classifyMetroraProvenance('Metrora measured $5,000 in the selected period.', 'How much did I spend?', [evidence])
+    expect(unsupported.accepted).toBe(false)
+    expect(unsupported.diagnostics).toContain('unsupported_numeric_claim')
+  })
+
+  it.each([
+    'Ho speso circa $4,1k nel periodo selezionato. Vale la pena controllare il dettaglio.',
+    'About $4.1k was measured in the selected period. I would review the breakdown.',
+    'Se midieron unos $4,1k en el periodo seleccionado. Conviene revisar el detalle.',
+  ])('keeps grounded multilingual prose with semantic numeric rendering: %s', text => {
+    const evidence: AdvisorEvidence = {
+      ...spendEvidence,
+      spend: { ...spendEvidence.spend!, measuredCostUSD: 4_130.90 },
+    }
+    const result = classifyMetroraProvenance(text, 'How much did I spend?', [evidence])
+    expect(result.accepted).toBe(true)
+    expect(result.removedClauses).toBe(0)
+    expect(result.usedCanonicalFact).toBe(true)
+    expect(result.usedInterpretation).toBe(true)
+  })
+
+  it('removes only a private clause while retaining safe grounded clauses', () => {
+    const evidence: AdvisorEvidence = {
+      ...spendEvidence,
+      spend: { ...spendEvidence.spend!, measuredCostUSD: 4_130.90 },
+    }
+    const result = classifyMetroraProvenance('Metrora measured $4,130.90 in the selected period. API key: sk-secret-1234567890. I would review the breakdown next.', 'How much did I spend?', [evidence])
+    expect(result.accepted).toBe(true)
+    expect(result.removedClauses).toBe(1)
+    expect(result.text).toContain('$4,130.90')
+    expect(result.text).toContain('review the breakdown')
+    expect(result.text).not.toContain('sk-secret')
+    expect(result.diagnostics).toContain('privacy_violation')
+  })
 })

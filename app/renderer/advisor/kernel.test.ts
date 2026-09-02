@@ -9,7 +9,7 @@ import { OllamaAdvisorRuntime } from './ollama'
 import { DeterministicAdvisorRuntime } from './runtime'
 import { createAdvisorOverviewSnapshot } from './tools'
 import { advisorPinnedHarnessContext } from './types'
-import type { AdvisorDataSource, AdvisorModelRuntime, AdvisorRuntimeInput, AdvisorScope } from './types'
+import type { AdvisorDataSource, AdvisorHarnessTaskContextV1, AdvisorModelRuntime, AdvisorRuntimeInput, AdvisorScope } from './types'
 
 const scope: AdvisorScope = { period: 'week', range: null, provider: 'all', projectId: 'all', projectName: 'All projects', model: null }
 const measured = {
@@ -235,6 +235,97 @@ describe('Advisor model planning boundary', () => {
     ]))
     expect(answer.generatedByModel).toBe(true)
     expect(answer.conclusion).toContain('$12.00')
+  })
+
+  it.each([
+    { period: 'lifetime' as const, initialQuestion: 'How much have I spent in lifetime?' },
+    { period: 'week' as const, initialQuestion: 'How much have I spent this week?' },
+  ])('keeps an unpinned %s Tool follow-up on the resolved task period', async ({ period, initialQuestion }) => {
+    const fixture = createAdvisorConformanceFixture()
+    const requests: Array<Record<string, unknown>> = []
+    let calls = 0
+    const runtime = new OllamaAdvisorRuntime({
+      model: 'continuity-model',
+      transport: {
+        probe: async () => ({ available: true, models: ['continuity-model'], detail: 'continuity' }),
+        cancel: async () => true,
+        onDelta: () => () => {},
+        chat: async (_requestId, payload) => {
+          requests.push(payload)
+          calls += 1
+          return calls === 2
+            ? { streamed: false, message: { content: '', tool_calls: [{ id: 'continuity-drivers', function: { name: 'get_project_drivers', arguments: '{}' } }] } }
+            : { streamed: false, message: { content: 'Metrora measured $12.00 in the selected period; I would inspect the project breakdown next.' } }
+        },
+      },
+    })
+    const kernel = createAdvisorKernel(fixture.source, runtime)
+    const shellScope = { ...fixture.scope, period: 'today' as const }
+    await kernel.investigate({ question: initialQuestion, scope: shellScope })
+    const taskScope = { ...fixture.scope, period }
+    const taskContext: AdvisorHarnessTaskContextV1 = {
+      contractVersion: 'advisor-harness-task-context-v1',
+      schemaVersion: 1,
+      sourceTurnId: 'continuity-turn',
+      kind: 'factual',
+      originalRequest: initialQuestion,
+      scope: taskScope,
+      checkedDomains: ['usage-totals', 'projects'],
+      status: 'completed',
+      availableToolNames: ['get_spend_snapshot', 'get_project_drivers'],
+    }
+    const answer = await kernel.investigate({ question: 'Which projects contributed?', scope: shellScope, taskContext })
+
+    expect(fixture.reads.overviews).toHaveLength(3)
+    expect(fixture.reads.overviews.every(read => read.period === period)).toBe(true)
+    expect(requests).toHaveLength(3)
+    expect((requests[0]?.messages as Array<{ content: string }>).some(message => message.content.includes(initialQuestion))).toBe(true)
+    expect((requests[1]?.messages as Array<{ content: string }>).some(message => message.content.includes('Which projects contributed?'))).toBe(true)
+    expect(answer.generatedByModel).toBe(true)
+    expect(answer.conclusion).toContain('project breakdown')
+  })
+
+  it('allows an explicit new period to start a new unpinned task scope', async () => {
+    const fixture = createAdvisorConformanceFixture()
+    const runtime = new OllamaAdvisorRuntime({
+      model: 'scope-switch-model',
+      transport: {
+        probe: async () => ({ available: true, models: ['scope-switch-model'], detail: 'scope switch' }),
+        cancel: async () => true,
+        onDelta: () => () => {},
+        chat: async () => ({ streamed: false, message: { content: 'Metrora measured $12.00 in the selected period.' } }),
+      },
+    })
+    const kernel = createAdvisorKernel(fixture.source, runtime)
+    const shellScope = { ...fixture.scope, period: 'today' as const }
+    const taskScope = { ...fixture.scope, period: 'lifetime' as const }
+    const taskContext: AdvisorHarnessTaskContextV1 = {
+      contractVersion: 'advisor-harness-task-context-v1',
+      schemaVersion: 1,
+      sourceTurnId: 'scope-switch-turn',
+      kind: 'factual',
+      originalRequest: 'How much have I spent in lifetime?',
+      scope: taskScope,
+      checkedDomains: ['usage-totals'],
+      status: 'completed',
+      availableToolNames: ['get_spend_snapshot'],
+    }
+    await kernel.investigate({ question: 'How much have I spent this week?', scope: shellScope, taskContext })
+
+    expect(fixture.reads.overviews).toHaveLength(1)
+    expect(fixture.reads.overviews[0]?.period).toBe('week')
+  })
+
+  it('keeps a pinned period restrictive when the question names another period', async () => {
+    const fixture = createAdvisorConformanceFixture()
+    const answer = await createAdvisorKernel(fixture.source, new DeterministicAdvisorRuntime()).investigate({
+      question: 'Which projects contributed this week?',
+      scope: { ...fixture.scope, period: 'lifetime', harnessContext: advisorPinnedHarnessContext('period') },
+    })
+
+    expect(fixture.reads.overviews).toHaveLength(0)
+    expect(answer.understanding?.scopeConflict).toMatchObject({ currentPeriod: 'lifetime', requestedPeriod: 'week' })
+    expect(answer.evidence).toEqual([])
   })
 
   it('reports a selected-model failure without switching into deterministic evidence mode', async () => {
