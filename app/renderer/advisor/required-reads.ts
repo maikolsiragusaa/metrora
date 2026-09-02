@@ -35,20 +35,20 @@ export type RequiredAdvisorReadsResult = {
 const FACTUAL_INTENTS = new Set(['spend-change', 'model-efficiency', 'quota-capacity', 'bench-result'])
 
 const READ_TOOL_PALETTES: Readonly<Record<string, readonly AdvisorToolName[]>> = Object.freeze({
-  usage: ['get_spend_snapshot', 'get_model_efficiency', 'get_project_drivers', 'get_session_highlights', 'get_overview_snapshot', 'get_coverage_report'],
-  spend: ['get_spend_snapshot', 'get_model_efficiency', 'get_project_drivers', 'get_session_highlights', 'get_overview_snapshot', 'get_coverage_report'],
-  tokens: ['get_spend_snapshot', 'get_model_efficiency', 'get_overview_snapshot', 'get_coverage_report'],
-  cache: ['get_spend_snapshot', 'get_model_efficiency', 'get_overview_snapshot', 'get_coverage_report'],
-  reasoning: ['get_spend_snapshot', 'get_model_efficiency', 'get_overview_snapshot', 'get_coverage_report'],
-  models: ['get_model_efficiency', 'get_spend_snapshot', 'get_project_drivers', 'get_coverage_report'],
-  providers: ['get_quota_snapshot', 'get_spend_snapshot', 'get_overview_snapshot', 'get_coverage_report'],
-  projects: ['get_project_drivers', 'get_spend_snapshot', 'get_model_efficiency', 'get_session_highlights', 'get_coverage_report'],
-  sessions: ['get_session_highlights', 'get_project_drivers', 'get_spend_snapshot', 'get_model_efficiency', 'get_coverage_report'],
-  pricing: ['get_model_efficiency', 'get_spend_snapshot', 'get_coverage_report'],
-  quota: ['get_quota_snapshot', 'get_spend_snapshot', 'get_overview_snapshot', 'get_coverage_report'],
-  bench: ['get_bench_evidence', 'get_coverage_report'],
+  usage: ['get_spend_snapshot', 'get_model_efficiency', 'get_project_drivers', 'get_session_highlights', 'get_overview_snapshot'],
+  spend: ['get_spend_snapshot', 'get_model_efficiency', 'get_project_drivers', 'get_session_highlights', 'get_overview_snapshot'],
+  tokens: ['get_spend_snapshot', 'get_model_efficiency', 'get_overview_snapshot'],
+  cache: ['get_spend_snapshot', 'get_model_efficiency', 'get_overview_snapshot'],
+  reasoning: ['get_spend_snapshot', 'get_model_efficiency', 'get_overview_snapshot'],
+  models: ['get_model_efficiency', 'get_spend_snapshot', 'get_project_drivers'],
+  providers: ['get_quota_snapshot', 'get_spend_snapshot', 'get_overview_snapshot'],
+  projects: ['get_project_drivers', 'get_spend_snapshot', 'get_model_efficiency', 'get_session_highlights'],
+  sessions: ['get_session_highlights', 'get_project_drivers', 'get_spend_snapshot', 'get_model_efficiency'],
+  pricing: ['get_model_efficiency', 'get_spend_snapshot'],
+  quota: ['get_quota_snapshot', 'get_spend_snapshot', 'get_overview_snapshot'],
+  bench: ['get_bench_evidence'],
   evidence: ['get_coverage_report', 'get_spend_snapshot', 'get_model_efficiency', 'get_project_drivers'],
-  unknown: ['get_spend_snapshot', 'get_model_efficiency', 'get_project_drivers', 'get_session_highlights', 'get_overview_snapshot', 'get_coverage_report'],
+  unknown: ['get_spend_snapshot', 'get_model_efficiency', 'get_project_drivers', 'get_session_highlights', 'get_overview_snapshot'],
 })
 
 const INVESTIGATION_MARKERS = /\b(?:check|inspect|investigat\w*|look\s+into|analy[sz]\w*|review|data|evidence|measured|usage|spend|spent|cost|quota|capacity|model|provider|project|session|pricing|benchmark|metrora|lifetime|today|week|month)\b/iu

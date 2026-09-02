@@ -176,11 +176,11 @@ export class MetroraAgentLoop {
       if (ledger.length >= bounds.maxLedgerMessages || bytes(message.content) > bounds.maxContentBytes) throw new Error('agent_ledger_limit')
       ledger.push(cloneMessage(message))
     }
-    const executeOne = async (call: MetroraAgentToolCall, step: number): Promise<void> => {
+    const executeOne = async (call: MetroraAgentToolCall, step: number, validationTools: readonly unknown[]): Promise<void> => {
       if (controller.signal.aborted) throw abortError()
       const safeName = safeAgentEventText(call.name, 96) ?? 'unknown-tool'
       emit('tool-queued', { step, tool: safeName, callId: call.id })
-      const validation = (options.validateToolCall ?? (candidate => defaultValidation(candidate, options.tools)))(call)
+      const validation = (options.validateToolCall ?? (candidate => defaultValidation(candidate, validationTools)))(call, validationTools)
       if (!validation.ok) {
         diagnostics.push(validation.diagnostic)
         emit('tool-unavailable', { step, tool: safeName, callId: call.id, detail: validation.diagnostic })
@@ -208,7 +208,7 @@ export class MetroraAgentLoop {
         emit('tool-failed', { step, tool: safeName, callId: validCall.id, detail: diagnostic })
       }
     }
-    const executeCalls = async (calls: readonly MetroraAgentToolCall[], step: number, appendAssistantToolCall = false): Promise<boolean> => {
+    const executeCalls = async (calls: readonly MetroraAgentToolCall[], step: number, validationTools: readonly unknown[], appendAssistantToolCall = false): Promise<boolean> => {
       if (toolRounds >= bounds.maxToolRounds) {
         diagnostics.push('tool_round_limit')
         return false
@@ -222,7 +222,7 @@ export class MetroraAgentLoop {
       if (appendAssistantToolCall) append({ role: 'assistant', content: '', toolCalls: accepted })
       toolCalls += accepted.length
       toolRounds += 1
-      for (const call of accepted) await executeOne(call, step)
+      for (const call of accepted) await executeOne(call, step, validationTools)
       if (accepted.length < calls.length) diagnostics.push('tool_limit')
       return accepted.length === calls.length
     }
@@ -248,10 +248,13 @@ export class MetroraAgentLoop {
           return finish('limit')
         }
         modelSteps += 1
-        emit('model-started', { step: modelSteps })
+        const synthesisOnly = modelSteps === bounds.maxSteps
+        const stepTools = synthesisOnly ? [] : options.tools
+        const phase = synthesisOnly ? 'synthesize' as const : 'investigate' as const
+        emit('model-started', { step: modelSteps, detail: phase })
         let step: MetroraAgentModelStep
         try {
-          step = await raceAbort(Promise.resolve().then(() => options.complete({ ledger: ledger.map(cloneMessage), tools: options.tools, step: modelSteps, signal: controller.signal, ...(continuation ? { continuation: cloneContinuation(continuation) } : {}) })), controller.signal)
+          step = await raceAbort(Promise.resolve().then(() => options.complete({ ledger: ledger.map(cloneMessage), tools: stepTools, step: modelSteps, phase, signal: controller.signal, ...(continuation ? { continuation: cloneContinuation(continuation) } : {}) })), controller.signal)
         } catch (error) {
           if (isAbortLike(error) || controller.signal.aborted) throw error
           const diagnostic = error && typeof error === 'object' && 'diagnostic' in error && typeof (error as { diagnostic?: unknown }).diagnostic === 'string'
@@ -271,12 +274,20 @@ export class MetroraAgentLoop {
         continuation = cloneContinuation(step.continuation)
         append({ role: 'assistant', content: step.content, ...(step.calls.length ? { toolCalls: step.calls } : {}) })
         if (step.kind === 'tool-calls') {
+          if (synthesisOnly) {
+            // The final completion is reserved for a no-Tool answer. A
+            // provider request here is recorded as a bounded failure but is
+            // never dispatched or counted as a third Tool round.
+            diagnostics.push('synthesis_tool_request')
+            emit('turn-failed', { step: modelSteps, detail: 'synthesis_tool_request' })
+            return finish('limit')
+          }
           if (toolRounds >= bounds.maxToolRounds) {
             diagnostics.push('tool_round_limit')
             emit('turn-failed', { step: modelSteps, detail: 'tool_round_limit' })
             return finish('limit')
           }
-          const allAccepted = await executeCalls(step.calls, modelSteps)
+          const allAccepted = await executeCalls(step.calls, modelSteps, stepTools)
           if (!allAccepted) {
             emit('turn-failed', { step: modelSteps, detail: 'tool_limit' })
             return finish('limit')
@@ -288,7 +299,7 @@ export class MetroraAgentLoop {
         if (!requiredReady && !baselineAttempted && baselineCalls().length) {
           const calls = baselineCalls()
           baselineAttempted = true
-          const allAccepted = await executeCalls(calls, modelSteps, true)
+          const allAccepted = await executeCalls(calls, modelSteps, options.tools, true)
           requiredReady = this.requiredReady(requiredState)
           if (!allAccepted) {
             emit('turn-failed', { step: modelSteps, detail: 'tool_limit' })

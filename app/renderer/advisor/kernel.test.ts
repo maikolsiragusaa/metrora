@@ -175,8 +175,16 @@ describe('Advisor model planning boundary', () => {
     await createAdvisorKernel(data, capturingRuntime(inputs)).investigate({ question: 'Please investigate this Metrora data.', scope })
 
     expect(data.getOverview).not.toHaveBeenCalled()
-    expect(inputs[0]?.tools?.map(tool => tool.function.name)).toEqual(expect.arrayContaining(['get_spend_snapshot', 'get_project_drivers', 'get_coverage_report']))
+    expect(inputs[0]?.tools?.map(tool => tool.function.name)).toEqual(expect.arrayContaining(['get_spend_snapshot', 'get_project_drivers']))
+    expect(inputs[0]?.tools?.map(tool => tool.function.name)).not.toContain('get_coverage_report')
     expect(inputs[0]?.tools?.length).toBeLessThanOrEqual(7)
+  })
+
+  it('keeps the coverage Tool available for an explicit evidence question', async () => {
+    const inputs: AdvisorRuntimeInput[] = []
+    await createAdvisorKernel(source(), capturingRuntime(inputs)).investigate({ question: 'How complete is the evidence coverage?', scope })
+
+    expect(inputs[0]?.tools?.map(tool => tool.function.name)).toContain('get_coverage_report')
   })
 
   it('does not fetch or manufacture evidence for an unrecognized no-tool question', async () => {

@@ -223,6 +223,77 @@ describe('MetroraAgentLoop', () => {
     expect(output.toolRounds).toBe(2)
   })
 
+  it('reserves the final model step for no-Tool synthesis without changing the bounds', async () => {
+    const contexts: Array<{ step: number; phase: string; tools: readonly unknown[] }> = []
+    const output = await run({
+      bounds: { ...bounds, maxSteps: 3, maxToolRounds: 2, maxCallsPerTurn: 4 },
+      complete: async context => {
+        contexts.push({ step: context.step, phase: context.phase, tools: context.tools })
+        return context.step === 1
+          ? toolStep(call('round-one'))
+          : context.step === 2
+            ? toolStep(call('round-two'))
+            : step('Both bounded reads were synthesized into a terminal answer.')
+      },
+    })
+
+    expect(output.status).toBe('completed')
+    expect(output.modelSteps).toBe(3)
+    expect(output.toolCalls).toBe(2)
+    expect(output.toolRounds).toBe(2)
+    expect(contexts.map(context => [context.step, context.phase])).toEqual([[1, 'investigate'], [2, 'investigate'], [3, 'synthesize']])
+    expect(contexts[0]?.tools).toEqual([spendTool])
+    expect(contexts[1]?.tools).toEqual([spendTool])
+    expect(contexts[2]?.tools).toEqual([])
+    expect(output.finalText).toContain('terminal answer')
+  })
+
+  it('keeps a failed Tool in the budget while allowing the reserved synthesis step', async () => {
+    const executed: string[] = []
+    const output = await run({
+      bounds: { ...bounds, maxSteps: 3, maxToolRounds: 2, maxCallsPerTurn: 4 },
+      complete: async context => context.step === 1
+        ? toolStep(call('failed-read'))
+        : context.step === 2
+          ? toolStep(call('successful-read'))
+          : step('The successful evidence is sufficient for a bounded answer.'),
+      executeTool: async current => {
+        executed.push(current.id)
+        if (current.id === 'failed-read') throw new Error('source unavailable')
+        return result()
+      },
+    })
+
+    expect(output.status).toBe('completed')
+    expect(executed).toEqual(['failed-read', 'successful-read'])
+    expect(output.toolCalls).toBe(2)
+    expect(output.toolRounds).toBe(2)
+    expect(output.diagnostics).toContain('tool_execution_failed')
+    expect(output.finalText).toContain('sufficient')
+  })
+
+  it('fails closed when the provider requests a Tool on the synthesis step', async () => {
+    const execute = vi.fn(async () => result())
+    const contexts: Array<{ step: number; phase: string; tools: readonly unknown[] }> = []
+    const output = await run({
+      bounds: { ...bounds, maxSteps: 3, maxToolRounds: 2, maxCallsPerTurn: 4 },
+      complete: async context => {
+        contexts.push({ step: context.step, phase: context.phase, tools: context.tools })
+        return context.step < 3 ? toolStep(call('allowed-' + context.step)) : toolStep(call('forbidden-synthesis-read'))
+      },
+      executeTool: execute,
+    })
+
+    expect(output.status).toBe('limit')
+    expect(output.diagnostics).toContain('synthesis_tool_request')
+    expect(output.modelSteps).toBe(3)
+    expect(output.toolCalls).toBe(2)
+    expect(output.toolRounds).toBe(2)
+    expect(execute).toHaveBeenCalledTimes(2)
+    expect(contexts[2]?.phase).toBe('synthesize')
+    expect(contexts[2]?.tools).toEqual([])
+  })
+
   it('executes a required baseline read when the model answers prematurely', async () => {
     const seen: string[][] = []
     const output = await run({
@@ -300,6 +371,48 @@ describe('MetroraAgentLoop', () => {
       expect(output.status).toBe('timeout')
       resolve?.()
       expect(output.finalText).toBe('')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('cancels while the reserved terminal synthesis completion is pending', async () => {
+    const controller = new AbortController()
+    let markStarted: (() => void) | undefined
+    const started = new Promise<void>(resolve => { markStarted = resolve })
+    const pending = run({
+      signal: controller.signal,
+      bounds: { ...bounds, maxSteps: 3, maxToolRounds: 2 },
+      complete: async context => {
+        if (context.step < 3) return toolStep(call('read-' + context.step))
+        markStarted?.()
+        return new Promise<MetroraAgentModelStep>(() => {})
+      },
+    })
+
+    await started
+    controller.abort()
+    const output = await pending
+    expect(output.status).toBe('cancelled')
+    expect(output.modelSteps).toBe(3)
+    expect(output.finalText).toBe('')
+  })
+
+  it('applies the turn deadline to the reserved terminal synthesis completion', async () => {
+    vi.useFakeTimers()
+    try {
+      const pending = run({
+        bounds: { ...bounds, maxSteps: 3, maxToolRounds: 2, turnTimeoutMs: 10 },
+        complete: async context => {
+          if (context.step < 3) return toolStep(call('read-' + context.step))
+          return new Promise<MetroraAgentModelStep>(() => {})
+        },
+      })
+      await vi.advanceTimersByTimeAsync(10)
+      const output = await pending
+      expect(output.status).toBe('timeout')
+      expect(output.modelSteps).toBe(3)
+      expect(output.diagnostics).toContain('deadline')
     } finally {
       vi.useRealTimers()
     }

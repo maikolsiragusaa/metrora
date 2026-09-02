@@ -157,6 +157,136 @@ describe('Ollama Advisor renderer state machine', () => {
     expect(deltas).toEqual([])
   })
 
+  it('uses per-step Tool definitions and sends no native Tools on terminal synthesis', async () => {
+    const payloads: Array<Record<string, unknown>> = []
+    let calls = 0
+    const definitions = [
+      { type: 'function' as const, function: { name: 'get_spend_snapshot', description: 'spend', parameters: { type: 'object' } } },
+      { type: 'function' as const, function: { name: 'get_project_drivers', description: 'projects', parameters: { type: 'object' } } },
+    ]
+    const runtime = new OllamaAdvisorRuntime({
+      model: 'terminal-synthesis-model',
+      transport: {
+        probe: async () => ({ available: true, models: ['terminal-synthesis-model'], detail: 'ready' }),
+        cancel: async () => true,
+        onDelta: () => () => {},
+        chat: async (_requestId, payload) => {
+          payloads.push(payload)
+          calls += 1
+          if (calls === 1) return { streamed: false, message: { content: '', tool_calls: [{ function: { name: 'get_spend_snapshot', arguments: '{}' } }] } }
+          if (calls === 2) return { streamed: false, message: { content: '', tool_calls: [{ function: { name: 'get_project_drivers', arguments: '{}' } }] } }
+          return { streamed: false, message: { content: 'Metrora measured $12.00 in the selected period; I would inspect the project breakdown next.' } }
+        },
+      },
+    })
+    const answer = await runtime.generate({
+      question: 'What changed in spend?',
+      evidence: spendEvidence,
+      tools: definitions,
+      executeTool: async name => ({ content: JSON.stringify({ tool: name }), evidence: spendEvidence }),
+    })
+
+    expect(payloads).toHaveLength(3)
+    expect((payloads[0]?.tools as Array<{ function: { name: string } }>).map(tool => tool.function.name)).toEqual(['get_spend_snapshot', 'get_project_drivers'])
+    expect((payloads[1]?.tools as Array<{ function: { name: string } }>).map(tool => tool.function.name)).toEqual(['get_spend_snapshot', 'get_project_drivers'])
+    expect(payloads[2]?.tools).toEqual([])
+    const synthesisMessages = payloads[2]?.messages as Array<{ role: string; content: string }>
+    expect(synthesisMessages.some(message => message.content.includes('No additional Metrora data reads are available'))).toBe(true)
+    expect(synthesisMessages.filter(message => message.role === 'user')).toEqual((payloads[0]?.messages as Array<{ role: string; content: string }>).filter(message => message.role === 'user'))
+    expect(answer.generatedByModel).toBe(true)
+    expect(answer.conclusion).toContain('project breakdown')
+  })
+
+  it('keeps a failed model Tool attempt while reaching terminal synthesis with successful evidence', async () => {
+    const payloads: Array<Record<string, unknown>> = []
+    let calls = 0
+    let executed = 0
+    const runtime = new OllamaAdvisorRuntime({
+      model: 'failed-tool-synthesis-model',
+      transport: {
+        probe: async () => ({ available: true, models: ['failed-tool-synthesis-model'], detail: 'ready' }),
+        cancel: async () => true,
+        onDelta: () => () => {},
+        chat: async (_requestId, payload) => {
+          payloads.push(payload)
+          calls += 1
+          if (calls === 1) return { streamed: false, message: { content: '', tool_calls: [{ function: { name: 'get_model_efficiency', arguments: '{}' } }] } }
+          if (calls === 2) return { streamed: false, message: { content: '', tool_calls: [{ function: { name: 'get_project_drivers', arguments: '{}' } }] } }
+          return { streamed: false, message: { content: 'One requested read was unavailable. The available evidence supports further inspection; I would review the contributing rows next.' } }
+        },
+      },
+    })
+    const answer = await runtime.generate({
+      question: 'What changed in spend?',
+      evidence: spendEvidence,
+      requiredEvidence: [spendEvidence],
+      requiredToolRequests: [],
+      tools: [
+        { type: 'function', function: { name: 'get_model_efficiency', description: 'models', parameters: { type: 'object' } } },
+        { type: 'function', function: { name: 'get_project_drivers', description: 'projects', parameters: { type: 'object' } } },
+      ],
+      executeTool: async name => {
+        executed += 1
+        if (name === 'get_model_efficiency') throw new Error('model comparison unavailable')
+        return { content: JSON.stringify({ tool: name }), evidence: spendEvidence }
+      },
+    })
+
+    expect(payloads).toHaveLength(3)
+    expect(payloads[2]?.tools).toEqual([])
+    expect(executed).toBe(2)
+    expect(answer.generatedByModel).toBe(true)
+    expect(answer.conclusion).toContain('available evidence supports')
+    expect(answer.conclusion).not.toContain('bounded turn limit')
+  })
+
+  it('prevents structured planning fallback from dispatching a Tool on synthesis', async () => {
+    const payloads: Array<Record<string, unknown>> = []
+    const planning = JSON.stringify({
+      contractVersion: 'advisor-planning-draft-v1',
+      schemaVersion: 1,
+      turnKind: 'investigate',
+      questionFamily: 'spend',
+      requestedEvidenceDomains: ['usage-totals'],
+      toolRequests: [{ tool: 'get_spend_snapshot', arguments: {} }],
+      presentationIntent: 'text',
+      expertDetailRequested: false,
+      clarification: null,
+    })
+    let calls = 0
+    let executed = 0
+    const runtime = new LMStudioAdvisorRuntime({
+      model: 'structured-synthesis-model',
+      nativeToolCalls: false,
+      transport: {
+        cancel: async () => true,
+        onDelta: () => () => {},
+        chat: async (_requestId, payload) => {
+          payloads.push(payload)
+          calls += 1
+          return { streamed: false, message: { content: planning, tool_calls: [] } }
+        },
+      },
+    })
+    const answer = await runtime.generate({
+      question: 'What changed in spend?',
+      evidence: spendEvidence,
+      requiredEvidence: [spendEvidence],
+      requiredToolRequests: [],
+      tools: [{ type: 'function', function: { name: 'get_spend_snapshot', description: 'spend', parameters: { type: 'object' } } }],
+      executeTool: async () => {
+        executed += 1
+        return { content: JSON.stringify({ measured: true }), evidence: spendEvidence }
+      },
+    })
+
+    expect(payloads).toHaveLength(3)
+    expect(payloads.every(payload => Array.isArray(payload.tools) && (payload.tools as unknown[]).length === 0)).toBe(true)
+    expect(executed).toBe(2)
+    expect(answer.runtimeFailure).toBe(true)
+    expect(answer.conclusion).toContain('could not finish')
+  })
+
   it('keeps verified model identifiers while rejecting an unverified numeric model claim', async () => {
     const transport = transportFor([], [[]])
     const answer = await new OllamaAdvisorRuntime({ model: 'llama3.2', transport }).generate({

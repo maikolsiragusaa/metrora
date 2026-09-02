@@ -25,6 +25,8 @@ import type {
   MetroraAgentToolResult,
 } from './contracts'
 
+const TERMINAL_SYNTHESIS_INSTRUCTION = 'No additional Metrora data reads are available for this answer. Give the best final answer from the verified results already gathered, and state any material limitation.'
+
 export type AdvisorAgentTransport = {
   complete: (requestId: string, payload: Record<string, unknown>, signal: AbortSignal) => Promise<AdvisorProviderModelResponse>
   cancel: (requestId: string) => Promise<boolean>
@@ -209,13 +211,17 @@ export async function runAdvisorRuntimeAgentLoop(options: AdvisorAgentLoopOption
     signal: options.signal,
     bounds: loopBounds(input),
     ledger,
-    tools: nativeToolCalls ? definitions : [],
+    // Keep the logical definitions available to the structured fallback. The
+    // adapter still suppresses native wire Tools when the provider lacks
+    // native Tool calling; the final loop step replaces this list with [].
+    tools: definitions,
     requiredToolCalls: required,
     requiredEvidenceReady: required.length === 0 || inputRequiredReady,
-    validateToolCall: call => {
+    validateToolCall: (call, suppliedTools) => {
+      const stepDefinitions = suppliedTools as readonly AdvisorToolDefinition[]
       try {
-        const normalized = normalizeAdvisorRuntimeToolCall(call.name, call.arguments, definitions)
-        if (!definitions.some(definition => definition.function.name === normalized.name)) return { ok: false, diagnostic: 'tool_not_allowlisted', detail: 'Tool is not in the immutable Metrora allowlist.' }
+        const normalized = normalizeAdvisorRuntimeToolCall(call.name, call.arguments, stepDefinitions)
+        if (!stepDefinitions.some(definition => definition.function.name === normalized.name)) return { ok: false, diagnostic: 'tool_not_allowlisted', detail: 'Tool is not in the immutable Metrora allowlist.' }
         return { ok: true, call: { ...call, name: normalized.name, arguments: normalized.arguments as Record<string, unknown> } }
       } catch (error) {
         const detail = error instanceof Error ? error.message : 'Malformed Metrora Tool call.'
@@ -225,11 +231,15 @@ export async function runAdvisorRuntimeAgentLoop(options: AdvisorAgentLoopOption
     complete: async context => {
       const id = requestId('metrora-agent-step')
       active.requestId = id
-      const payload = transport.buildPayload({ model: options.model, messages: context.ledger, tools: nativeToolCalls ? definitions : [], stream: streamTurn, ...(context.continuation ? { continuation: context.continuation } : {}) })
+      const stepDefinitions = context.tools as readonly AdvisorToolDefinition[]
+      const messages = context.phase === 'synthesize'
+        ? [{ role: 'system' as const, content: TERMINAL_SYNTHESIS_INSTRUCTION }, ...context.ledger]
+        : context.ledger
+      const payload = transport.buildPayload({ model: options.model, messages, tools: nativeToolCalls ? stepDefinitions : [], stream: streamTurn, ...(context.continuation ? { continuation: context.continuation } : {}) })
       try {
         const response = await transport.complete(id, payload, context.signal)
         if (context.signal.aborted) throw new DOMException('Metrora model step cancelled', 'AbortError')
-        const step = normalizeAdvisorModelStep(response, input, definitions, nativeToolCalls)
+        const step = normalizeAdvisorModelStep(response, input, stepDefinitions, nativeToolCalls)
         if (transport.reportConformance && !conformance.reported) {
           conformance.reported = true
           input.onConformance?.()

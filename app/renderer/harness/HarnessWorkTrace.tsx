@@ -44,12 +44,17 @@ export function harnessToolCheckedLabel(name: string): string {
   return 'Sources checked'
 }
 
+function harnessToolFailureLabel(name: string, status: HarnessToolActivity['status']): string {
+  return harnessToolLabel(name) + (status === 'unavailable' ? ' unavailable' : status === 'cancelled' ? ' cancelled' : ' failed')
+}
+
 export function createHarnessCompletedWorkTrace(items: readonly HarnessToolActivity[], events: readonly MetroraAgentLoopEvent[] = []): HarnessCompletedWorkTrace {
   const trace: HarnessCompletedWorkTraceItem[] = [
     { id: 'thinking', label: 'Thinking', status: 'completed' },
   ]
   const modelStarts = events.filter(event => event.type === 'model-started').length
   const modelCompletions = events.filter(event => event.type === 'model-completed').length
+  const synthesisSteps = events.filter(event => event.type === 'model-started' && event.detail === 'synthesize').length
   const modelToolNames = new Set(events.filter(event => event.type.startsWith('tool-') && event.tool).map(event => event.tool!))
   const seenTools = new Set<string>()
   const appendTools = (candidates: readonly HarnessToolActivity[]) => {
@@ -59,7 +64,7 @@ export function createHarnessCompletedWorkTrace(items: readonly HarnessToolActiv
       const completed = item.status === 'completed'
       trace.push({
         id: 'check-' + String(seenTools.size),
-        label: completed ? harnessToolCheckedLabel(item.name) : item.status === 'unavailable' ? 'Unavailable' : 'Failed',
+        label: completed ? harnessToolCheckedLabel(item.name) : harnessToolFailureLabel(item.name, item.status),
         status: completed ? 'completed' : 'failed',
       })
     }
@@ -71,6 +76,7 @@ export function createHarnessCompletedWorkTrace(items: readonly HarnessToolActiv
   const modelTools = items.filter(item => modelToolNames.has(item.name))
   if (modelTools.length || (modelStarts > 0 && seenTools.size > 0)) trace.push({ id: 'thinking-2', label: 'Thinking', status: 'completed' })
   appendTools(modelTools)
+  if (synthesisSteps > 0) trace.push({ id: 'thinking-synthesis', label: 'Thinking', status: 'completed' })
   trace.push({ id: 'preparing-answer', label: 'Preparing answer', status: 'completed' })
   trace.push({ id: 'done', label: 'Done', status: 'completed' })
   const checks = trace.slice(0, -2).slice(0, 8)

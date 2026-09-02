@@ -121,6 +121,8 @@ export type MetroraAgentLoopEvent = {
 
 export type MetroraAgentLoopStatus = 'completed' | 'failed' | 'cancelled' | 'timeout' | 'limit'
 
+export type MetroraAgentModelPhase = 'investigate' | 'synthesize'
+
 export type MetroraAgentLoopResult = {
   status: MetroraAgentLoopStatus
   finalText: string
@@ -135,8 +137,10 @@ export type MetroraAgentLoopResult = {
 
 export type MetroraAgentModelContext = {
   readonly ledger: readonly MetroraAgentMessage[]
+  /** Tools authorized for this exact model completion. */
   readonly tools: readonly unknown[]
   readonly step: number
+  readonly phase: MetroraAgentModelPhase
   readonly signal: AbortSignal
   readonly continuation?: MetroraAgentContinuation
 }
@@ -157,7 +161,7 @@ export type MetroraAgentLoopOptions = {
   /** True only when the initial ledger already contains usable canonical evidence. */
   requiredEvidenceReady?: boolean
   complete: (context: MetroraAgentModelContext) => Promise<MetroraAgentModelStep>
-  validateToolCall?: (call: MetroraAgentToolCall) => MetroraAgentToolValidation
+  validateToolCall?: (call: MetroraAgentToolCall, tools: readonly unknown[]) => MetroraAgentToolValidation
   executeTool: (call: MetroraAgentToolCall, signal: AbortSignal) => Promise<MetroraAgentToolResult>
   onEvent?: (event: MetroraAgentLoopEvent) => void
   cancelModel?: () => void
