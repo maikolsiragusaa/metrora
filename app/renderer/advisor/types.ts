@@ -31,11 +31,20 @@ export type AdvisorTurnPlanV1 = {
   presentationIntent: AdvisorPresentationIntent
   expertDetailRequested: boolean
   authorization: AdvisorAuthorizationIntent
+  /** A user-explicit period conflicts with the selected UI scope. */
+  scopeConflict?: AdvisorScopeConflictV1
 }
 
 export type AdvisorEvidenceState = 'NO_DATA' | 'UNAVAILABLE' | 'AVAILABLE' | 'PARTIAL' | 'STALE' | 'NOT_COMPARABLE' | 'UNSUPPORTED' | 'RUNTIME_UNAVAILABLE'
 export type AdvisorScope = { period: Period; range: DateRange | null; provider: string; projectId: string; projectName: string; model: string | null }
 export type AdvisorPeriodFilter = Period | 'yesterday'
+export type AdvisorScopeConflictOptionV1 = { id: 'use-requested-period' | 'change-scope'; label: string }
+export type AdvisorScopeConflictV1 = {
+  currentPeriod: Period
+  requestedPeriod: AdvisorPeriodFilter
+  message: string
+  options: readonly AdvisorScopeConflictOptionV1[]
+}
 export type AdvisorScopeIdentity = Pick<AdvisorScope, 'period' | 'range' | 'projectId' | 'provider' | 'model'>
 export function advisorScopeFingerprint(scope: AdvisorScopeIdentity): string {
   return JSON.stringify({
@@ -94,7 +103,7 @@ export type AdvisorBenchRun = { runId: string; pack: { id: string; version: stri
 export type AdvisorBenchComparison = { compatibility: 'compatible' | 'incompatible'; reason: 'compatible' | 'pack-mismatch' | 'runner-mismatch' | 'scoring-mismatch' | 'generation-mismatch' | 'missing-run'; comparedRunIds: string[]; scoreDelta: number | null; passedDelta: number | null; failedDelta: number | null; unavailableDelta: number | null; cancelledDelta: number | null; medianLatencyDeltaMs: number | null; timeToFirstContentDeltaMs: number | null }
 export type AdvisorPerformanceEvidence = { state: AdvisorEvidenceState; runs: PerformanceRunV1[]; latest: PerformanceRunV1 | null; comparison: PerformanceComparisonV1 | null }
 export type AdvisorBenchEvidence = { state: AdvisorEvidenceState; runs: AdvisorBenchRun[]; latest: AdvisorBenchRun | null; comparison: AdvisorBenchComparison | null; performance?: AdvisorPerformanceEvidence }
-export type AdvisorQuestionUnderstanding = { intent: AdvisorIntent; summary: string; usedDefaultScope: boolean; clarification: string | null; boundary: string | null }
+export type AdvisorQuestionUnderstanding = { intent: AdvisorIntent; summary: string; usedDefaultScope: boolean; clarification: string | null; boundary: string | null; scopeConflict?: AdvisorScopeConflictV1 }
 export type AdvisorGuardPlanV1 = {
   contractVersion: 'advisor-guard-plan-v1'
   schemaVersion: 1
@@ -162,7 +171,8 @@ export type AdvisorCredentialState = 'not-configured' | 'ready' | 'locked-unavai
 export type AdvisorCredentialStatus = { provider: AdvisorCredentialProvider; state: AdvisorCredentialState }
 export type AdvisorHostedModelState = 'discovered' | 'unverified' | 'verified' | 'limited' | 'unsupported' | 'failed-conformance'
 export type AdvisorHostedCapabilityState = 'supported' | 'unsupported' | 'unknown' | 'failed-conformance'
-export type AdvisorHostedModelCapabilities = { conversational: 'available' | 'unavailable' | 'unknown'; streaming: 'supported' | 'unsupported' | 'unknown'; toolCall: AdvisorHostedCapabilityState }
+export type AdvisorReasoningEffort = 'default' | 'low' | 'medium' | 'high' | 'max'
+export type AdvisorHostedModelCapabilities = { conversational: 'available' | 'unavailable' | 'unknown'; streaming: 'supported' | 'unsupported' | 'unknown'; toolCall: AdvisorHostedCapabilityState; reasoningEfforts?: readonly AdvisorReasoningEffort[] }
 export type AdvisorHostedModel = { id: string; label: string; state: AdvisorHostedModelState; limitation: string | null; capabilities?: AdvisorHostedModelCapabilities }
 export type AdvisorHostedProbe = { provider: AdvisorHostedProviderId; available: boolean; models: AdvisorHostedModel[]; detail: string; credentialState: 'not-configured' | 'ready' | 'locked-unavailable' | 'invalid' | 'needs-reentry' }
 export type AdvisorDiscoveryState = 'runtime-unavailable' | 'runtime-available' | 'no-models' | 'models-discovered'
@@ -272,6 +282,6 @@ export type AdvisorSwarmSynthesisInput = {
   }>
 }
 export type AdvisorSwarmSynthesisResult = { answer: string; evidenceSummary: string }
-export interface AdvisorModelRuntime { readonly id: string; readonly label: string; readonly mode: 'ollama-local' | 'lmstudio-local' | 'llama-server-local' | 'deterministic-local' | 'hosted-byok' | 'unsupported'; readonly providerSupport: readonly string[]; readonly availability?: 'ready' | 'checking' | 'unavailable'; readonly supportsStreaming?: boolean; generate(input: AdvisorRuntimeInput, signal?: AbortSignal): Promise<AdvisorAnswer>; generateSwarmSynthesis?(input: AdvisorSwarmSynthesisInput, signal?: AbortSignal): Promise<AdvisorSwarmSynthesisResult> }
+export interface AdvisorModelRuntime { readonly id: string; readonly label: string; readonly mode: 'ollama-local' | 'lmstudio-local' | 'llama-server-local' | 'deterministic-local' | 'hosted-byok' | 'unsupported'; readonly providerSupport: readonly string[]; readonly availability?: 'ready' | 'checking' | 'unavailable'; readonly supportsStreaming?: boolean; readonly reasoningEfforts?: readonly AdvisorReasoningEffort[]; generate(input: AdvisorRuntimeInput, signal?: AbortSignal): Promise<AdvisorAnswer>; generateSwarmSynthesis?(input: AdvisorSwarmSynthesisInput, signal?: AbortSignal): Promise<AdvisorSwarmSynthesisResult> }
 export type AdvisorDataSource = { getOverview(context: AdvisorScope, signal?: AbortSignal): Promise<MenubarPayload>; getModels(context: AdvisorScope, signal?: AbortSignal): Promise<ModelReportRow[]>; getQuota(signal?: AbortSignal): Promise<QuotaProvider[]>; getBenchEvidence?(context: AdvisorScope, signal?: AbortSignal): Promise<AdvisorBenchEvidence> }
 export type AdvisorBridge = Pick<MetroraBridge, 'getOverview' | 'getModels' | 'getQuota' | 'getBenchEvidence'>

@@ -12,6 +12,8 @@ import type {
   AdvisorHostedProtocol,
   AdvisorHostedProbe,
   AdvisorHostedProviderId,
+  AdvisorHostedReasoningCapability,
+  AdvisorReasoningEffort,
   AdvisorHostedUsage,
   CredentialReader,
   CredentialStatusReader,
@@ -33,6 +35,8 @@ export type {
   AdvisorHostedProbe,
   AdvisorHostedProtocol,
   AdvisorHostedProviderId,
+  AdvisorHostedReasoningCapability,
+  AdvisorReasoningEffort,
   AdvisorHostedToolCall,
   AdvisorHostedToolDefinition,
   AdvisorHostedUsage,
@@ -70,6 +74,7 @@ const {
   validModel,
   validProvider,
   validRequestId,
+  reasoningCapabilityFromMetadata,
 } = contract
 const { HostedAdapterError } = contract
 export { HostedAdapterError }
@@ -87,6 +92,8 @@ function normalizeMessages(value: unknown): AdvisorHostedChatMessage[] {
 }
 function parseChatRequest(requestId: unknown, value: unknown): { requestId: string; request: AdvisorHostedChatRequest } {
   if (!validRequestId(requestId) || !isRecord(value) || value.consent !== true || !validProvider(value.provider) || !validModel(value.model)) throw new HostedAdapterError('request-malformed', 'Advisor hosted request is invalid.')
+  const reasoningEffort = value.reasoningEffort
+  if (reasoningEffort !== undefined && !['default', 'low', 'medium', 'high', 'max'].includes(String(reasoningEffort))) throw new HostedAdapterError('request-malformed', 'Advisor reasoning effort is invalid.')
   return {
     requestId,
     request: {
@@ -96,6 +103,7 @@ function parseChatRequest(requestId: unknown, value: unknown): { requestId: stri
       tools: normalizeTools(value.tools),
       stream: value.stream === undefined ? true : value.stream === true,
       consent: true,
+      ...(reasoningEffort !== undefined ? { reasoningEffort: reasoningEffort as AdvisorReasoningEffort } : {}),
       ...(value.harnessConformance === true ? { harnessConformance: true as const } : {}),
     },
   }
@@ -113,6 +121,7 @@ function unsupportedCapabilities(): AdvisorHostedModelCapabilities {
 }
 
 type HostedProtocolRegistry = Map<string, AdvisorHostedProtocol | null>
+type HostedReasoningRegistry = Map<string, AdvisorHostedReasoningCapability | null>
 type HostedConformanceRecord = {
   state: 'verified' | 'failed-conformance'
   toolCall: AdvisorHostedCapabilityState
@@ -139,6 +148,7 @@ function modelRows(
   models: AdvisorHostedModel[],
   seen: Set<string>,
   protocols: HostedProtocolRegistry,
+  reasoning: HostedReasoningRegistry,
   conformance: HostedConformanceRegistry,
 ): string | null {
   const kind = DESCRIPTORS[provider].modelListKind
@@ -160,6 +170,8 @@ function modelRows(
       conformance.delete(conformanceKey(provider, id, previousProtocol))
     }
     protocols.set(key, protocol)
+    const reasoningCapability = protocol ? reasoningCapabilityFromMetadata(row, protocol) : null
+    reasoning.set(key, reasoningCapability)
     const conformanceRecord = protocol ? conformance.get(conformanceKey(provider, id, protocol)) : undefined
     const supported = kind !== 'gemini' || methods.length === 0 || methods.includes('generateContent')
     const openRouterParameters = kind === 'openrouter' && Array.isArray(row.supported_parameters)
@@ -181,7 +193,12 @@ function modelRows(
       : conformanceRecord?.state === 'failed-conformance'
         ? 'failed-conformance'
         : advertisedToolCall
-    const capabilities = supported && protocol ? baseCapabilities(conformanceRecord?.state === 'verified' ? 'available' : conversational, streaming, toolCall as AdvisorHostedCapabilityState) : unsupportedCapabilities()
+    const capabilities = supported && protocol
+      ? {
+          ...baseCapabilities(conformanceRecord?.state === 'verified' ? 'available' : conversational, streaming, toolCall as AdvisorHostedCapabilityState),
+          ...(reasoningCapability ? { reasoningEfforts: reasoningCapability.efforts } : {}),
+        }
+      : unsupportedCapabilities()
     const state: AdvisorHostedModel['state'] = !supported
       ? 'unsupported'
       : kind === 'opencode-zen' && !protocol
@@ -333,6 +350,7 @@ async function discover(
   fetchImpl: FetchLike,
   parent: AbortSignal | undefined,
   protocols: HostedProtocolRegistry,
+  reasoning: HostedReasoningRegistry,
   conformance: HostedConformanceRegistry,
 ): Promise<AdvisorHostedModel[]> {
   const descriptor = DESCRIPTORS[provider]
@@ -352,7 +370,7 @@ async function discover(
     const request = await fetchResponse(fetchImpl, providerUrl(provider, url.pathname + url.search), { method: 'GET', headers: { Accept: 'application/json', ...authHeaders(provider, secret) } }, PROBE_TIMEOUT_MS, parent)
     try {
       statusCheck(request.response)
-      nextToken = modelRows(provider, await readJson(request.response, request.signal), models, seen, protocols, conformance)
+      nextToken = modelRows(provider, await readJson(request.response, request.signal), models, seen, protocols, reasoning, conformance)
     } finally { request.dispose() }
     if (!nextToken || seenTokens.has(nextToken)) break
     seenTokens.add(nextToken)
@@ -368,6 +386,7 @@ async function hostedChat(
   emit: EventEmitter,
   parent: AbortSignal | undefined,
   protocols: HostedProtocolRegistry,
+  reasoning: HostedReasoningRegistry,
   conformance: HostedConformanceRegistry,
 ): Promise<AdvisorHostedChatResult> {
   const stream = request.stream === true
@@ -377,11 +396,16 @@ async function hostedChat(
   // retained, so an unknown listing cannot fall back to a name guess.
   const protocol = protocols.has(key) ? protocols.get(key) ?? null : DESCRIPTORS[provider].protocolForModel(request.model)
   if (!protocol) throw new HostedAdapterError('model-unavailable', 'The selected provider model has no approved Advisor protocol.')
-   const adapter = protocolAdapter(protocol)
+  const reasoningCapability = reasoning.has(key) ? reasoning.get(key) ?? null : null
+  const selectedEffort = request.reasoningEffort ?? 'default'
+  if (selectedEffort !== 'default' && (!reasoningCapability || !reasoningCapability.efforts.includes(selectedEffort))) {
+    throw new HostedAdapterError('request-unsupported', 'The selected model does not advertise this reasoning level.')
+  }
+  const adapter = protocolAdapter(protocol)
   const result = await fetchResponse(fetchImpl, providerUrl(provider, DESCRIPTORS[provider].chatPath(request.model, stream, protocol)), {
     method: 'POST',
     headers: requestHeaders(provider, secret, stream, protocol),
-    body: boundedJson(bodyFor(provider, protocol, request), 'Advisor hosted request exceeded the safety limit.'),
+    body: boundedJson(bodyFor(provider, protocol, request, reasoningCapability?.parameter), 'Advisor hosted request exceeded the safety limit.'),
   }, REQUEST_TIMEOUT_MS, parent)
   emit({ requestId, provider, model: request.model, kind: 'started' })
   try {
@@ -437,6 +461,7 @@ export function createAdvisorHostedHandlers(options: {
   // conformance are intentionally separate pieces of state. The protocol
   // registry is exact-provider/model state, not a global model-name map.
   const protocols: HostedProtocolRegistry = new Map()
+  const reasoning: HostedReasoningRegistry = new Map()
   const conformance = new Map<string, HostedConformanceRecord>()
   const fail = (error: unknown, fallback: string): AdvisorHostedEnvelope => {
     const safe = safeError(error)
@@ -466,7 +491,7 @@ export function createAdvisorHostedHandlers(options: {
         }
         throwIfCancelled(controller?.signal)
         if (!secret) return { ok: true, value: { provider: providerValue, available: false, models: [], detail: 'The saved provider credential needs to be entered again.', credentialState: 'needs-reentry' } satisfies AdvisorHostedProbe }
-        const models = await discover(providerValue, secret, fetchImpl, controller?.signal, protocols, conformance)
+        const models = await discover(providerValue, secret, fetchImpl, controller?.signal, protocols, reasoning, conformance)
         return { ok: true, value: { provider: providerValue, available: true, models, detail: models.length ? providerDetail(providerValue) : 'The provider is reachable but returned no usable models.', credentialState: 'ready' } satisfies AdvisorHostedProbe }
       } catch (error) {
         if (controller?.signal.aborted || (error instanceof Error && error.name === 'AbortError')) return { ok: false, error: { kind: 'cancelled', message: 'Advisor request cancelled.' } }
@@ -500,7 +525,7 @@ export function createAdvisorHostedHandlers(options: {
         }
         throwIfCancelled(controller.signal)
         if (!secret) return { ok: false, error: { kind: 'credential-unavailable', message: 'The saved provider credential needs to be entered again.' } }
-        const value = await hostedChat(parsed.request.provider, secret, parsed.requestId, parsed.request, fetchImpl, emit, controller.signal, protocols, conformance)
+        const value = await hostedChat(parsed.request.provider, secret, parsed.requestId, parsed.request, fetchImpl, emit, controller.signal, protocols, reasoning, conformance)
         return { ok: true, value }
       } catch (error) {
         if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {

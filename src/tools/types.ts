@@ -18,7 +18,23 @@ export type MetroraToolScope = {
   model: string | null
 }
 export type MetroraToolScopeIdentity = Pick<MetroraToolScope, 'period' | 'range' | 'provider' | 'projectId' | 'model'>
+export type MetroraOverviewSnapshot = {
+  /** Exact scope provenance for the payload; never infer this from freshness. */
+  scopeFingerprint: string
+  payload: MetroraOverview
+}
 export type MetroraToolScopeOptions = { allowedPeriods?: readonly MetroraToolPeriodFilter[] }
+
+export function metroraToolScopeFingerprint(scope: MetroraToolScope): string {
+  return JSON.stringify({
+    period: scope.period,
+    range: scope.range ? { from: scope.range.from, to: scope.range.to } : null,
+    provider: scope.provider,
+    projectId: scope.projectId,
+    projectName: scope.projectName,
+    model: scope.model,
+  })
+}
 
 export type MetroraToolJsonValue = null | string | number | boolean | { [key: string]: MetroraToolJsonValue } | MetroraToolJsonValue[]
 export type MetroraToolJsonObject = { [key: string]: MetroraToolJsonValue }

@@ -9,7 +9,7 @@ import {
   AdvisorToolContractError,
   ADVISOR_TOOL_MODEL_FILTER_MAX_LENGTH,
 } from './contract'
-import { createAdvisorToolRegistry } from './tools'
+import { createAdvisorOverviewSnapshot, createAdvisorToolRegistry } from './tools'
 import { LMStudioAdvisorRuntime } from './lmstudio'
 import { OllamaAdvisorRuntime, type OllamaTransport } from './ollama'
 import type { AdvisorDataSource, AdvisorEvidence, AdvisorScope } from './types'
@@ -182,12 +182,12 @@ describe('AdvisorToolV1 reusable conformance suite', () => {
       secret: 'sk-secret-value-should-not-leak',
       current: {
         ...fixture.overview.current,
-        topProjects: [{ name: 'C:\\Users\\sirag\\secret-project', cost: 12, sessions: 2 }],
+        topProjects: [{ name: 'C:\\Users\\fixture\\secret-project', cost: 12, sessions: 2 }],
       },
     } as unknown as typeof fixture.overview
     const sourceFixture = createAdvisorConformanceFixture({ overview: sensitiveOverview })
     const result = await createAdvisorToolRegistry(sourceFixture.source, sourceFixture.scope, sensitiveOverview).execute('get_project_drivers', {})
-    for (const value of ['RAW_PROMPT_SHOULD_NOT_LEAK', 'RAW_RESPONSE_SHOULD_NOT_LEAK', 'RAW_SOURCE_SHOULD_NOT_LEAK', 'sk-secret-value-should-not-leak', 'C:\\Users\\sirag\\secret-project']) expect(result.content).not.toContain(value)
+    for (const value of ['RAW_PROMPT_SHOULD_NOT_LEAK', 'RAW_RESPONSE_SHOULD_NOT_LEAK', 'RAW_SOURCE_SHOULD_NOT_LEAK', 'sk-secret-value-should-not-leak', 'C:\\Users\\fixture\\secret-project']) expect(result.content).not.toContain(value)
     expect(result.content).toContain('[redacted]')
   })
 
@@ -242,16 +242,16 @@ describe('AdvisorToolV1 reusable conformance suite', () => {
         topModels: [{ name: 'token=supersecretvalue', cost: 8, calls: 2 }],
         topProjects: [
           { name: 'project/alpha', cost: 6, sessions: 1 },
-          { name: '/home/alice/private/project', cost: 6, sessions: 1 },
+          { name: '/home/fixture/private/project', cost: 6, sessions: 1 },
         ],
         topSessions: [{ project: 'raw prompt marker text', cost: 12, calls: 1 }],
       },
     } as unknown as typeof fixture.overview
     const scope = { ...fixture.scope, projectId: 'account-secret', projectName: 'project/alpha' }
-    const registry = createAdvisorToolRegistry(fixture.source, scope, sensitiveOverview)
+    const registry = createAdvisorToolRegistry(fixture.source, scope, createAdvisorOverviewSnapshot(scope, sensitiveOverview))
     const result = await registry.execute('get_spend_snapshot', {})
     const serialized = result.content + JSON.stringify(result.envelope)
-    for (const value of ['supersecretvalue', '/home/alice/private/project', 'raw prompt marker text', 'account-secret']) {
+    for (const value of ['supersecretvalue', '/home/fixture/private/project', 'raw prompt marker text', 'account-secret']) {
       expect(serialized).not.toContain(value)
     }
     expect(serialized).toContain('project/alpha')

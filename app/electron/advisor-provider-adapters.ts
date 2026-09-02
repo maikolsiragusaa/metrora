@@ -2,6 +2,7 @@ import type {
   AdvisorHostedChatRequest,
   AdvisorHostedProtocol,
   AdvisorHostedProviderId,
+  AdvisorHostedReasoningParameter,
   AdvisorHostedToolCall,
   AdvisorHostedToolDefinition,
   AdvisorHostedUsage,
@@ -36,7 +37,7 @@ export type StreamState = {
 }
 export type StreamParser = (payload: Record<string, unknown>, state: StreamState, provider: AdvisorHostedProviderId, requestId: string, model: string, emit: EventEmitter) => void
 export type JsonParser = (payload: Record<string, unknown>, provider: AdvisorHostedProviderId, requestId: string, model: string, emit: EventEmitter) => ParsedChat
-export type HostedProtocolAdapter = { buildBody: (request: AdvisorHostedChatRequest, provider: AdvisorHostedProviderId) => Record<string, unknown>; parseJson: JsonParser; parseStream: StreamParser }
+export type HostedProtocolAdapter = { buildBody: (request: AdvisorHostedChatRequest, provider: AdvisorHostedProviderId, reasoningParameter?: AdvisorHostedReasoningParameter) => Record<string, unknown>; parseJson: JsonParser; parseStream: StreamParser }
 
 function openAiTools(tools: AdvisorHostedToolDefinition[]): Array<Record<string, unknown>> {
   return tools.map(tool => ({ type: 'function', name: tool.function.name, ...(tool.function.description ? { description: tool.function.description } : {}), ...(tool.function.parameters ? { parameters: tool.function.parameters } : {}) }))
@@ -50,21 +51,27 @@ function anthropicTools(tools: AdvisorHostedToolDefinition[]): Array<Record<stri
 function geminiTools(tools: AdvisorHostedToolDefinition[]): Array<Record<string, unknown>> {
   return tools.length ? [{ functionDeclarations: tools.map(tool => ({ name: tool.function.name, ...(tool.function.description ? { description: tool.function.description } : {}), parameters: tool.function.parameters ?? { type: 'object', properties: {}, additionalProperties: false } })) }] : []
 }
-function openAiBody(request: AdvisorHostedChatRequest): Record<string, unknown> {
+function reasoningBody(request: AdvisorHostedChatRequest, parameter?: AdvisorHostedReasoningParameter): Record<string, unknown> {
+  const effort = request.reasoningEffort
+  if (!parameter || !effort || effort === 'default') return {}
+  return parameter === 'openai-effort' ? { reasoning_effort: effort } : { reasoning: { effort } }
+}
+function openAiBody(request: AdvisorHostedChatRequest, reasoningParameter?: AdvisorHostedReasoningParameter): Record<string, unknown> {
   const system = request.messages.filter(message => message.role === 'system').map(message => message.content).join('\n')
   const input: Array<Record<string, unknown>> = []
   for (const message of request.messages) {
     if (message.role === 'system') continue
     input.push({ role: message.role, content: message.content })
   }
-  return { model: request.model, ...(system ? { instructions: system } : {}), input, ...(request.tools?.length ? { tools: openAiTools(request.tools) } : {}), stream: request.stream === true, store: false }
+  return { model: request.model, ...(system ? { instructions: system } : {}), input, ...(request.tools?.length ? { tools: openAiTools(request.tools) } : {}), ...reasoningBody(request, reasoningParameter), stream: request.stream === true, store: false }
 }
-function openAiChatBody(request: AdvisorHostedChatRequest, includeUsage: boolean): Record<string, unknown> {
+function openAiChatBody(request: AdvisorHostedChatRequest, includeUsage: boolean, reasoningParameter?: AdvisorHostedReasoningParameter): Record<string, unknown> {
   const messages = request.messages.map(message => ({ role: message.role, content: message.content }))
   return {
     model: request.model,
     messages,
     ...(request.tools?.length ? { tools: openAiChatTools(request.tools) } : {}),
+    ...reasoningBody(request, reasoningParameter),
     stream: request.stream === true,
     ...(request.stream === true && includeUsage ? { stream_options: { include_usage: true } } : {}),
   }
@@ -85,6 +92,17 @@ function appendText(state: StreamState, requestId: string, provider: AdvisorHost
   if (byteLength(state.content + value) > MAX_TEXT_BYTES) throw new HostedAdapterError('response-too-large', 'The provider response was too large.')
   state.content += value
   emit({ requestId, provider, model, kind: 'text-delta', text: value })
+}
+function appendOpenAiChatContent(state: StreamState, requestId: string, provider: AdvisorHostedProviderId, model: string, value: unknown, emit: EventEmitter): void {
+  if (typeof value === 'string') {
+    appendText(state, requestId, provider, model, value, emit)
+    return
+  }
+  if (!Array.isArray(value)) return
+  for (const part of value) {
+    if (!isRecord(part)) continue
+    if (part.type === 'text' || part.type === 'output_text') appendText(state, requestId, provider, model, part.text, emit)
+  }
 }
 function ensureToolCallCapacity(state: StreamState): void {
   if (state.calls.length + state.openCalls.size >= MAX_TOOL_CALLS) throw new HostedAdapterError('tool-malformed', 'The provider returned too many tool calls.')
@@ -160,7 +178,7 @@ function parseOpenAiChatJson(payload: Record<string, unknown>, provider: Advisor
   const choices = Array.isArray(payload.choices) ? payload.choices : []
   for (const choice of choices) {
     if (!isRecord(choice) || !isRecord(choice.message)) continue
-    appendText(state, requestId, provider, model, choice.message.content, emit)
+    appendOpenAiChatContent(state, requestId, provider, model, choice.message.content, emit)
     const toolCalls = Array.isArray(choice.message.tool_calls) ? choice.message.tool_calls : []
     for (const toolCall of toolCalls) {
       if (!isRecord(toolCall)) continue
@@ -320,14 +338,14 @@ export function streamState(): StreamState {
 }
 
 const PROTOCOL_ADAPTERS: Record<AdvisorHostedProtocol, HostedProtocolAdapter> = {
-  'openai-responses': { buildBody: request => openAiBody(request), parseJson: parseOpenAiJson, parseStream: parseOpenAiStream },
-  'openai-chat': { buildBody: (request, provider) => openAiChatBody(request, provider === 'openrouter'), parseJson: parseOpenAiChatJson, parseStream: parseOpenAiChatStream },
+  'openai-responses': { buildBody: (request, _provider, reasoningParameter) => openAiBody(request, reasoningParameter), parseJson: parseOpenAiJson, parseStream: parseOpenAiStream },
+  'openai-chat': { buildBody: (request, provider, reasoningParameter) => openAiChatBody(request, provider === 'openrouter', reasoningParameter), parseJson: parseOpenAiChatJson, parseStream: parseOpenAiChatStream },
   'anthropic-messages': { buildBody: request => anthropicBody(request), parseJson: parseAnthropicJson, parseStream: parseAnthropicStream },
   'gemini-content': { buildBody: request => geminiBody(request), parseJson: parseGeminiJson, parseStream: parseGeminiStream },
 }
 
-export function bodyFor(provider: AdvisorHostedProviderId, protocol: AdvisorHostedProtocol, request: AdvisorHostedChatRequest): Record<string, unknown> {
-  return PROTOCOL_ADAPTERS[protocol].buildBody(request, provider)
+export function bodyFor(provider: AdvisorHostedProviderId, protocol: AdvisorHostedProtocol, request: AdvisorHostedChatRequest, reasoningParameter?: AdvisorHostedReasoningParameter): Record<string, unknown> {
+  return PROTOCOL_ADAPTERS[protocol].buildBody(request, provider, reasoningParameter)
 }
 
 export function protocolAdapter(protocol: AdvisorHostedProtocol): HostedProtocolAdapter {

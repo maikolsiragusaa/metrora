@@ -1,13 +1,13 @@
 import { metrora } from '../lib/ipc'
 import { AdvisorToolContractError, assertStrictBoundedAdvisorToolContent } from './contract'
-import { buildAdvisorChatMessages, buildAdvisorConversationMessages, buildAdvisorSwarmSynthesisMessages, buildAdvisorToolContinuationMessages, finalizeAdvisorConversationAnswer, finalizeModelAnswer, buildAdvisorSynthesisMessages } from './model-flow'
+import { buildAdvisorChatMessages, buildAdvisorConversationMessages, buildAdvisorEvidenceSynthesisMessages, buildAdvisorSwarmSynthesisMessages, buildAdvisorToolContinuationMessages, finalizeAdvisorConversationAnswer, finalizeModelAnswer, buildAdvisorSynthesisMessages, evidenceUsable } from './model-flow'
 import { deterministicPlanningFallback, parseAdvisorPlanningDraft, planningDraftFromNativeToolCalls, runtimeGuardPlan, validateAdvisorPlanningDraft, type AdvisorPlanningValidation } from './planner'
 import { hasMixedEvidenceScopes, mergeEvidence, sameEvidenceScope } from './merge-evidence'
 import { ADVISOR_MODEL_NARRATIVE_MAX_BYTES } from './privacy'
 import { HARNESS_TOOL_LOOP_LIMITS } from './limits'
 import { parseAdvisorSynthesisDraft } from './synthesis'
 import { createAdvisorTurnDeadline, raceAdvisorAbort, shouldRethrowAdvisorAbort } from './abort'
-import type { AdvisorAnswer, AdvisorEvidence, AdvisorModelRuntime, AdvisorRuntimeInput, AdvisorSwarmSynthesisInput, AdvisorSwarmSynthesisResult, AdvisorToolDefinition, AdvisorToolRequestV1 } from './types'
+import type { AdvisorAnswer, AdvisorEvidence, AdvisorModelRuntime, AdvisorReasoningEffort, AdvisorRuntimeInput, AdvisorSwarmSynthesisInput, AdvisorSwarmSynthesisResult, AdvisorToolDefinition, AdvisorToolRequestV1 } from './types'
 
 export { hasMixedEvidenceScopes, mergeEvidence, sameEvidenceScope } from './merge-evidence'
 
@@ -133,6 +133,7 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
   readonly mode: AdvisorAnswer['runtime']['mode']
   readonly providerSupport: readonly string[]
   readonly supportsStreaming = true
+  readonly reasoningEfforts: readonly AdvisorReasoningEffort[] = ['default']
   readonly label: string
   readonly availability: 'ready' | 'checking' | 'unavailable'
   private readonly model: string
@@ -240,10 +241,22 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
         return finalizeAdvisorConversationAnswer(this, input, 'action', boundedModelText(actionResponse.message?.content), true, finalizationSignal())
       }
 
+      const requiredEvidenceItems = [...(input.requiredEvidence ?? [])]
+      const requiredEvidenceReady = evidenceUsable(requiredEvidenceItems)
+      const controllerEvidence = requiredEvidenceReady
+        ? mergeEvidence(requiredEvidenceItems, input.evidence)
+        : input.evidence
       let firstResponse: LocalChatResponse
       try {
         activeRequestId = requestId('advisor-chat')
-        firstResponse = await raceAdvisorAbort(this.transport.chat(activeRequestId, { model: this.model, messages: buildAdvisorChatMessages(input, fallbackPlan, guard, { nativeToolCalls: definitions.length > 0, textPlanningFallback: definitions.length === 0 }), tools: definitions, stream: false }, turnSignal), turnSignal)
+        firstResponse = await raceAdvisorAbort(this.transport.chat(activeRequestId, {
+          model: this.model,
+          messages: requiredEvidenceReady
+            ? buildAdvisorEvidenceSynthesisMessages({ ...input, evidence: controllerEvidence }, fallbackPlan, guard, controllerEvidence, { nativeToolCalls: definitions.length > 0, textPlanningFallback: definitions.length === 0 })
+            : buildAdvisorChatMessages(input, fallbackPlan, guard, { nativeToolCalls: definitions.length > 0, textPlanningFallback: definitions.length === 0 }),
+          tools: definitions,
+          stream: false,
+        }, turnSignal), turnSignal)
         activeRequestId = null
         throwIfAborted(turnSignal)
       } catch (error) {
@@ -253,9 +266,20 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
       }
 
       const validation = planningValidation(input, firstResponse)
+      let evidenceItems: AdvisorEvidence[] = requiredEvidenceItems
       if (!validation) {
         if (Array.isArray(firstResponse.message?.tool_calls) && firstResponse.message!.tool_calls!.length > 0) return fallback('The model requested a tool outside the bounded Metrora Tools contract.')
         const content = boundedModelText(firstResponse.message?.content)
+        const structured = /^(?:\{|\[)/u.test(content.trim()) || content.trim().startsWith(String.fromCharCode(96))
+        if (requiredEvidenceReady && content.trim() && (!structured || Boolean(parseAdvisorSynthesisDraft(content)))) {
+          return finalizeModelAnswer({
+            runtime: this,
+            input: { ...input, evidence: controllerEvidence, plan: fallbackPlan, guard },
+            evidenceItems,
+            finalContent: content,
+            modelUsed: true,
+          }, finalizationSignal())
+        }
         const fallbackIntent = input.fallbackIntent ?? input.evidence.intent
         const requiresEvidence = fallbackIntent === 'spend-change' || fallbackIntent === 'model-efficiency' || fallbackIntent === 'quota-capacity' || fallbackIntent === 'bench-result'
         if (requiresEvidence) return fallback('The direct model response did not request a verified Metrora read; canonical evidence is shown instead.')
@@ -270,7 +294,6 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
       let currentInput = effectiveInput
       let currentPlan = validation.plan
       let currentResponse = firstResponse
-      let evidenceItems: AdvisorEvidence[] = [...(input.requiredEvidence ?? [])]
       let toolRound = 0
       let totalToolCalls = 0
       const fallbackFromEvidence = (note: string, finalContent = '') => finalizeModelAnswer({

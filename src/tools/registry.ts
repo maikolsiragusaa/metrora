@@ -18,6 +18,7 @@ import { contentMinimalMetroraToolEvidence } from './privacy.js'
 import type {
   MetroraModelReportRow,
   MetroraOverview,
+  MetroraOverviewSnapshot,
   MetroraQuotaSnapshot,
   MetroraToolDataSource,
   MetroraToolEvidence,
@@ -30,6 +31,7 @@ import type {
   MetroraToolExecution,
   MetroraToolExecutor,
 } from './types.js'
+import { metroraToolScopeFingerprint } from './types.js'
 
 const EMPTY_OVERVIEW: MetroraOverview = { current: undefined, history: { daily: [] } }
 const EMPTY_BENCH = { state: 'UNAVAILABLE' as const }
@@ -48,14 +50,11 @@ function cancellationLike(error: unknown): boolean {
 function rethrowCancellation(error: unknown, signal?: AbortSignal): void {
   if (signal?.aborted || cancellationLike(error)) throw error
 }
-function sameScope(left: MetroraToolScope, right: MetroraToolScope): boolean {
-  return left.period === right.period
-    && left.provider === right.provider
-    && left.projectId === right.projectId
-    && left.projectName === right.projectName
-    && left.model === right.model
-    && left.range?.from === right.range?.from
-    && left.range?.to === right.range?.to
+function provenancedOverview(value: MetroraOverview | MetroraOverviewSnapshot | null): MetroraOverviewSnapshot | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const candidate = value as Partial<MetroraOverviewSnapshot>
+  if (typeof candidate.scopeFingerprint !== 'string' || !candidate.scopeFingerprint.trim() || !candidate.payload || typeof candidate.payload !== 'object' || Array.isArray(candidate.payload)) return null
+  return candidate as MetroraOverviewSnapshot
 }
 function emptyEvidence(name: MetroraToolName, question: string, scope: MetroraToolScope): MetroraToolEvidence {
   const unavailable = buildMetroraSpendEvidence(question, scope, EMPTY_OVERVIEW)
@@ -101,15 +100,23 @@ function resultFor(name: MetroraToolName, scope: MetroraToolScope, args: Metrora
 }
 
 /** The one canonical implementation used by all current transports. */
-export function createMetroraToolRegistry(source: MetroraToolDataSource, scope: MetroraToolScope, suppliedOverview: MetroraOverview | null = null, options: MetroraToolScopeOptions = {}): MetroraToolRegistry {
+export function createMetroraOverviewSnapshot(scope: MetroraToolScope, payload: MetroraOverview): MetroraOverviewSnapshot {
+  const scoped = snapshotMetroraToolScope(scope)
+  return Object.freeze({ scopeFingerprint: metroraToolScopeFingerprint(scoped), payload })
+}
+
+export function createMetroraToolRegistry(source: MetroraToolDataSource, scope: MetroraToolScope, suppliedOverview: MetroraOverview | MetroraOverviewSnapshot | null = null, options: MetroraToolScopeOptions = {}): MetroraToolRegistry {
   const invocationScope = snapshotMetroraToolScope(scope)
+  const suppliedSnapshot = provenancedOverview(suppliedOverview)
   const execute: MetroraToolExecutor = async (name, args, signal): Promise<MetroraToolExecution> => {
     throwIfAborted(signal)
     const normalizedName = typeof name === 'string' ? name : String(name)
     const normalizedArgs = validateMetroraToolArguments(normalizedName, args)
     const nextScope = nextMetroraToolScope(invocationScope, normalizedName as MetroraToolName, normalizedArgs, options)
     throwIfAborted(signal)
-    const overview = suppliedOverview && sameScope(nextScope, invocationScope) ? suppliedOverview : await readOverview(source, nextScope, signal)
+    const overview = suppliedSnapshot && suppliedSnapshot.scopeFingerprint === metroraToolScopeFingerprint(nextScope)
+      ? suppliedSnapshot.payload
+      : await readOverview(source, nextScope, signal)
 
     if (normalizedName === 'get_overview_snapshot' || normalizedName === 'get_spend_snapshot' || normalizedName === 'get_project_drivers' || normalizedName === 'get_session_highlights' || normalizedName === 'get_coverage_report') {
       return resultFor(normalizedName, nextScope, normalizedArgs, buildMetroraSpendEvidence('tool: ' + normalizedName.replaceAll('_', ' '), nextScope, overview))

@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { HarnessThread } from './HarnessThread'
-import type { AdvisorScope } from '../advisor/types'
+import type { AdvisorAnswer, AdvisorScope, AdvisorScopeConflictV1 } from '../advisor/types'
 import type { SwarmRunState } from '../swarm/useSwarmRun'
 
 const scope: AdvisorScope = {
@@ -31,6 +32,7 @@ const baseProps: Parameters<typeof HarnessThread>[0] = {
   selectedAnswerId: null,
   onSelectAnswer: vi.fn(),
   onFollowUp: vi.fn(),
+  onScopeConflictOption: vi.fn(),
   harnessActions: {},
   harnessActionBusyId: null,
   onConfirmHarnessAction: vi.fn(),
@@ -60,5 +62,36 @@ describe('Harness V3 thread composition', () => {
     render(<HarnessThread {...baseProps} mode="swarm" messages={[{ id: 'task-1', role: 'user', text: 'Investigate current spend' }]} />)
     expect(screen.getByText('Investigate current spend')).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Swarm run' })).toHaveTextContent('Swarm is ready')
+  })
+
+  it('exposes bounded choices when the question period conflicts with the UI scope', async () => {
+    const conflict: AdvisorScopeConflictV1 = {
+      currentPeriod: 'today',
+      requestedPeriod: 'lifetime',
+      message: 'This question requires Lifetime, but the current scope is Today.',
+      options: [
+        { id: 'use-requested-period', label: 'Use Lifetime for this turn' },
+        { id: 'change-scope', label: 'Change scope' },
+      ],
+    }
+    const answer: AdvisorAnswer = {
+      conclusion: conflict.message,
+      scopeLabel: 'Today',
+      periodLabel: 'Today',
+      evidence: [],
+      coverage: { level: 'unavailable', label: 'One choice needed', detail: conflict.message },
+      assumptions: [],
+      unknown: [],
+      nextInvestigations: [],
+      details: [],
+      understanding: { intent: 'clarification', summary: 'scope conflict', usedDefaultScope: false, clarification: conflict.message, boundary: null, scopeConflict: conflict },
+      runtime: { id: 'fixture', label: 'Fixture', mode: 'ollama-local' },
+    }
+    const onScopeConflictOption = vi.fn()
+    render(<HarnessThread {...baseProps} onScopeConflictOption={onScopeConflictOption} messages={[{ id: 'question', role: 'user', text: 'How much have I spent in total?' }, { id: 'answer', role: 'assistant', answer }]} />)
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Use Lifetime for this turn' }))
+    expect(onScopeConflictOption).toHaveBeenCalledWith('How much have I spent in total?', conflict, expect.objectContaining({ id: 'use-requested-period' }))
   })
 })

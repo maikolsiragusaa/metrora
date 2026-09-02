@@ -12,9 +12,9 @@ import { createAdvisorConformanceFixture } from './conformance'
 
 describe('Advisor deterministic privacy boundary', () => {
   it.each([
-    '/home/alice/private/project',
-    'C:\\Users\\alice\\secret',
-    '/Users/alice/private',
+    '/home/fixture/private/project',
+    'C:\\Users\\fixture\\secret',
+    '/Users/fixture/private',
     'token=supersecretvalue',
     'password=mysecret',
     'bearer abcdefghijklmnopqrstuvwxyz',
@@ -26,7 +26,7 @@ describe('Advisor deterministic privacy boundary', () => {
   })
 
   it('redacts sensitive display spans while retaining safe factual prose', () => {
-    expect(sanitizeAdvisorDisplayText('C:\\Users\\alice\\secret project')).toContain('[redacted]')
+    expect(sanitizeAdvisorDisplayText('C:\\Users\\fixture\\secret project')).toContain('[redacted]')
     expect(sanitizeAdvisorDisplayText('project/alpha')).toBe('project/alpha')
     expect(sanitizeAdvisorDisplayText('Measured cost 12 across project/alpha')).toBe('Measured cost 12 across project/alpha')
     expect(sanitizeAdvisorNarrative('The observed pattern remains qualitative and local.')).toBe('The observed pattern remains qualitative and local.')
@@ -75,7 +75,7 @@ describe('Advisor deterministic privacy boundary', () => {
     const result = await createAdvisorToolRegistry(fixture.source, fixture.scope, fixture.overview).execute('get_spend_snapshot', {})
     const unsafeEvidence = {
       ...result.evidence,
-      refs: [{ id: 'internal-account-secret', label: '/home/alice/private/project', source: 'provider-secret' }],
+      refs: [{ id: 'internal-account-secret', label: '/home/fixture/private/project', source: 'provider-secret' }],
     } as unknown as typeof result.evidence
     const envelope = createContentMinimalAdvisorToolResultEnvelope(
       'get_spend_snapshot',
@@ -88,7 +88,7 @@ describe('Advisor deterministic privacy boundary', () => {
     expect(new TextEncoder().encode(serialized).byteLength).toBeLessThanOrEqual(32 * 1024)
     expect(serialized).not.toContain('supersecretvalue')
     expect(serialized).not.toContain('internal-account-secret')
-    expect(serialized).not.toContain('/home/alice/private/project')
+    expect(serialized).not.toContain('/home/fixture/private/project')
     expect(envelope.arguments).toEqual({ model: '[redacted]' })
     expect(envelope.evidenceRefs).toEqual([])
   })

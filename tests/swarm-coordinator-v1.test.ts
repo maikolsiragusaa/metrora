@@ -150,7 +150,7 @@ describe('public Swarm baseline coordinator', () => {
     const safeIdentity = createBaselineWorkerRequests({
       ...input,
       runId: 'run-safe-identity',
-      runtime: { id: 'ollama', label: 'Ollama C:\\Users\\founder\\model' },
+      runtime: { id: 'ollama', label: 'Ollama C:\\Users\\fixture\\model' },
     })[0]!
     expect(safeIdentity.runtime.label).not.toContain('Users')
     expect(requests[0]?.scope).not.toBe(input.scope)

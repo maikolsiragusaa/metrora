@@ -2,10 +2,11 @@ import { buildUnknownEvidence } from './evidence'
 import { buildActionProposalEvidence, buildBenchEvidence, buildClarificationEvidence, buildConversationEvidence, buildSocialEvidence, buildUnsupportedEvidence } from './special-evidence'
 import { createAdvisorModelGuardV1, resolveAdvisorQuestion } from './comprehension'
 import { explicitAdvisorModelHint, explicitAdvisorPeriodHints } from './planner'
-import { createAdvisorToolRegistry } from './tools'
+import { createAdvisorToolRegistry, type AdvisorOverviewSnapshot } from './tools'
 import { DeterministicAdvisorRuntime } from './runtime'
-import { advisorAnswerUsesCanonicalEvidence, advisorQuestionRequiresCanonicalReads, executeRequiredAdvisorReads, advisorToolRequestKey } from './required-reads'
+import { advisorQuestionRequiresCanonicalReads, executeRequiredAdvisorReads, advisorToolRequestKey } from './required-reads'
 import { mergeEvidence } from './merge-evidence'
+import { isAdvisorNaturalNarrativeSupportedAcrossEvidence } from './synthesis'
 import type { MenubarPayload } from '../lib/types'
 import type { AdvisorAnswer, AdvisorBenchEvidence, AdvisorConversationTurn, AdvisorDataSource, AdvisorEvidence, AdvisorIntent, AdvisorModelRuntime, AdvisorPeriodFilter, AdvisorScope, AdvisorUiContextV1, AdvisorToolEvent, AdvisorToolExecution } from './types'
 
@@ -19,11 +20,11 @@ function rethrowCancellation(error: unknown, signal?: AbortSignal): void {
   if (signal?.aborted || (error instanceof Error && (error.name === 'AbortError' || /cancel|abort/i.test(error.message)))) throw error
 }
 export type AdvisorKernel = {
-  investigate(input: { question: string; scope: AdvisorScope; overview?: MenubarPayload | null; conversation?: AdvisorConversationTurn[]; uiContext?: AdvisorUiContextV1; signal?: AbortSignal; onConformance?: () => void; onToolEvent?: (event: AdvisorToolEvent) => void; onDelta?: (text: string) => void }): Promise<AdvisorAnswer>
+  investigate(input: { question: string; scope: AdvisorScope; overview?: AdvisorOverviewSnapshot | MenubarPayload | null; conversation?: AdvisorConversationTurn[]; uiContext?: AdvisorUiContextV1; signal?: AbortSignal; onConformance?: () => void; onToolEvent?: (event: AdvisorToolEvent) => void; onDelta?: (text: string) => void }): Promise<AdvisorAnswer>
 }
 const unavailableBench: AdvisorBenchEvidence = { state: 'UNAVAILABLE', runs: [], latest: null, comparison: null }
 
-async function deterministicEvidenceForIntent(source: AdvisorDataSource, intent: AdvisorIntent, question: string, scope: AdvisorScope, suppliedOverview: MenubarPayload | null, signal?: AbortSignal, allowedPeriods: readonly AdvisorPeriodFilter[] = []): Promise<AdvisorEvidence> {
+async function deterministicEvidenceForIntent(source: AdvisorDataSource, intent: AdvisorIntent, question: string, scope: AdvisorScope, suppliedOverview: AdvisorOverviewSnapshot | MenubarPayload | null, signal?: AbortSignal, allowedPeriods: readonly AdvisorPeriodFilter[] = []): Promise<AdvisorEvidence> {
   if (intent === 'social') return buildSocialEvidence(question, scope)
   if (intent === 'action-proposal') return buildActionProposalEvidence(question, scope, 'Harness is proposal-only for this conversation; execution requires a separately authorized action surface.')
   if (intent === 'clarification') return buildClarificationEvidence(question, scope, 'Choose the intended evidence source before reading canonical data.')
@@ -62,8 +63,10 @@ function evidenceRequired(plan: ReturnType<typeof resolveAdvisorQuestion>): bool
   return advisorQuestionRequiresCanonicalReads(plan)
 }
 
-function hasCanonicalAnswerReference(answer: AdvisorAnswer, evidence: AdvisorEvidence): boolean {
-  return advisorAnswerUsesCanonicalEvidence(answer, evidence)
+function hasCanonicalAnswerReference(answer: AdvisorAnswer, evidence: AdvisorEvidence, evidenceItems: readonly AdvisorEvidence[] = [evidence]): boolean {
+  const canonicalIds = new Set(evidenceItems.flatMap(item => item.refs.map(ref => ref.id)))
+  if (!answer.evidence.some(ref => canonicalIds.has(ref.id))) return false
+  return isAdvisorNaturalNarrativeSupportedAcrossEvidence(answer.conclusion, evidenceItems)
 }
 
 async function normalizeFactualModelAnswer(
@@ -73,10 +76,11 @@ async function normalizeFactualModelAnswer(
   plan: ReturnType<typeof resolveAdvisorQuestion>,
   conversation: AdvisorConversationTurn[],
   uiContext: AdvisorUiContextV1 | undefined,
+  evidenceItems: readonly AdvisorEvidence[],
   signal: AbortSignal | undefined,
 ): Promise<AdvisorAnswer> {
   const authoritative = attachPlan(evidence, plan)
-  if (hasCanonicalAnswerReference(answer, authoritative)) {
+  if (hasCanonicalAnswerReference(answer, authoritative, evidenceItems)) {
     return {
       ...answer,
       evidence: authoritative.refs,
@@ -108,6 +112,18 @@ export function createAdvisorKernel(source: AdvisorDataSource, runtime: AdvisorM
     async investigate({ question, scope, overview: suppliedOverview = null, conversation = [], uiContext, signal, onConformance, onToolEvent, onDelta }) {
       throwIfAborted(signal)
       const plan = resolveAdvisorQuestion(question, scope, conversation)
+      if (plan.plan.scopeConflict) {
+        const clarification = attachPlan(buildClarificationEvidence(question, scope, plan.plan.scopeConflict.message), plan)
+        return new DeterministicAdvisorRuntime().generate({
+          question,
+          evidence: clarification,
+          conversation,
+          uiContext,
+          plan: plan.plan,
+          fallbackIntent: 'clarification',
+          guard: plan.guard,
+        }, signal)
+      }
       const allowedPeriods: AdvisorPeriodFilter[] = scope.range
         ? [scope.period]
         : Array.from(new Set<AdvisorPeriodFilter>([scope.period, ...explicitAdvisorPeriodHints(question)]))
@@ -176,7 +192,7 @@ export function createAdvisorKernel(source: AdvisorDataSource, runtime: AdvisorM
         const authoritative = modelEvidenceItems.length
           ? mergeEvidence(modelEvidenceItems, modelEvidenceItems[0]!)
           : canonicalEvidence ?? modelInputEvidence
-        return normalizeFactualModelAnswer(answer, authoritative, question, plan, conversation, uiContext, signal)
+        return normalizeFactualModelAnswer(answer, authoritative, question, plan, conversation, uiContext, modelEvidenceItems, signal)
       } catch (error) {
         rethrowCancellation(error, signal)
         const fallbackBase = plan.intent === 'action-proposal'

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { resolveAdvisorQuestion } from './comprehension'
+import { advisorScopeForRequestedPeriod } from './turn-plan'
 import { advisorScopeFingerprint, type AdvisorScope } from './types'
 
 const scope: AdvisorScope = {
@@ -74,5 +75,22 @@ describe('Advisor deterministic comprehension', () => {
     const result = resolveAdvisorQuestion('and sessions?', scope, [{ role: 'user', content: 'What changed in my spend?', scopeFingerprint: advisorScopeFingerprint(oldScope) }])
     expect(result.intent).toBe('unknown')
     expect(result.needsEvidence).toBe(false)
+  })
+
+  it.each([
+    ['How much have I spent in total?', 'today', 'lifetime'],
+    ['quanto ho speso da sempre?', 'today', 'lifetime'],
+    ['How much did I spend yesterday?', 'lifetime', 'yesterday'],
+    ['What did I spend this week?', 'today', 'week'],
+  ] as const)('keeps an explicit %s period from silently using %s', (question, currentPeriod, requestedPeriod) => {
+    const result = resolveAdvisorQuestion(question, { ...scope, period: currentPeriod })
+    expect(result.plan.scopeConflict).toMatchObject({ currentPeriod, requestedPeriod })
+    expect(result.plan.scopeIntent).toBe('ambiguous')
+    expect(result.needsEvidence).toBe(false)
+  })
+
+  it('turns a confirmed Yesterday choice into a bounded date range', () => {
+    const next = advisorScopeForRequestedPeriod({ ...scope, period: 'today' }, 'yesterday', new Date(2026, 8, 2, 15, 0, 0))
+    expect(next).toMatchObject({ period: 'today', range: { from: '2026-09-01', to: '2026-09-01' } })
   })
 })

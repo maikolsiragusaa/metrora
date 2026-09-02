@@ -26,7 +26,7 @@ import type {
   YieldJsonReport,
 } from './types'
 import type { ProjectBridge } from './project-bridge-types'
-import type { AdvisorLocalRuntimeId, AdvisorRuntimeProbe } from '../advisor/types'
+import type { AdvisorLocalRuntimeId, AdvisorReasoningEffort, AdvisorRuntimeProbe } from '../advisor/types'
 import type { HarnessActionEvent } from '../../electron/act-bridge'
 import type { PerformanceRunV1 } from '../../../src/bench/performance-contract-v1'
 import type { PerformanceComparisonV1 } from '../../../src/bench/performance-compare-v1'
@@ -38,7 +38,7 @@ export type AdvisorCredentialState = 'not-configured' | 'ready' | 'locked-unavai
 export type AdvisorCredentialStatus = { provider: AdvisorCredentialProvider; state: AdvisorCredentialState }
 export type AdvisorHostedModelState = 'discovered' | 'unverified' | 'verified' | 'limited' | 'unsupported' | 'failed-conformance'
 export type AdvisorHostedCapabilityState = 'supported' | 'unsupported' | 'unknown' | 'failed-conformance'
-export type AdvisorHostedModelCapabilities = { conversational: 'available' | 'unavailable' | 'unknown'; streaming: 'supported' | 'unsupported' | 'unknown'; toolCall: AdvisorHostedCapabilityState }
+export type AdvisorHostedModelCapabilities = { conversational: 'available' | 'unavailable' | 'unknown'; streaming: 'supported' | 'unsupported' | 'unknown'; toolCall: AdvisorHostedCapabilityState; reasoningEfforts?: readonly AdvisorReasoningEffort[] }
 export type AdvisorHostedModel = { id: string; label: string; state: AdvisorHostedModelState; limitation: string | null; capabilities?: AdvisorHostedModelCapabilities }
 export type AdvisorHostedProbe = { provider: AdvisorCredentialProvider; available: boolean; models: AdvisorHostedModel[]; detail: string; credentialState: AdvisorCredentialState }
 export type AdvisorHostedUsage = { inputTokens: number | null; outputTokens: number | null; totalTokens: number | null }

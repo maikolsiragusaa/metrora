@@ -159,6 +159,28 @@ export function sanitizeAdvisorNarrative(value: string, maxBytes = ADVISOR_MODEL
   return ''
 }
 
+/**
+ * Sanitizer for a plain-language closeout whose numeric claims have already
+ * been checked against canonical evidence. Numeric text is allowed here so a
+ * same-turn model answer can naturally interpret the verified measurement;
+ * sensitive, forbidden, and causal output remains rejected.
+ */
+export function sanitizeAdvisorGroundedNarrative(value: string, maxBytes = ADVISOR_MODEL_NARRATIVE_MAX_BYTES): string {
+  const normalized = value.replace(CONTROL_CHARACTERS, ' ').trim()
+  if (!normalized || containsAdvisorSensitiveText(normalized) || containsAdvisorForbiddenOutputClass(normalized) || UNSUPPORTED_CAUSAL_PATTERN.test(normalized)) {
+    UNSUPPORTED_CAUSAL_PATTERN.lastIndex = 0
+    return ''
+  }
+  UNSUPPORTED_CAUSAL_PATTERN.lastIndex = 0
+  const safe = sanitizeAdvisorDisplayText(normalized, Number.MAX_SAFE_INTEGER)
+  if (safe === REDACTION || containsAdvisorSensitiveText(safe) || containsAdvisorForbiddenOutputClass(safe) || UNSUPPORTED_CAUSAL_PATTERN.test(safe)) {
+    UNSUPPORTED_CAUSAL_PATTERN.lastIndex = 0
+    return ''
+  }
+  UNSUPPORTED_CAUSAL_PATTERN.lastIndex = 0
+  return byteLength(safe) <= maxBytes ? safe : ''
+}
+
 /** Final boundary for model-authored plain text and provider error text. */
 export function sanitizeAdvisorModelOutput(value: string, maxLength = ADVISOR_ANSWER_TEXT_MAX_BYTES): string {
   const normalized = value.replace(CONTROL_CHARACTERS, ' ').trim()

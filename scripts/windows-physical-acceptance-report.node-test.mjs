@@ -191,7 +191,7 @@ test('rejects a candidate file version that contradicts version authority', () =
 
 test('rejects path-shaped platform text', () => {
   const report = validReportV2()
-  report.platform.edition = 'C:\\Users\\private'
+  report.platform.edition = 'C:\\Users\\fixture'
   assert.throws(() => validateWindowsPhysicalAcceptanceReport(report), /without paths/)
 })
 

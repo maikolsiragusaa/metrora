@@ -35,9 +35,9 @@ function call(overrides: Partial<ParsedApiCall> = {}): ParsedApiCall {
     hasPlanMode: false,
     speed: 'standard',
     timestamp: '2026-07-31T12:00:00.000Z',
-    bashCommands: ['cat /home/maikol/private/token.txt'],
+    bashCommands: ['cat /home/fixture/private/token.txt'],
     deduplicationKey: 'private-provider-message-id',
-    toolSequence: [[{ tool: 'Read', file: '/home/maikol/private/token.txt' }]],
+    toolSequence: [[{ tool: 'Read', file: '/home/fixture/private/token.txt' }]],
     ...overrides,
   }
 }
@@ -111,7 +111,7 @@ describe('ParsedApiCall -> UsageMeasurementEventV1', () => {
 
     const serialized = JSON.stringify(event)
     expect(serialized).not.toContain('private-provider-message-id')
-    expect(serialized).not.toContain('/home/maikol/private/token.txt')
+    expect(serialized).not.toContain('/home/fixture/private/token.txt')
     expect(serialized).not.toContain('mcp__secret__lookup')
     expect(serialized).not.toContain('private-skill')
     expect(serialized).not.toContain('reviewer')

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { AdvisorAnswer, AdvisorScope } from '../advisor/types'
+import type { AdvisorAnswer, AdvisorScope, AdvisorScopeConflictOptionV1, AdvisorScopeConflictV1 } from '../advisor/types'
 import type { MetroraHarnessActionEvent } from '../lib/metrora-bridge-types'
 import { MetroraMark } from '../components/MetroraMark'
 import { HarnessSwarmRun } from './HarnessSwarmRun'
@@ -16,7 +16,7 @@ const PROMPTS = [
   { eyebrow: 'Projects', label: 'Which Project changed most?', question: 'Which Project drove the most spend?' },
 ]
 
-export function HarnessThread({ mode, swarmExperimentalEnabled, swarm, scope, messages, selectedAnswerId, onSelectAnswer, onFollowUp, harnessActions, harnessActionBusyId, onConfirmHarnessAction, onCancelHarnessAction, loadingQuestion, toolStatus, toolActivity, streamPreview, onCancel, error, onRetry, failedRequestPresent, notice, onAsk, onNextInvestigation }: {
+export function HarnessThread({ mode, swarmExperimentalEnabled, swarm, scope, messages, selectedAnswerId, onSelectAnswer, onFollowUp, onScopeConflictOption, harnessActions, harnessActionBusyId, onConfirmHarnessAction, onCancelHarnessAction, loadingQuestion, toolStatus, toolActivity, streamPreview, onCancel, error, onRetry, failedRequestPresent, notice, onAsk, onNextInvestigation }: {
   mode: 'chat' | 'swarm'
   swarmExperimentalEnabled: boolean
   swarm: { enabled: boolean; runtimeLabel: string; modelLabel: string; state: SwarmRunState; onCancel: () => void }
@@ -25,6 +25,7 @@ export function HarnessThread({ mode, swarmExperimentalEnabled, swarm, scope, me
   selectedAnswerId: string | null
   onSelectAnswer: (id: string) => void
   onFollowUp: (question: string) => void
+  onScopeConflictOption: (question: string, conflict: AdvisorScopeConflictV1, option: AdvisorScopeConflictOptionV1) => void
   harnessActions: Record<string, MetroraHarnessActionEvent>
   harnessActionBusyId: string | null
   onConfirmHarnessAction: (actionId: string, digest: string) => void | Promise<void>
@@ -59,9 +60,9 @@ export function HarnessThread({ mode, swarmExperimentalEnabled, swarm, scope, me
           <p>Ask about measured Metrora facts in plain language. Harness keeps scope and evidence visible, while your selected runtime remains replaceable.</p>
           <div className="harness-v3-prompts">{PROMPTS.map(prompt => <button key={prompt.question} type="button" onClick={() => onAsk(prompt.question)}><small>{prompt.eyebrow}</small><span>{prompt.label}</span><i aria-hidden="true">↗</i></button>)}</div>
         </div> : null}
-        {messages.map(message => message.role === 'user'
+        {messages.map((message, index) => message.role === 'user'
           ? <article key={message.id} className="harness-v3-user-turn user-message"><span>You</span><p>{message.text}</p></article>
-          : <HarnessTurn key={message.id} answer={message.answer!} selected={selectedAnswerId === message.id} onSelect={() => onSelectAnswer(message.id)} onFollowUp={onFollowUp} onNextInvestigation={onNextInvestigation} harnessAction={message.answer?.actionProposal?.harnessAction ? harnessActions[message.answer.actionProposal.harnessAction.actionId] ?? null : null} actionBusy={harnessActionBusyId === message.answer?.actionProposal?.harnessAction?.actionId} onConfirmHarnessAction={onConfirmHarnessAction} onCancelHarnessAction={onCancelHarnessAction} />
+          : <HarnessTurn key={message.id} answer={message.answer!} question={messages[index - 1]?.role === 'user' ? messages[index - 1]?.text : undefined} selected={selectedAnswerId === message.id} onSelect={() => onSelectAnswer(message.id)} onFollowUp={onFollowUp} onScopeConflictOption={onScopeConflictOption} onNextInvestigation={onNextInvestigation} harnessAction={message.answer?.actionProposal?.harnessAction ? harnessActions[message.answer.actionProposal.harnessAction.actionId] ?? null : null} actionBusy={harnessActionBusyId === message.answer?.actionProposal?.harnessAction?.actionId} onConfirmHarnessAction={onConfirmHarnessAction} onCancelHarnessAction={onCancelHarnessAction} />
         )}
         {showSwarm ? <HarnessSwarmRun enabled={swarmExperimentalEnabled} runtimeLabel={swarm.runtimeLabel} modelLabel={swarm.modelLabel} state={swarm.state} onCancel={swarm.onCancel} /> : null}
         {loadingQuestion ? <article className="harness-v3-pending-turn assistant-message pending"><div className="harness-v3-turn-label"><MetroraMark size={20} /><span>Metrora Harness</span></div><p className="harness-v3-pending-status">{toolStatus ?? 'Thinking…'}</p><HarnessWorkTrace items={toolActivity} scope={scope} />{streamPreview ? <p className="harness-v3-stream-preview">{streamPreview}</p> : null}<button type="button" className="harness-v3-quiet-button" onClick={onCancel}>Cancel</button></article> : null}

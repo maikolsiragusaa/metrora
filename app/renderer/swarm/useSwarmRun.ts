@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { MenubarPayload } from '../lib/types'
 import type { AdvisorDataSource, AdvisorModelRuntime, AdvisorScope } from '../advisor/types'
+import type { AdvisorOverviewSnapshot } from '../advisor/tools'
 import {
   createBaselineSwarmCoordinator,
   type BaselineSwarmCoordinatorV1,
@@ -31,7 +32,7 @@ export type UseSwarmRunOptions = {
   source: AdvisorDataSource
   runtime: AdvisorModelRuntime
   scope: AdvisorScope
-  overview: MenubarPayload | null
+  overview: AdvisorOverviewSnapshot | MenubarPayload | null
   modelId: string
   modelLabel: string
   enabled: boolean
@@ -68,7 +69,7 @@ function deepFreeze<T>(value: T): T {
   return value
 }
 
-function snapshotOverview(overview: MenubarPayload | null): MenubarPayload | null {
+function snapshotOverview(overview: AdvisorOverviewSnapshot | MenubarPayload | null): AdvisorOverviewSnapshot | MenubarPayload | null {
   if (!overview) return null
   // Overview is a JSON-safe polling payload. Clone it before handing it to a
   // run so a later poll, or an accidental consumer mutation, cannot alter the
@@ -101,6 +102,7 @@ function snapshotRuntime(runtime: AdvisorModelRuntime): AdvisorModelRuntime {
     providerSupport: Object.freeze([...runtime.providerSupport]),
     availability: runtime.availability,
     supportsStreaming: runtime.supportsStreaming,
+    reasoningEfforts: runtime.reasoningEfforts ? Object.freeze([...runtime.reasoningEfforts]) : undefined,
     generate: runtime.generate.bind(runtime),
     ...(generateSwarmSynthesis ? { generateSwarmSynthesis: generateSwarmSynthesis.bind(runtime) } : {}),
   })

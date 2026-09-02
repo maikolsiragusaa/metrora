@@ -112,8 +112,8 @@ describe('llama-server local runtime', () => {
 
   it('projects upstream path model ids into safe renderer handles and routes chat through the trusted map', async () => {
     const rawIds = [
-      'C:\\Users\\sirag\\models\\windows.gguf',
-      '/home/sirag/models/unix.gguf',
+      'C:\\Users\\fixture\\models\\windows.gguf',
+      '/home/fixture/models/unix.gguf',
       '../models/relative.gguf',
       'alias-model',
     ]
@@ -129,8 +129,8 @@ describe('llama-server local runtime', () => {
     const result = await probeLlamaServerMain(fetchImpl)
     expect(result.models).toHaveLength(rawIds.length)
     expect(result.models).not.toEqual(expect.arrayContaining(rawIds))
-    expect(JSON.stringify(result)).not.toContain('C:\\Users\\sirag')
-    expect(JSON.stringify(result)).not.toContain('/home/sirag')
+    expect(JSON.stringify(result)).not.toContain('C:\\Users\\fixture')
+    expect(JSON.stringify(result)).not.toContain('/home/fixture')
     expect(JSON.stringify(result)).not.toContain('../models')
     expect(result.models).toContain('alias-model')
     expect(result.capabilities.every(capability => capability.toolCall === 'unknown')).toBe(true)

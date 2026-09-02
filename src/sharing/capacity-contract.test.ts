@@ -85,12 +85,12 @@ describe('Companion Capacity V1 projection', () => {
 
   it('allowlists display fields and drops account, credential and filesystem data', () => {
     const unsafe = quota('claude', {
-      planLabel: 'C:\\Users\\private\\account@example.com',
+      planLabel: 'C:\\Users\\fixture\\account@example.com',
       accountEmail: 'account@example.com',
       accessToken: 'secret-token',
       accountId: 'acct_private',
-      localPath: 'C:\\Users\\private\\workspace',
-      windows: [{ id: '../../token', label: 'C:\\Users\\private', usedFraction: 0.5, resetsAt: null }],
+      localPath: 'C:\\Users\\fixture\\workspace',
+      windows: [{ id: '../../token', label: 'C:\\Users\\fixture', usedFraction: 0.5, resetsAt: null }],
     })
     const snapshot = toCompanionCapacityV1([unsafe], { desktopId: DESKTOP_ID, generatedAt: OBSERVED_AT })
     const serialized = JSON.stringify(snapshot)
@@ -98,7 +98,7 @@ describe('Companion Capacity V1 projection', () => {
     expect(snapshot.providers[0]).toMatchObject({ availability: 'unavailable', freshness: 'unavailable', windows: [], planLabel: null })
     expect(serialized).not.toContain('account@example.com')
     expect(serialized).not.toContain('secret-token')
-    expect(serialized).not.toContain('C:\\Users\\private')
+    expect(serialized).not.toContain('C:\\Users\\fixture')
     expect(serialized).not.toContain('acct_private')
   })
 })

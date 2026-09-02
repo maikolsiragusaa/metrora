@@ -1,6 +1,7 @@
 import { assertStrictBoundedAdvisorToolContent } from './contract'
 import type { AdvisorQuestionPlan } from './comprehension'
 import { deterministicPlanningFallback, explicitAdvisorPeriodHints } from './planner'
+import { isAdvisorNaturalNarrativeSupportedAcrossEvidence } from './synthesis'
 import type {
   AdvisorDataSource,
   AdvisorAnswer,
@@ -13,8 +14,7 @@ import type {
   AdvisorToolExecution,
   AdvisorToolRequestV1,
 } from './types'
-import type { MenubarPayload } from '../lib/types'
-import { createAdvisorToolRegistry, type AdvisorToolRegistry } from './tools'
+import { createAdvisorToolRegistry, type AdvisorOverviewSnapshot, type AdvisorToolRegistry } from './tools'
 
 export type RequiredAdvisorReadStatus = 'usable' | 'partial' | 'unavailable'
 
@@ -38,44 +38,27 @@ export function advisorQuestionRequiresCanonicalReads(plan: AdvisorQuestionPlan)
   return plan.plan.turnKind === 'investigate' && FACTUAL_INTENTS.has(plan.intent)
 }
 
-function groundingWords(value: string): Set<string> {
-  return new Set(value.toLocaleLowerCase().match(/[\p{L}\p{N}]{4,}/gu) ?? [])
-}
-
-function groundingNumbers(value: string): Set<string> {
-  const numbers = new Set<string>()
-  for (const match of value.match(/\d+(?:[.,]\d+)*/gu) ?? []) {
-    numbers.add(match.replace(/[.,]/gu, ''))
-    const decimal = Number(match.replace(',', '.'))
-    if (Number.isFinite(decimal)) numbers.add(String(decimal))
-  }
-  return numbers
-}
-
 /**
  * A model closeout must contain both a canonical reference and a structural
- * evidence anchor. A reference alone is not enough: a generic greeting could
- * otherwise attach a real ref while making no factual use of it.
  */
 export function advisorAnswerUsesCanonicalEvidence(answer: AdvisorAnswer, evidence: AdvisorEvidence): boolean {
   const canonicalIds = new Set(evidence.refs.map(ref => ref.id))
   if (!answer.conclusion.trim() || !answer.evidence.some(ref => canonicalIds.has(ref.id))) return false
-  const answerWords = groundingWords(answer.conclusion)
-  const evidenceWords = groundingWords([
-    evidence.intent,
-    evidence.coverage.label,
-    evidence.coverage.detail,
-    evidence.understanding?.summary ?? '',
-    evidence.refs.map(ref => ref.id + ' ' + ref.label).join(' '),
-    evidence.spend ? 'spend cost calls sessions' : '',
-    evidence.modelEfficiency ? 'model efficiency cost calls' : '',
-    evidence.quota ? 'quota capacity remaining reset' : '',
-    evidence.bench ? 'bench results score' : '',
-  ].join(' '))
-  const sharedWords = [...answerWords].filter(word => evidenceWords.has(word))
-  const evidenceNumbers = groundingNumbers(JSON.stringify(evidence))
-  const answerNumbers = groundingNumbers(answer.conclusion)
-  return sharedWords.length >= 2 || [...answerNumbers].some(number => evidenceNumbers.has(number))
+  // Reuse the same semantic/numeric grounding boundary as ordinary Chat
+  // closeouts. This accepts paraphrases while rejecting a response that only
+  // attaches a real reference or repeats an unsupported number.
+  if (!isAdvisorNaturalNarrativeSupportedAcrossEvidence(answer.conclusion, [evidence])) return false
+  const normalized = answer.conclusion.normalize('NFD').replace(/[\u0300-\u036f]/gu, '').toLocaleLowerCase()
+  const factualAnchor = evidence.intent === 'spend-change'
+    ? /\b(?:spend|spent|cost|expense|measured|total|lifetime|usage|calls?|sessions?|projects?|models?|providers?|spesa|speso|costo|misurat|totale|utilizz|chiamat|sessioni|progett|modell|fornitor)\b/u
+    : evidence.intent === 'model-efficiency'
+      ? /\b(?:model|models|efficien|cost|call|pricing|modello|modelli|costo|chiamat|prezz)\b/u
+      : evidence.intent === 'quota-capacity'
+        ? /\b(?:quota|capacity|remaining|reset|limit|credit|disponibil|rimane|resta|limite|credito)\b/u
+        : evidence.intent === 'bench-result'
+          ? /\b(?:bench|benchmark|score|result|task|test|risultat|punteggi|prova)\b/u
+          : /\b(?:metrora|canonical|evidence|evidenza|verified|verificat)\b/u
+  return factualAnchor.test(normalized)
 }
 
 function boundedUnavailableEvidence(question: string, scope: AdvisorScope, plan: AdvisorQuestionPlan, request: AdvisorToolRequestV1, detail: string): AdvisorEvidence {
@@ -150,14 +133,14 @@ export async function executeRequiredAdvisorReads(options: {
   scope: AdvisorScope
   question: string
   plan: AdvisorQuestionPlan
-  suppliedOverview?: MenubarPayload | null
+  suppliedOverview?: AdvisorOverviewSnapshot | import('../lib/types').MenubarPayload | null
   allowedToolNames?: ReadonlySet<string>
   definitions?: readonly AdvisorToolDefinition[]
   limits?: { maxCalls?: number }
   signal?: AbortSignal
   onToolEvent?: (event: AdvisorToolEvent) => void
   registry?: AdvisorToolRegistry
-  allowedPeriods?: readonly AdvisorScope['period'][]
+  allowedPeriods?: readonly import('./types').AdvisorPeriodFilter[]
 }): Promise<RequiredAdvisorReadsResult> {
   const allowedPeriods = options.allowedPeriods ?? (options.scope.range
     ? [options.scope.period]

@@ -143,7 +143,7 @@ describe('Workspace recovery IPC', () => {
     const result = await handlers['metrora:recoverWorkspaceState']!({
       reset: true,
       deleteEvidence: true,
-      sourcePath: '/private/path',
+      sourcePath: '/fixture/path',
       receipts: ['private-receipt'],
     })
 
@@ -160,7 +160,7 @@ describe('Workspace recovery IPC', () => {
       },
     })
     const serialized = JSON.stringify(result)
-    expect(serialized).not.toContain('/private/path')
+    expect(serialized).not.toContain('/fixture/path')
     expect(serialized).not.toContain('private-receipt')
     expect(serialized).not.toContain('deleteEvidence')
   })
@@ -182,7 +182,7 @@ describe('Workspace recovery IPC', () => {
 
   it('sanitizes recovery failures without leaking paths', async () => {
     const recoverLocalState = vi.fn(async () => {
-      const error = new Error('failed at C:\\Users\\private\\outbox')
+      const error = new Error('failed at C:\\Users\\fixture\\outbox')
       error.name = 'CanonicalReviewedProductionScannerIntegrityError'
       throw error
     })

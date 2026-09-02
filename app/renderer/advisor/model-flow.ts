@@ -1,5 +1,5 @@
 import { advisorScopeFingerprint, type AdvisorAnswer, type AdvisorEvidence, type AdvisorGuardPlanV1, type AdvisorModelRuntime, type AdvisorRuntimeInput, type AdvisorScope, type AdvisorSwarmSynthesisInput, type AdvisorTurnPlanV1 } from './types'
-import { contentMinimalEvidence, contentMinimalScope, sanitizeAdvisorAnswer, sanitizeAdvisorDisplayText, sanitizeAdvisorModelOutput, sanitizeAdvisorNarrative } from './privacy'
+import { contentMinimalEvidence, contentMinimalScope, sanitizeAdvisorAnswer, sanitizeAdvisorDisplayText, sanitizeAdvisorGroundedNarrative, sanitizeAdvisorModelOutput } from './privacy'
 import { buildAdvisorPresentationBlocks } from './presentation'
 import { isAdvisorNaturalNarrativeSupported, parseAdvisorSynthesisDraft, verifyAdvisorSynthesis } from './synthesis'
 import { hasMixedEvidenceScopes, mergeEvidence, sameEvidenceScope } from './merge-evidence'
@@ -114,6 +114,40 @@ export function buildAdvisorChatMessages(input: AdvisorRuntimeInput, fallbackPla
 /** Backward-compatible export for callers/tests that still use the old name. */
 export function buildAdvisorPlanningMessages(input: AdvisorRuntimeInput, fallbackPlan: AdvisorTurnPlanV1, guard: AdvisorGuardPlanV1 | undefined = input.guard, options: AdvisorChatPromptOptions = {}): ModelMessage[] {
   return buildAdvisorChatMessages(input, fallbackPlan, guard, options)
+}
+
+/**
+ * The controller has already completed the mandatory canonical read for this
+ * factual turn. Give that evidence to the first model response so a model
+ * does not have to rediscover a read that Metrora has already authorized and
+ * executed. The model may still ask for one bounded follow-up read.
+ */
+export function buildAdvisorEvidenceSynthesisMessages(
+  input: AdvisorRuntimeInput,
+  fallbackPlan: AdvisorTurnPlanV1,
+  guard: AdvisorGuardPlanV1,
+  evidence: AdvisorEvidence,
+  options: AdvisorChatPromptOptions = {},
+): ModelMessage[] {
+  return [
+    {
+      role: 'system',
+      content: [
+        'You are answering a bounded Metrora Harness factual turn.',
+        'The controller has already performed the mandatory canonical read. The canonical evidence below is authoritative and is available in this same turn.',
+        'Answer the original question now in natural language and interpret the verified facts, rather than merely repeating that a read occurred.',
+        'If one additional supplied read-only Metrora Tool is genuinely needed to answer the question, request it directly using the bounded Tool contract; do not request the mandatory read again.',
+        'A follow-up read must remain within the selected scope and the supplied fixed read-only tools. Never request writes, web search, shell commands, files, or arbitrary endpoints.',
+        'Do not invent numbers, subjects, rankings, causality, or quality claims. Keep any interpretation grounded in the canonical evidence.',
+        ...(workerInstruction(input) ? [workerInstruction(input)!] : []),
+        'Selected context: ' + modelScopeForEvidence(evidence),
+        'Canonical evidence already verified: ' + modelEvidence(evidence),
+        'If no additional read is needed, return only the concise natural answer. If the provider requires a planning representation for an additional read, use only the bounded planning shape accepted by Harness.',
+      ].join(' '),
+    },
+    ...safeConversation(input),
+    { role: 'user', content: modelQuestion(input) },
+  ]
 }
 
 export function buildAdvisorToolContinuationMessages(input: AdvisorRuntimeInput, plan: AdvisorTurnPlanV1, evidence: AdvisorEvidence, round: number, options: AdvisorChatPromptOptions = {}): ModelMessage[] {
@@ -293,8 +327,11 @@ export async function finalizeModelAnswer(options: FinalizeModelAnswerOptions, s
     ...(fallbackNote ? [fallbackNote] : []),
     ...(draft ? ['The model atom selection did not pass Metrora semantic verification; verified facts are shown instead.'] : []),
   ]
-  const naturalInterpretation = !draft && finalContent.trim() && !/^(?:\{|\[|```)/u.test(finalContent.trim()) && isAdvisorNaturalNarrativeSupported(finalContent, evidence)
-    ? sanitizeAdvisorNarrative(finalContent)
+  const naturalCandidate = !draft && finalContent.trim() && !/^(?:\{|\[|```)/u.test(finalContent.trim())
+  const naturalSupported = Boolean(naturalCandidate && isAdvisorNaturalNarrativeSupported(finalContent, evidence))
+  if (naturalCandidate && !naturalSupported) notes.push('The model interpretation was not grounded in canonical evidence; deterministic verified facts are shown instead.')
+  const naturalInterpretation = naturalSupported
+    ? sanitizeAdvisorGroundedNarrative(finalContent)
     : ''
   return sanitizeAdvisorAnswer({
     ...fallback,

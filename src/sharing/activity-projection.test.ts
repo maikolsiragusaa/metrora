@@ -33,7 +33,7 @@ function payload(sessions: number): MenubarPayload {
 function projects(): ProjectSummary[] {
   return [{
     project: 'metrora',
-    projectPath: 'C:/Users/private/Projects/metrora',
+    projectPath: 'C:/Users/fixture/Projects/metrora',
     totalCostUSD: 4,
     totalSavingsUSD: 0,
     totalApiCalls: 4,
@@ -116,8 +116,8 @@ describe('bounded Activity projections', () => {
   })
 
   it('keeps provider and Source Project filters independent and composable', () => {
-    const firstProject = projectAt('C:/Users/private/Projects/one/metrora', 'first', '2026-08-14T09:00:00.000Z')
-    const secondProject = projectAt('D:/Users/private/Projects/two/metrora', 'second', '2026-08-15T09:00:00.000Z')
+    const firstProject = projectAt('C:/Users/fixture/Projects/one/metrora', 'first', '2026-08-14T09:00:00.000Z')
+    const secondProject = projectAt('D:/Users/fixture/Projects/two/metrora', 'second', '2026-08-15T09:00:00.000Z')
     const firstSourceId = sourceProjectIdForSummary(firstProject)
     const secondSourceId = sourceProjectIdForSummary(secondProject)
     const inputQuery = { ...query, projectScopeId: 'all', limit: 10 }

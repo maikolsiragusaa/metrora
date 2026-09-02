@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { HostedAdvisorProbeResult } from '../advisor/hosted'
-import type { AdvisorCredentialState, AdvisorHostedModel, AdvisorHostedModelState, AdvisorLocalRuntimeId, AdvisorToolCapability, AdvisorHostedProviderId } from '../advisor/types'
+import type { AdvisorCredentialState, AdvisorHostedModel, AdvisorHostedModelState, AdvisorLocalRuntimeId, AdvisorReasoningEffort, AdvisorToolCapability, AdvisorHostedProviderId } from '../advisor/types'
 
 export type HarnessRuntimeChoice = AdvisorLocalRuntimeId | 'hosted'
 export type HarnessRuntimeModelState = AdvisorHostedModelState | 'unavailable'
@@ -92,6 +92,8 @@ export type HarnessRuntimeControlsProps = {
   hostedModel: string | null
   hostedProbe: HarnessHostedProbePresentation
   hostedConsent: boolean
+  reasoningEffort: AdvisorReasoningEffort
+  reasoningEfforts: readonly AdvisorReasoningEffort[]
   hasHostedRuntime: boolean
   configureOpen: boolean
   credentialEntry: string
@@ -102,6 +104,7 @@ export type HarnessRuntimeControlsProps = {
   onHostedProviderChange: (provider: AdvisorHostedProviderId) => void
   onHostedModelChange: (model: string) => void
   onHostedConsentChange: (consent: boolean) => void
+  onReasoningEffortChange: (effort: AdvisorReasoningEffort) => void
   onCredentialEntryChange: (value: string) => void
   onSaveHostedCredential: () => void
   onClearHostedCredential: () => void
@@ -130,6 +133,8 @@ export function HarnessRuntimePopover({
   hostedModel,
   hostedProbe,
   hostedConsent,
+  reasoningEffort,
+  reasoningEfforts,
   hasHostedRuntime,
   configureOpen,
   credentialEntry,
@@ -140,6 +145,7 @@ export function HarnessRuntimePopover({
   onHostedProviderChange,
   onHostedModelChange,
   onHostedConsentChange,
+  onReasoningEffortChange,
   onCredentialEntryChange,
   onSaveHostedCredential,
   onClearHostedCredential,
@@ -167,6 +173,7 @@ export function HarnessRuntimePopover({
       ? ({ ollama: 'Local Ollama model', lmstudio: 'Local LM Studio model', 'llama-server': 'Local llama.cpp server model' }[runtimeId]) + ' · read-only evidence tools · tool support varies by model'
       : 'Offline evidence fallback'
   const runtimeDetail = runtimeChoice === 'hosted' ? hostedProbe.detail : runtimeState.detail
+  const effectiveReasoningEffort = reasoningEfforts.includes(reasoningEffort) ? reasoningEffort : 'default'
 
   useEffect(() => {
     if (!configureOpen) return
@@ -200,6 +207,7 @@ export function HarnessRuntimePopover({
           <div className="harness-v3-runtime-state-grid" aria-label="Local runtime state"><span data-state="runtime">Runtime: {stateLabel(runtimeState.status)}</span><span data-state="model">Model: {modelStateLabel(runtimeState.modelState)}</span><span data-state="tool-call">Tool calls: {stateLabel(runtimeState.toolCall)}</span></div>
           <p className="harness-v3-runtime-detail">{runtimeDescription}</p><p className="harness-v3-runtime-detail">{runtimeDetail}</p>
         </div>}
+        <div className="harness-v3-reasoning-control"><label>Reasoning<select aria-label="Harness reasoning effort" value={effectiveReasoningEffort} disabled={reasoningEfforts.length <= 1} onChange={event => onReasoningEffortChange(event.target.value as AdvisorReasoningEffort)}>{reasoningEfforts.map(effort => <option key={effort} value={effort}>{stateLabel(effort)}</option>)}</select></label></div>
       </div> : null}
     </div>
   )

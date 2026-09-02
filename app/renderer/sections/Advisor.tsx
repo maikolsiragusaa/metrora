@@ -6,9 +6,11 @@ import type { MetroraHarnessActionEvent } from '../lib/metrora-bridge-types'
 import { createAdvisorDataSource } from '../advisor/source'
 import { createAdvisorKernel } from '../advisor/kernel'
 import { createAdvisorRuntime } from '../advisor/runtime'
+import { createAdvisorOverviewSnapshot } from '../advisor/tools'
 import { HostedAdvisorRuntime, probeHostedAdvisor } from '../advisor/hosted'
 import { advisorContextualSurfaceLabel, advisorScopeFromContextualLaunch, normalizeAdvisorContextualLaunch, type AdvisorContextualLaunchV1, type AdvisorContextualScopeMode } from '../advisor/context'
-import { advisorScopeFingerprint, type AdvisorAnswer, type AdvisorConversationTurn, type AdvisorHostedProviderId, type AdvisorLocalRuntimeId, type AdvisorScope } from '../advisor/types'
+import { advisorScopeForRequestedPeriod } from '../advisor/turn-plan'
+import { advisorScopeFingerprint, type AdvisorAnswer, type AdvisorConversationTurn, type AdvisorHostedProviderId, type AdvisorLocalRuntimeId, type AdvisorReasoningEffort, type AdvisorScope, type AdvisorScopeConflictOptionV1, type AdvisorScopeConflictV1 } from '../advisor/types'
 import { contextualScopeLabel } from './advisor-scope-labels'
 import { createHostedProbeChecking, createHostedProbeFailure, presentHostedProbe, type HarnessHostedProbePresentation, type HarnessRuntimeChoice } from '../harness/HarnessRuntimePopover'
 import { AdvisorHostedOperationGuard, isSelectableHostedModel } from './advisor-hosted-operation-guard'
@@ -21,6 +23,16 @@ type DetectedProvider = { id: string; label: string }
 type AdvisorMessage = { id: string; role: 'user' | 'assistant'; text?: string; answer?: AdvisorAnswer; scopeFingerprint: string }
 type AdvisorConversation = { id: string; title: string; messages: AdvisorMessage[] }
 type AdvisorFailedRequest = { question: string; scope: AdvisorScope; conversationId: string; conversation: AdvisorConversationTurn[] }
+const DEFAULT_REASONING_EFFORTS: readonly AdvisorReasoningEffort[] = ['default']
+const REASONING_EFFORT_STORAGE_KEY = 'metrora.harness.reasoning-effort'
+
+function storedReasoningEffort(): AdvisorReasoningEffort {
+  try {
+    const value = window.localStorage.getItem(REASONING_EFFORT_STORAGE_KEY)
+    return value === 'low' || value === 'medium' || value === 'high' || value === 'max' || value === 'default' ? value : 'default'
+  } catch { return 'default' }
+}
+
 function makeId(prefix: string): string {
   return prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7)
 }
@@ -83,9 +95,10 @@ export function Advisor({
   const hostedModelRef = useRef<string | null>(null)
   hostedModelRef.current = hostedModel
   const [hostedConsent, setHostedConsent] = useState(false)
+  const [reasoningEffort, setReasoningEffort] = useState<AdvisorReasoningEffort>(storedReasoningEffort)
   const [hostedProbe, setHostedProbe] = useState<HarnessHostedProbePresentation>(() => createHostedProbeChecking('openai'))
   const hostedModelForRuntime = hostedModel ? hostedProbe.models.find(model => model.id === hostedModel && isSelectableHostedModel(model)) ?? null : null
-  const hostedRuntime = useMemo(() => hostedModelForRuntime ? new HostedAdvisorRuntime({ provider: hostedProvider, model: hostedModelForRuntime.id, capabilities: hostedModelForRuntime.capabilities, consent: hostedConsent }) : null, [hostedConsent, hostedModelForRuntime, hostedProvider])
+  const hostedRuntime = useMemo(() => hostedModelForRuntime ? new HostedAdvisorRuntime({ provider: hostedProvider, model: hostedModelForRuntime.id, capabilities: hostedModelForRuntime.capabilities, reasoningEffort, consent: hostedConsent }) : null, [hostedConsent, hostedModelForRuntime, hostedProvider, reasoningEffort])
   const markHostedModelVerified = useCallback((provider: AdvisorHostedProviderId, model: string) => {
     if (!hostedOperationGuardRef.current.isCurrentProvider(provider) || hostedModelRef.current !== model) return
     setHostedProbe(current => current.provider !== provider ? current : {
@@ -104,6 +117,11 @@ export function Advisor({
   const activeRuntime = runtimeChoice === 'hosted'
     ? hostedRuntime ?? fallbackRuntime
     : localRuntime ?? fallbackRuntime
+  const reasoningEfforts = activeRuntime.reasoningEfforts ?? DEFAULT_REASONING_EFFORTS
+  const effectiveReasoningEffort = reasoningEfforts.includes(reasoningEffort) ? reasoningEffort : 'default'
+  useEffect(() => {
+    try { window.localStorage.setItem(REASONING_EFFORT_STORAGE_KEY, reasoningEffort) } catch { /* unavailable in restricted contexts */ }
+  }, [reasoningEffort])
   const kernel = useMemo(() => createAdvisorKernel(source, activeRuntime), [activeRuntime, source])
   const swarmExperimentalEnabled = isSwarmExperimentalEnabled()
   const [mode, setMode] = useState<'chat' | 'swarm'>('chat')
@@ -112,7 +130,7 @@ export function Advisor({
     source,
     runtime: activeRuntime,
     scope,
-    overview: !overview.loading && !overview.switching ? overview.data ?? null : null,
+    overview: !overview.loading && !overview.switching && scope.period === period && scope.provider === provider && scope.projectId === projectScopeId && scope.range?.from === range?.from && scope.range?.to === range?.to && scope.model === null && overview.data ? createAdvisorOverviewSnapshot(scope, overview.data) : null,
     modelId: runtimeChoice === 'hosted' ? hostedModel ?? activeRuntime.id : runtimeModel ?? activeRuntime.id,
     modelLabel: runtimeChoice === 'hosted' ? hostedModelForRuntime?.label ?? activeRuntime.label : runtimeModel ?? activeRuntime.label,
     enabled: swarmExperimentalEnabled,
@@ -212,10 +230,10 @@ export function Advisor({
   const updateConversation = useCallback((conversationId: string, update: (conversation: AdvisorConversation) => AdvisorConversation) => {
     setConversations(current => current.map(conversation => conversation.id === conversationId ? update(conversation) : conversation))
   }, [])
-  const ask = useCallback(async (rawQuestion: string, retryRequest?: AdvisorFailedRequest) => {
+  const ask = useCallback(async (rawQuestion: string, retryRequest?: AdvisorFailedRequest, scopeOverride?: AdvisorScope) => {
     const question = rawQuestion.trim()
     if (!question || loadingQuestion) return
-    const requestedScope = retryRequest?.scope ?? scope
+    const requestedScope = retryRequest?.scope ?? scopeOverride ?? scope
     const conversationId = retryRequest?.conversationId ?? activeConversationId
     const targetConversation = conversations.find(conversation => conversation.id === conversationId)
     if (!targetConversation) return
@@ -264,7 +282,8 @@ export function Advisor({
           && requestedScope.range?.to === range?.to
           && requestedScope.model === null
           && !overview.loading
-          && !overview.switching ? overview.data : null,
+          && !overview.switching
+          && overview.data ? createAdvisorOverviewSnapshot(requestedScope, overview.data) : null,
         conversation: history,
         uiContext: {
           contractVersion: 'advisor-ui-context-v1',
@@ -349,6 +368,17 @@ export function Advisor({
       setToolStatus(null)
     }
   }, [activeConversationId, contextualScopeMode, conversations, hostedModel, hostedProvider, hostedSubmitBlockReason, invalidateAdvisorRequest, kernel, loadingQuestion, markHostedModelVerified, normalizedContextualLaunch, overview.data, overview.loading, overview.switching, period, projectScopeId, provider, range?.from, range?.to, runtimeChoice, runtimeModel, scope, updateConversation])
+  const handleScopeConflictOption = useCallback((question: string, conflict: AdvisorScopeConflictV1, option: AdvisorScopeConflictOptionV1) => {
+    if (loadingQuestion) return
+    const requestedScope = advisorScopeForRequestedPeriod(scope, conflict.requestedPeriod)
+    if (option.id === 'change-scope') {
+      invalidateAdvisorRequest()
+      setScope(requestedScope)
+      setNotice('Scope changed. Review the selected context, then ask the question again.')
+      return
+    }
+    void ask(question, undefined, requestedScope)
+  }, [ask, invalidateAdvisorRequest, loadingQuestion, scope])
   const confirmHarnessAction = useCallback(async (actionId: string, digest: string) => {
     if (harnessActionBusyId || typeof metrora.harnessApproveCoreCompatibility !== 'function') {
       if (!harnessActionBusyId) setNotice('This desktop build cannot confirm a Core Compatibility action.')
@@ -407,6 +437,11 @@ export function Advisor({
   const updateHostedConsent = (consent: boolean) => {
     invalidateAdvisorRequest()
     setHostedConsent(consent)
+  }
+  const updateReasoningEffort = (effort: AdvisorReasoningEffort) => {
+    if (!reasoningEfforts.includes(effort)) return
+    invalidateAdvisorRequest()
+    setReasoningEffort(effort)
   }
   const updateHostedProvider = (next: AdvisorHostedProviderId) => {
     invalidateAdvisorRequest()
@@ -485,6 +520,8 @@ export function Advisor({
     hostedModel,
     hostedProbe,
     hostedConsent,
+    reasoningEffort: effectiveReasoningEffort,
+    reasoningEfforts,
     hasHostedRuntime: Boolean(hostedRuntime),
     configureOpen,
     credentialEntry,
@@ -495,6 +532,7 @@ export function Advisor({
     onHostedProviderChange: updateHostedProvider,
     onHostedModelChange: updateHostedModel,
     onHostedConsentChange: updateHostedConsent,
+    onReasoningEffortChange: updateReasoningEffort,
     onCredentialEntryChange: setCredentialEntry,
     onSaveHostedCredential: () => void saveHostedCredential(),
     onClearHostedCredential: () => void clearHostedCredential(),
@@ -576,6 +614,7 @@ export function Advisor({
       selectedAnswerId={selectedAnswerId}
       onSelectAnswer={id => setSelectedAnswerId(id)}
       onFollowUp={next => void ask(next)}
+      onScopeConflictOption={handleScopeConflictOption}
       harnessActions={harnessActions}
       harnessActionBusyId={harnessActionBusyId}
       onConfirmHarnessAction={confirmHarnessAction}

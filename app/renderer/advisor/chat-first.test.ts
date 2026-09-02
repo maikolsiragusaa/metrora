@@ -100,7 +100,7 @@ describe('Advisor chat-first model boundary', () => {
     })
 
     const answer = await createAdvisorKernel(fixture.source, runtime).investigate({
-      question: 'È vero che ho speso più di 4k in totale di AI? Verifica i dati disponibili e dammi una conclusione.',
+      question: 'È vero che ho speso più di 4k di AI? Verifica i dati disponibili e dammi una conclusione.',
       scope: fixture.scope,
       onToolEvent: event => events.push(event),
     })

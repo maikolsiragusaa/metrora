@@ -152,6 +152,64 @@ describe('Hosted Advisor renderer runtime', () => {
     expect(answer.streamed).toBe(false)
   })
 
+  it('lets the model interpret a successful mandatory read in the same turn', async () => {
+    const fixture = createAdvisorConformanceFixture()
+    const requests: Array<Record<string, unknown>> = []
+    const transport: HostedAdvisorTransport = {
+      probe: async () => ({ provider: 'openai', available: true, models: [{ id: 'gpt-test', label: 'gpt-test', state: 'discovered', limitation: null }], detail: 'ready', credentialState: 'ready' }),
+      chat: async (_requestId, payload) => {
+        requests.push(payload)
+        return { streamed: false, message: { content: 'Sì: Metrora measured $12.00 in the selected period, so this is a meaningful amount for the recorded activity.' } }
+      },
+      cancel: async () => true,
+      onEvent: () => () => {},
+    }
+    const answer = await createAdvisorKernel(fixture.source, new HostedAdvisorRuntime({
+      provider: 'openai',
+      model: 'gpt-test',
+      capabilities: { conversational: 'available', streaming: 'supported', toolCall: 'unknown' },
+      consent: true,
+      transport,
+    })).investigate({ question: 'What changed in spend?', scope: fixture.scope })
+
+    expect(requests).toHaveLength(1)
+    expect((requests[0]?.messages as Array<{ content: string }>).some(message => message.content.includes('12'))).toBe(true)
+    expect(fixture.reads.overviews).toHaveLength(1)
+    expect(answer.generatedByModel).toBe(true)
+    expect(answer.conclusion).toContain('meaningful amount')
+    expect(answer.conclusion).toContain('12.00')
+  })
+
+  it('allows one bounded follow-up read after the mandatory read and synthesizes both', async () => {
+    const fixture = createAdvisorConformanceFixture()
+    const requests: Array<Record<string, unknown>> = []
+    const transport: HostedAdvisorTransport = {
+      probe: async () => ({ provider: 'openai', available: true, models: [{ id: 'gpt-test', label: 'gpt-test', state: 'discovered', limitation: null }], detail: 'ready', credentialState: 'ready' }),
+      chat: async (_requestId, payload) => {
+        requests.push(payload)
+        return requests.length === 1
+          ? { streamed: false, message: { content: '', tool_calls: [{ id: 'project-drivers', function: { name: 'get_project_drivers', arguments: '{}' } }] } }
+          : { streamed: false, message: { content: 'Metrora measured $12.00 overall, and Project A is the visible project context for that spend.' } }
+      },
+      cancel: async () => true,
+      onEvent: () => () => {},
+    }
+    const answer = await createAdvisorKernel(fixture.source, new HostedAdvisorRuntime({
+      provider: 'openai',
+      model: 'gpt-test',
+      capabilities: { conversational: 'available', streaming: 'supported', toolCall: 'supported' },
+      consent: true,
+      transport,
+    })).investigate({ question: 'What changed in spend and which projects contributed?', scope: fixture.scope })
+
+    expect(requests).toHaveLength(2)
+    expect(fixture.reads.overviews).toHaveLength(2)
+    expect((requests[0]?.messages as Array<{ content: string }>).some(message => message.content.includes('12'))).toBe(true)
+    expect((requests[1]?.messages as Array<{ content: string }>).some(message => message.content.includes('Project A'))).toBe(true)
+    expect(answer.generatedByModel).toBe(true)
+    expect(answer.conclusion).toContain('Project A')
+  })
+
   it('signals hosted conformance after the first valid response even when continuation later fails', async () => {
     const fixture = createAdvisorConformanceFixture()
     const evidence = buildSpendEvidence('What changed in spend?', fixture.scope, fixture.overview)

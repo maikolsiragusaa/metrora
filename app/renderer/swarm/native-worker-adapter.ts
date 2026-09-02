@@ -1,8 +1,8 @@
-import { buildConversationEvidence } from '../advisor/special-evidence'
+import { buildClarificationEvidence, buildConversationEvidence } from '../advisor/special-evidence'
 import { createAdvisorModelGuardV1, resolveAdvisorQuestion } from '../advisor/comprehension'
 import { explicitAdvisorPeriodHints } from '../advisor/planner'
 import { ADVISOR_TOOL_CONTRACT } from '../advisor/contract'
-import { createAdvisorToolRegistry } from '../advisor/tools'
+import { createAdvisorToolRegistry, type AdvisorOverviewSnapshot } from '../advisor/tools'
 import { DeterministicAdvisorRuntime } from '../advisor/runtime'
 import { mergeEvidence } from '../advisor/merge-evidence'
 import { advisorAnswerUsesCanonicalEvidence, advisorQuestionRequiresCanonicalReads, executeRequiredAdvisorReads, advisorToolRequestKey, type RequiredAdvisorReadsResult } from '../advisor/required-reads'
@@ -131,6 +131,17 @@ function safeAnswer(answer: AdvisorAnswer, maxBytes = 8 * 1024): { answer: strin
   }
 }
 
+function workerCloseoutPrefix(role: SwarmWorkerRequestV1['role']): string {
+  if (role === 'investigator') return 'Investigator finding: '
+  if (role === 'verifier') return 'Verifier check: '
+  return 'Evidence review: '
+}
+
+function prefixWorkerAnswer(role: SwarmWorkerRequestV1['role'], answer: string): string {
+  const prefix = workerCloseoutPrefix(role)
+  return answer.startsWith(prefix) ? answer : prefix + answer
+}
+
 function workerContext(request: SwarmWorkerRequestV1): NonNullable<import('../advisor/types').AdvisorRuntimeInput['workerContext']> {
   if (request.role === 'investigator') {
     return {
@@ -205,7 +216,7 @@ function baseResult(request: SwarmWorkerRequestV1, status: SwarmWorkerResultV1['
 export type NativeHarnessWorkerAdapterOptions = {
   source: AdvisorDataSource
   runtime: AdvisorModelRuntime
-  overview?: MenubarPayload | null
+  overview?: AdvisorOverviewSnapshot | MenubarPayload | null
   now?: () => string
 }
 
@@ -217,7 +228,7 @@ export class NativeHarnessWorkerAdapter implements WorkerAdapterV1 {
   readonly adapterId = 'metrora-harness-native-worker-v1'
   private readonly source: AdvisorDataSource
   private readonly runtime: AdvisorModelRuntime
-  private readonly overview: MenubarPayload | null
+  private readonly overview: AdvisorOverviewSnapshot | MenubarPayload | null
   private readonly now: () => string
   private readonly active = new Map<string, AbortController>()
 
@@ -306,6 +317,33 @@ export class NativeHarnessWorkerAdapter implements WorkerAdapterV1 {
       // cannot turn a factual task into a clarification.
       const question = originalWorkerTask(request.task)
       const plan = resolveAdvisorQuestion(question, scope)
+      if (plan.plan.scopeConflict) {
+        const clarificationEvidence = {
+          ...buildClarificationEvidence(question, scope, plan.plan.scopeConflict.message),
+          understanding: plan.understanding,
+          plan: plan.plan,
+        }
+        const clarification = await new DeterministicAdvisorRuntime().generate({
+          question,
+          evidence: clarificationEvidence,
+          plan: plan.plan,
+          fallbackIntent: 'clarification',
+          guard: createAdvisorModelGuardV1(plan),
+        }, signal)
+        const safe = safeAnswer(clarification, request.limits.maxOutputBytes)
+        const result = baseResult(
+          request,
+          'completed',
+          startedAt,
+          this.now(),
+          [],
+          prefixWorkerAnswer(request.role, safe.answer || plan.plan.scopeConflict.message),
+          'Scope clarification required; no canonical read was executed.',
+          [],
+          { status: 'unavailable', requiredToolNames: [], usedToolNames: [] },
+        )
+        return finish(result)
+      }
       const allowedPeriods = scope.range
         ? [scope.period]
         : Array.from(new Set([scope.period, ...explicitAdvisorPeriodHints(question)]))
@@ -314,8 +352,9 @@ export class NativeHarnessWorkerAdapter implements WorkerAdapterV1 {
       const definitions = registry.definitions.filter(definition => allowed.has(definition.function.name)).slice(0, 16)
       const contract = filteredToolContract(registry.contract, definitions)
       let toolCalls = 0
-      // The existing Harness runtime has one bounded planning/Tool phase
-      // followed by synthesis. V1 does not implement a second model loop.
+      // The worker adapter exposes one bounded Tool round to the selected
+      // runtime. The runtime may make several calls inside that round, but
+      // it cannot widen the immutable worker budget.
       const toolRounds = 1
       const ensureToolRoundAllowed = () => {
         if (toolRounds > request.limits.maxToolRounds) throw new SwarmBoundsError('Worker Tool-round limit reached.')
@@ -331,6 +370,9 @@ export class NativeHarnessWorkerAdapter implements WorkerAdapterV1 {
         } else {
           observe({ contractVersion: 'metrora.swarm.v1', schemaVersion: 1, kind: 'worker', runId: request.runId, workerId: request.workerId, role: request.role, status: 'tool-completed', at: this.now(), toolName: safeToolName(event.name), detail: event.status })
         }
+      }
+      const onToolRound = (round: number) => {
+        if (round > request.limits.maxToolRounds) throw new SwarmBoundsError('Worker Tool-round limit reached.')
       }
       const requiredReads = advisorQuestionRequiresCanonicalReads(plan)
         ? await executeRequiredAdvisorReads({
@@ -391,6 +433,7 @@ export class NativeHarnessWorkerAdapter implements WorkerAdapterV1 {
         tools: definitions,
         toolContract: contract,
         executeTool,
+        onToolRound,
         onToolEvent,
         workerContext: workerContext(request),
       }, signal)
@@ -400,12 +443,12 @@ export class NativeHarnessWorkerAdapter implements WorkerAdapterV1 {
       const canonicalRefs = safeRefs(mergedEvidence.refs)
       const grounded = advisorAnswerUsesCanonicalEvidence(answer, mergedEvidence)
       const closeout = grounded
-        ? { answer: safe.answer, evidenceSummary: safe.evidenceSummary, refs: canonicalRefs }
+        ? { answer: prefixWorkerAnswer(request.role, safe.answer), evidenceSummary: safe.evidenceSummary, refs: canonicalRefs, rejected: false }
         : requiredReads
-          ? safeAnswer(await new DeterministicAdvisorRuntime().generate({ question, evidence: mergedEvidence, plan: plan.plan, guard: createAdvisorModelGuardV1(plan) }, signal), request.limits.maxOutputBytes)
+          ? { ...safeAnswer(await new DeterministicAdvisorRuntime().generate({ question, evidence: mergedEvidence, plan: plan.plan, guard: createAdvisorModelGuardV1(plan) }, signal), request.limits.maxOutputBytes), rejected: true }
           : safe.answer
-            ? safe
-            : { answer: 'This worker had no supported canonical Metrora evidence responsibility for the task.', evidenceSummary: 'No supported canonical Metrora evidence read was assigned.', refs: [] }
+            ? { ...safe, answer: prefixWorkerAnswer(request.role, safe.answer), rejected: false }
+            : { answer: 'This worker had no supported canonical Metrora evidence responsibility for the task.', evidenceSummary: 'No supported canonical Metrora evidence read was assigned.', refs: [], rejected: false }
       const activityResult = activity()
       const resultEvidence = evidenceResult(requiredReads, evidenceItems, activityResult.filter(item => item.status === 'completed').map(item => item.name))
       const summary = boundedSwarmText(requiredReads
@@ -416,7 +459,10 @@ export class NativeHarnessWorkerAdapter implements WorkerAdapterV1 {
             canonicalRefs.map(ref => ref.label).join('; '),
           ].filter(Boolean).join(' - ')
         : 'No canonical Metrora read was required for this bounded worker task.')
-      const result = baseResult(request, closeout.answer ? 'completed' : 'partial', startedAt, this.now(), activityResult, closeout.answer, summary, [], resultEvidence)
+      const closeoutErrors = closeout.rejected
+        ? ['Model synthesis rejected; deterministic closeout used.']
+        : []
+      const result = baseResult(request, closeout.answer ? 'completed' : 'partial', startedAt, this.now(), activityResult, closeout.answer, summary, closeoutErrors, resultEvidence)
       return finish({ ...result, evidenceRefs: canonicalRefs })
     } catch (error) {
       const status: SwarmWorkerResultV1['status'] = timedOut()
@@ -473,12 +519,63 @@ function synthesisReports(input: SwarmSynthesisInputV1): Array<{
   }))
 }
 
-function synthesisWords(value: string): Set<string> {
-  return new Set(value.toLocaleLowerCase().match(/[\p{L}\p{N}]{4,}/gu) ?? [])
+function synthesisNumbers(value: string): Set<string> {
+  const numbers = new Set<string>()
+  for (const token of value.match(/\d+(?:[.,]\d+)*/gu) ?? []) {
+    const lastComma = token.lastIndexOf(',')
+    const lastDot = token.lastIndexOf('.')
+    let normalized = token
+    if (lastComma >= 0 && lastDot >= 0) {
+      const decimalSeparator = lastComma > lastDot ? ',' : '.'
+      const thousandsSeparator = decimalSeparator === ',' ? '.' : ','
+      normalized = token.replaceAll(thousandsSeparator, '').replace(decimalSeparator, '.')
+    } else if (lastComma >= 0 && /,\d{3}(?:,\d{3})*$/u.test(token)) {
+      normalized = token.replaceAll(',', '')
+    } else {
+      normalized = token.replace(',', '.')
+    }
+    const parsed = Number(normalized)
+    if (Number.isFinite(parsed)) numbers.add(String(parsed))
+  }
+  return numbers
 }
 
-function synthesisNumbers(value: string): Set<string> {
-  return new Set((value.match(/\d+(?:[.,]\d+)*/gu) ?? []).map(number => number.replace(/[.,]/gu, '')))
+const SYNTHESIS_STOP_WORDS = new Set([
+  'about', 'after', 'again', 'also', 'and', 'are', 'because', 'been', 'being', 'could', 'data', 'does', 'evidence', 'from', 'have', 'into', 'just', 'more', 'only', 'that', 'the', 'this', 'using', 'with', 'your',
+  'della', 'delle', 'degli', 'del', 'e', 'hai', 'ho', 'il', 'la', 'le', 'nei', 'nel', 'per', 'sono', 'una', 'un', 'che', 'piu',
+])
+const SYNTHESIS_ALIASES: Readonly<Record<string, string>> = {
+  spend: 'spend', spent: 'spend', spending: 'spend', cost: 'spend', costs: 'spend', expense: 'spend', expenses: 'spend', spesa: 'spend', spese: 'spend', speso: 'spend', spesi: 'spend',
+  measured: 'measured', measure: 'measured', measuredly: 'measured', osservato: 'measured', osservata: 'measured', misurato: 'measured', misurata: 'measured',
+  total: 'total', totals: 'total', totally: 'total', overall: 'total', lifetime: 'lifetime', 'all-time': 'lifetime', totale: 'total', complessiva: 'total', complessivo: 'total',
+  usage: 'usage', utilizzo: 'usage', consumi: 'usage', consumption: 'usage', calls: 'calls', call: 'calls', chiamate: 'calls', chiamata: 'calls',
+  session: 'sessions', sessions: 'sessions', sessioni: 'sessions', model: 'models', models: 'models', modello: 'models', modelli: 'models',
+  project: 'projects', projects: 'projects', progetto: 'projects', progetti: 'projects', provider: 'providers', providers: 'providers', fornitore: 'providers', fornitori: 'providers',
+  quota: 'quota', capacity: 'quota', remaining: 'quota', reset: 'quota', soglia: 'threshold', threshold: 'threshold', exceeded: 'threshold', superata: 'threshold', superato: 'threshold',
+  significant: 'interpretation', importante: 'interpretation', cifra: 'interpretation', meaningful: 'interpretation', verified: 'verified', verifiedly: 'verified', verifica: 'verified',
+}
+
+function synthesisSemanticWords(value: string): Set<string> {
+  const normalized = value.normalize('NFD').replace(/[\u0300-\u036f]/gu, '').toLocaleLowerCase()
+  const words = normalized.match(/[\p{L}\p{N}][\p{L}\p{N}-]*/gu) ?? []
+  return new Set(words
+    .filter(word => word.length >= 3 && !SYNTHESIS_STOP_WORDS.has(word))
+    .map(word => SYNTHESIS_ALIASES[word] ?? word))
+}
+
+function synthesisEvidenceText(reports: ReturnType<typeof synthesisReports>): string {
+  return reports.flatMap(report => [report.answer, report.evidenceSummary, ...report.evidenceRefs.map(ref => ref.id + ' ' + ref.label)]).join(' ')
+}
+
+function hasUnsupportedSubject(answer: string, evidence: string): boolean {
+  const safeEvidence = evidence.normalize('NFD').replace(/[\u0300-\u036f]/gu, '').toLocaleLowerCase()
+  const generic = new Set(['selected', 'current', 'requested', 'the', 'a', 'an', 'il', 'la', 'i', 'le', 'un', 'una', 'usage', 'cost', 'spend', 'quality', 'total', 'calls', 'sessions', 'projects', 'models', 'providers', 'context', 'comparison', 'answer', 'scope', 'period'])
+  for (const match of answer.matchAll(/\b(?:model|models|project|projects|session|sessions|provider|providers|service)\s+([A-Za-z0-9][A-Za-z0-9._:/-]*)/giu)) {
+    const subject = (match[1] ?? '').toLocaleLowerCase()
+    if (!subject || generic.has(subject)) continue
+    if (!safeEvidence.includes(subject)) return true
+  }
+  return false
 }
 
 function synthesisIsGrounded(answer: string, input: SwarmSynthesisInputV1, reports: ReturnType<typeof synthesisReports>): boolean {
@@ -488,26 +585,36 @@ function synthesisIsGrounded(answer: string, input: SwarmSynthesisInputV1, repor
   if (!text) return false
   const useful = reports.filter(report => report.evidenceStatus !== 'unavailable' && report.answer.trim() && (report.evidenceRefs.length > 0 || report.requiredToolNames.length === 0))
   if (!useful.length) return false
-  const answerWords = synthesisWords(text)
-  const evidenceWords = new Set(useful.flatMap(report => [report.answer, report.evidenceSummary, ...report.evidenceRefs.map(ref => ref.id + ' ' + ref.label)]).flatMap(value => [...synthesisWords(value)]))
+  const evidenceText = synthesisEvidenceText(useful)
+  const answerWords = synthesisSemanticWords(text)
+  const evidenceWords = synthesisSemanticWords(evidenceText)
+  const taskWords = synthesisSemanticWords(task)
+  const allowedNumbers = synthesisNumbers(evidenceText)
+  const answerNumbers = synthesisNumbers(text)
+  const hasCanonicalNumber = [...answerNumbers].some(number => allowedNumbers.has(number))
+  if ([...answerNumbers].some(number => !allowedNumbers.has(number))) return false
+  if (hasUnsupportedSubject(text, evidenceText)) return false
+  if (/\b(?:caused?|causes?|due\s+to|because\s+of|reason\s+(?:is|was)|responsible\s+for|a\s+causa\s+di|ha\s+causato)\b/iu.test(text)) return false
+  if (/\b(?:hello|hi|hey|good\s+morning|good\s+evening|i\s+can\s+help|what\s+would\s+you\s+like|how\s+can\s+i\s+help)\b/iu.test(text)) return false
   const sharedEvidenceWords = [...answerWords].filter(word => evidenceWords.has(word))
-  if (sharedEvidenceWords.length < 2) return false
-  const workerAnswerWords = new Set(useful.flatMap(report => [...synthesisWords(report.answer)]))
-  const sharedWorkerWords = [...answerWords].filter(word => workerAnswerWords.has(word))
-  const allowedNumbers = new Set(useful.flatMap(report => [report.answer, report.evidenceSummary]).flatMap(value => [...synthesisNumbers(value)]))
-  const sharesWorkerAnchor = sharedWorkerWords.length >= 2 || [...synthesisNumbers(text)].some(number => allowedNumbers.has(number))
-  if (!sharesWorkerAnchor) return false
-  const taskWords = synthesisWords(task)
   const taskEvidenceWords = [...taskWords].filter(word => evidenceWords.has(word))
-  if (taskEvidenceWords.length > 0 && !taskEvidenceWords.some(word => answerWords.has(word))) return false
-  if ([...synthesisNumbers(text)].some(number => !allowedNumbers.has(number))) return false
+  const sharedTaskAnswerWords = [...answerWords].filter(word => taskEvidenceWords.includes(word))
+  const factualAnswerWords = new Set(['spend', 'measured', 'total', 'lifetime', 'usage', 'calls', 'sessions', 'models', 'projects', 'providers', 'quota', 'threshold', 'verified', 'interpretation'])
+  const canonicalReadRequired = reports.some(report => report.requiredToolNames.length > 0)
+  if (!sharedEvidenceWords.length) return false
+  if (!canonicalReadRequired) return true
+  if (![...answerWords].some(word => factualAnswerWords.has(word))) return false
+  if (taskEvidenceWords.length > 0 && !sharedTaskAnswerWords.length && !hasCanonicalNumber) return false
+  if (!hasCanonicalNumber && sharedEvidenceWords.length < 1) return false
+  if (/(?:\b(?:driver|drivers|contributor|contributors|ranking|ranked|main|primary|top|highest|largest|biggest|most)\b)/iu.test(text) && !sharedEvidenceWords.some(word => ['spend', 'models', 'projects', 'sessions', 'providers'].includes(word))) return false
   const limitedEvidence = reports.some(report => report.requiredToolNames.length > 0 && report.evidenceStatus !== 'usable')
   const stateDisclosure = /\b(?:partial|parziale|unavailable|non\s+disponibile|insufficient|insufficiente|missing|mancante|failed|fallito|failure|timeout|timed\s+out|scaduto|not\s+available|could\s+not|cannot|impossibile)\b/iu.test(text)
   if (limitedEvidence && !stateDisclosure) return false
   if (limitedEvidence && /\b(?:high\s+coverage|fully\s+verified|all\s+evidence\s+is\s+available|conclusive|alta\s+copertura|completamente\s+verificato|conclusivo)\b/iu.test(text)) return false
   // The reports are bound to the original task by the controller. Requiring
-  // evidence anchors (rather than a phrase deny-list) prevents a generic
-  // Harness greeting from being accepted as a factual synthesis.
+  // semantic evidence anchors, canonical numbers, and subject checks accepts
+  // paraphrases without treating generic or causally overreaching prose as a
+  // successful synthesis.
   return true
 }
 

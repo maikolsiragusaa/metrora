@@ -34,7 +34,7 @@ describe('Swarm evidence v1', () => {
     const evidence = await buildSwarmEvidenceV1({
       request: {
         runId: 'run-evidence',
-        task: 'Inspect C:\\Users\\founder\\secret-project with token=super-secret.',
+        task: 'Inspect C:\\Users\\fixture\\secret-project with token=super-secret.',
         scope: { period: 'today', project: 'all' },
         allowedToolNames: ['get_spend_snapshot'],
       },
@@ -71,6 +71,6 @@ describe('Swarm evidence v1', () => {
   })
 
   it('sanitizes path and credential-like event text', () => {
-    expect(sanitizeSwarmText('read C:\\Users\\founder\\file.txt token=abc')).toBe('read [path] [redacted]')
+    expect(sanitizeSwarmText('read C:\\Users\\fixture\\file.txt token=abc')).toBe('read [path] [redacted]')
   })
 })

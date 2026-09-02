@@ -1,4 +1,4 @@
-import type { AdvisorAnswer, AdvisorPresentationBlockV1 } from '../advisor/types'
+import type { AdvisorAnswer, AdvisorPresentationBlockV1, AdvisorScopeConflictOptionV1, AdvisorScopeConflictV1 } from '../advisor/types'
 import type { MetroraHarnessActionEvent } from '../lib/metrora-bridge-types'
 import { MetroraMark } from '../components/MetroraMark'
 import { HarnessChartBlock } from './HarnessChartBlock'
@@ -83,12 +83,19 @@ function PresentationBlocks({ blocks }: { blocks: AdvisorPresentationBlockV1[] }
   })}</div>
 }
 
-export function HarnessTurn({ answer, selected, onSelect, onFollowUp, onNextInvestigation, harnessAction, actionBusy, onConfirmHarnessAction, onCancelHarnessAction }: {
+function ScopeConflictActions({ question, conflict, onChoose }: { question?: string; conflict: AdvisorScopeConflictV1; onChoose: (question: string, conflict: AdvisorScopeConflictV1, option: AdvisorScopeConflictOptionV1) => void }) {
+  if (!question) return null
+  return <div className="harness-v3-scope-conflict" aria-label="Scope clarification options">{conflict.options.map(option => <button type="button" className="harness-v3-quiet-button" key={option.id} onClick={event => { event.stopPropagation(); onChoose(question, conflict, option) }}>{option.label}</button>)}</div>
+}
+
+export function HarnessTurn({ answer, question, selected, onSelect, onFollowUp, onNextInvestigation, onScopeConflictOption, harnessAction, actionBusy, onConfirmHarnessAction, onCancelHarnessAction }: {
   answer: AdvisorAnswer
+  question?: string
   selected: boolean
   onSelect: () => void
   onFollowUp: (next: string) => void
   onNextInvestigation?: (question: string) => void
+  onScopeConflictOption: (question: string, conflict: AdvisorScopeConflictV1, option: AdvisorScopeConflictOptionV1) => void
   harnessAction?: MetroraHarnessActionEvent | null
   actionBusy: boolean
   onConfirmHarnessAction: (actionId: string, proposalDigest: string) => void
@@ -115,6 +122,7 @@ export function HarnessTurn({ answer, selected, onSelect, onFollowUp, onNextInve
       <div className="harness-v3-turn-label"><MetroraMark size={20} /><span>Metrora Harness</span><small>{answer.generatedByModel ? (answer.evidence.length ? 'model-assisted explanation' : 'model-assisted chat') : 'offline evidence'}</small></div>
       <p className="harness-v3-conclusion">{answer.conclusion}</p>
       <div className="harness-v3-answer-meta"><span className={'harness-v3-coverage-pill ' + answer.coverage.level}>{answer.coverage.label}</span><span>{answer.scopeLabel}</span></div>
+      {answer.understanding?.scopeConflict ? <ScopeConflictActions question={question} conflict={answer.understanding.scopeConflict} onChoose={onScopeConflictOption} /> : null}
       {answer.presentation?.length ? <PresentationBlocks blocks={answer.presentation} /> : null}
       {answer.actionProposal?.kind === 'run-core-compatibility' && action ? <HarnessActionBlock action={action} busy={actionBusy} onConfirm={() => onConfirmHarnessAction(action.actionId, action.proposalDigest)} onCancel={() => onCancelHarnessAction(action.actionId)} /> : null}
       {answer.why?.length ? <section className="harness-v3-answer-section"><h4>Why</h4>{answer.why.slice(0, 2).map((item, index) => <p key={index}>{item}</p>)}</section> : null}

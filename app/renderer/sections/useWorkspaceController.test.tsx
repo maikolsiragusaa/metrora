@@ -239,7 +239,7 @@ describe('useWorkspaceController', () => {
 
   it('sanitizes bridge failures instead of exposing thrown details', async () => {
     bridge.produceWorkspaceMeasurements.mockRejectedValue(
-      new Error('C:\\Users\\private\\secret-source.jsonl'),
+      new Error('C:\\Users\\fixture\\secret-source.jsonl'),
     )
     const { result } = renderHook(() => useWorkspaceController(bridge))
     await waitFor(() => expect(result.current.busy).toBe(false))

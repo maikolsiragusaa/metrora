@@ -6,10 +6,17 @@ export type AdvisorHostedCredentialStatus = { provider: AdvisorHostedProviderId;
 export type AdvisorHostedModelState = 'discovered' | 'unverified' | 'verified' | 'limited' | 'unsupported' | 'failed-conformance'
 export type AdvisorHostedProtocol = 'openai-responses' | 'openai-chat' | 'anthropic-messages' | 'gemini-content'
 export type AdvisorHostedCapabilityState = 'supported' | 'unsupported' | 'unknown' | 'failed-conformance'
+export type AdvisorReasoningEffort = 'default' | 'low' | 'medium' | 'high' | 'max'
+export type AdvisorHostedReasoningParameter = 'openai-effort' | 'reasoning-object'
+export type AdvisorHostedReasoningCapability = {
+  efforts: readonly AdvisorReasoningEffort[]
+  parameter: AdvisorHostedReasoningParameter
+}
 export type AdvisorHostedModelCapabilities = {
   conversational: 'available' | 'unavailable' | 'unknown'
   streaming: 'supported' | 'unsupported' | 'unknown'
   toolCall: AdvisorHostedCapabilityState
+  reasoningEfforts?: readonly AdvisorReasoningEffort[]
 }
 export type AdvisorHostedModel = {
   id: string
@@ -43,7 +50,7 @@ export type AdvisorHostedChatMessage = {
   content: string
 }
 export type AdvisorHostedToolDefinition = { type: 'function'; function: { name: string; description?: string; parameters?: Record<string, unknown> } }
-export type AdvisorHostedChatRequest = { provider: AdvisorHostedProviderId; model: string; messages: AdvisorHostedChatMessage[]; tools?: AdvisorHostedToolDefinition[]; stream?: boolean; consent: true; /** Set only for bounded Harness evidence/conformance calls. */ harnessConformance?: true }
+export type AdvisorHostedChatRequest = { provider: AdvisorHostedProviderId; model: string; messages: AdvisorHostedChatMessage[]; tools?: AdvisorHostedToolDefinition[]; stream?: boolean; consent: true; reasoningEffort?: AdvisorReasoningEffort; /** Set only for bounded Harness evidence/conformance calls. */ harnessConformance?: true }
 export type AdvisorHostedChatResult = { provider: AdvisorHostedProviderId; model: string; message: { content: string; tool_calls: AdvisorHostedToolCall[] }; usage: AdvisorHostedUsage | null; streamed: boolean }
 export type AdvisorHostedEnvelope = { ok: true; value: unknown } | { ok: false; error: { kind: string; message: string } }
 
@@ -202,6 +209,72 @@ export function resolveOpenCodeZenProtocolFromMetadata(metadata: Record<string, 
     }
   }
   return protocol
+}
+
+const REASONING_EFFORTS = new Set<AdvisorReasoningEffort>(['default', 'low', 'medium', 'high', 'max'])
+const REASONING_EFFORT_KEYS = ['reasoningEfforts', 'reasoning_efforts', 'supportedReasoningEfforts', 'supported_reasoning_efforts', 'reasoningEffortValues', 'reasoning_effort_values'] as const
+const REASONING_PARAMETER_KEYS = ['reasoningParameter', 'reasoning_parameter', 'reasoningMode', 'reasoning_mode'] as const
+
+function reasoningSources(metadata: Record<string, unknown>): Record<string, unknown>[] {
+  const nested = metadata.capabilities
+  return isRecordLike(nested) ? [metadata, nested] : [metadata]
+}
+
+function isRecordLike(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function declaredReasoningEfforts(sources: readonly Record<string, unknown>[]): AdvisorReasoningEffort[] | null | undefined {
+  for (const source of sources) {
+    for (const key of REASONING_EFFORT_KEYS) {
+      if (!Object.prototype.hasOwnProperty.call(source, key)) continue
+      if (!Array.isArray(source[key])) return null
+      const efforts = source[key]
+        .filter((value): value is string => typeof value === 'string')
+        .map(value => value.trim().toLowerCase())
+        .filter((value): value is AdvisorReasoningEffort => REASONING_EFFORTS.has(value as AdvisorReasoningEffort))
+      if (!efforts.length) return null
+      return Array.from(new Set(efforts))
+    }
+  }
+  return undefined
+}
+
+function declaredReasoningParameter(sources: readonly Record<string, unknown>[], protocol: AdvisorHostedProtocol): AdvisorHostedReasoningParameter | null | undefined {
+  if (protocol !== 'openai-responses' && protocol !== 'openai-chat') return null
+  for (const source of sources) {
+    for (const key of REASONING_PARAMETER_KEYS) {
+      if (!Object.prototype.hasOwnProperty.call(source, key)) continue
+      const value = source[key]
+      if (value === 'openai-effort' || value === 'reasoning-object') return value
+      if (value === 'reasoning_effort' || value === 'reasoning-effort') return protocol === 'openai-responses' ? 'reasoning-object' : 'openai-effort'
+      if (value === 'reasoning' || value === 'thinking') return 'reasoning-object'
+      return null
+    }
+    const parameters = source.supported_parameters
+    if (!Array.isArray(parameters)) continue
+    const names = parameters.filter((value): value is string => typeof value === 'string').map(value => value.toLowerCase())
+    if (names.includes('reasoning_effort') || names.includes('reasoning-effort')) return protocol === 'openai-responses' ? 'reasoning-object' : 'openai-effort'
+    if (names.includes('reasoning') || names.includes('thinking')) return 'reasoning-object'
+  }
+  return undefined
+}
+
+/**
+ * Read reasoning support only when the provider explicitly declares both a
+ * usable parameter and its supported levels. An absent declaration is not a
+ * capability; callers must keep the control at Default.
+ */
+export function reasoningCapabilityFromMetadata(metadata: Record<string, unknown> | undefined, protocol: AdvisorHostedProtocol | null): AdvisorHostedReasoningCapability | null {
+  if (!metadata || !protocol) return null
+  const sources = reasoningSources(metadata)
+  const parameter = declaredReasoningParameter(sources, protocol)
+  if (!parameter) return null
+  const declared = declaredReasoningEfforts(sources)
+  if (declared === null) return null
+  const efforts = declared ?? ['default', 'low', 'medium', 'high']
+  if (!efforts.includes('default')) efforts.unshift('default')
+  return { efforts: Array.from(new Set(efforts)), parameter }
 }
 
 function openCodeZenProtocol(model: string, metadata?: Record<string, unknown>): AdvisorHostedProtocol | null {

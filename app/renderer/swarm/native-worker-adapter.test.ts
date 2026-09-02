@@ -6,6 +6,7 @@ import type { AdvisorAnswer, AdvisorDataSource, AdvisorRuntimeInput, AdvisorMode
 import { createBaselineWorkerRequests } from '../../../src/swarm/coordinator-v1'
 import type { SwarmEventV1, SwarmSynthesisInputV1, SwarmWorkerResultV1 } from '../../../src/swarm/contract-v1'
 import { NativeHarnessWorkerAdapter, createNativeHarnessSwarmSynthesizer } from './native-worker-adapter'
+import { createAdvisorOverviewSnapshot } from '../advisor/tools'
 
 function overview(): MenubarPayload {
   return {
@@ -99,14 +100,14 @@ describe('Native Harness Swarm worker adapter', () => {
     const adapter = new NativeHarnessWorkerAdapter({
       source: sourceResult.value,
       runtime: runtime(capture),
-      overview: overview(),
+      overview: createAdvisorOverviewSnapshot({ period: 'today', range: null, provider: 'all', projectId: 'all', projectName: 'All projects', model: null }, overview()),
       now: () => '2026-08-31T00:00:00.000Z',
     })
     const [request] = createBaselineWorkerRequests({
       runId: 'run-native',
       task: 'What changed in spend?',
       scope: { period: 'today', range: null, provider: 'all', projectId: 'all', projectName: 'All projects', model: null },
-      runtime: { id: 'ollama', label: 'Ollama C:\\Users\\founder\\model' },
+      runtime: { id: 'ollama', label: 'Ollama C:\\Users\\fixture\\model' },
       model: { id: 'model-a', label: 'model-a' },
       allowedToolNames: ['get_spend_snapshot'],
       limits: { maxToolCalls: 1, maxToolRounds: 1 },
@@ -120,7 +121,7 @@ describe('Native Harness Swarm worker adapter', () => {
     expect(capture.denied).toBe(true)
     expect(capture.generateCalls).toBe(1)
     expect(result.runtime.label).not.toContain('Users')
-    expect(JSON.stringify(result)).not.toContain('C:\\Users\\founder')
+    expect(JSON.stringify(result)).not.toContain('C:\\Users\\fixture')
     expect(events.some(event => event.kind === 'worker' && event.status === 'tool-started')).toBe(true)
     expect(events.some(event => event.kind === 'worker' && event.status === 'tool-completed')).toBe(true)
   })
@@ -131,7 +132,7 @@ describe('Native Harness Swarm worker adapter', () => {
     const adapter = new NativeHarnessWorkerAdapter({
       source: sourceResult.value,
       runtime: runtime(capture, 4),
-      overview: overview(),
+      overview: createAdvisorOverviewSnapshot({ period: 'today', range: null, provider: 'all', projectId: 'all', projectName: 'All projects', model: null }, overview()),
       now: () => '2026-08-31T00:00:00.000Z',
     })
     const [request] = createBaselineWorkerRequests({
@@ -189,7 +190,7 @@ describe('Native Harness Swarm worker adapter', () => {
     const adapter = new NativeHarnessWorkerAdapter({ source: fixture.source, runtime, overview: null, now: () => '2026-08-31T00:00:00.000Z' })
     const requests = createBaselineWorkerRequests({
       runId: 'run-role-semantics',
-      task: 'È vero che ho speso più di 4k in totale di AI? Verifica i dati disponibili e dammi una conclusione.',
+      task: 'È vero che ho speso più di 4k di AI? Verifica i dati disponibili e dammi una conclusione.',
       scope: fixture.scope as any,
       runtime: { id: 'ollama', label: 'Ollama local' },
       model: { id: 'model-a', label: 'model-a' },
@@ -207,8 +208,48 @@ describe('Native Harness Swarm worker adapter', () => {
     expect(results.every(result => result.status === 'completed')).toBe(true)
     expect(results.every(result => result.evidenceResult?.status === 'usable')).toBe(true)
     expect(results.every(result => result.evidenceRefs.some(ref => ref.id === 'overview.current'))).toBe(true)
+    expect(results[0]?.answer).not.toBe(results[1]?.answer)
     expect(events.filter(event => event.kind === 'worker' && event.status === 'tool-started')).toHaveLength(4)
     expect(events.filter(event => event.kind === 'worker' && event.status === 'tool-completed')).toHaveLength(2)
+  })
+
+  it('does not reuse a cached Today overview for a Lifetime worker read', async () => {
+    const today = overview()
+    const lifetime = {
+      ...today,
+      current: { ...today.current, cost: 4118.17, calls: 417, sessions: 28 },
+    } as unknown as MenubarPayload
+    const fixture = createAdvisorConformanceFixture({ overview: lifetime })
+    const runtime: AdvisorModelRuntime = {
+      id: 'lifetime-fixture',
+      label: 'Lifetime fixture',
+      mode: 'ollama-local',
+      providerSupport: ['fixture'],
+      availability: 'ready',
+      generate: input => new DeterministicAdvisorRuntime().generate(input),
+    }
+    const adapter = new NativeHarnessWorkerAdapter({
+      source: fixture.source,
+      runtime,
+      overview: createAdvisorOverviewSnapshot({ period: 'today', range: null, provider: 'all', projectId: 'all', projectName: 'All projects', model: null }, today),
+      now: () => '2026-08-31T00:00:00.000Z',
+    })
+    const [request] = createBaselineWorkerRequests({
+      runId: 'run-lifetime-provenance',
+      task: 'How much have I spent in lifetime?',
+      scope: { ...fixture.scope, period: 'lifetime' },
+      runtime: { id: 'ollama', label: 'Ollama local' },
+      model: { id: 'model-a', label: 'model-a' },
+      allowedToolNames: ['get_spend_snapshot'],
+      limits: { maxToolCalls: 1, maxToolRounds: 1 },
+    })
+
+    const result = await adapter.run(request!)
+
+    expect(fixture.reads.overviews).toHaveLength(1)
+    expect(fixture.reads.overviews[0]).toMatchObject({ period: 'lifetime' })
+    expect(result.answer).toMatch(/4,118\.17|4118\.17/u)
+    expect(result.answer).not.toContain('0.96')
   })
 
   it('keeps a terminal worker closeout truthful when the required canonical read is unavailable', async () => {
@@ -239,7 +280,7 @@ describe('Native Harness Swarm worker adapter', () => {
     const adapter = new NativeHarnessWorkerAdapter({ source: failingSource, runtime, overview: null, now: () => '2026-08-31T00:00:00.000Z' })
     const [request] = createBaselineWorkerRequests({
       runId: 'run-unavailable-evidence',
-      task: 'È vero che ho speso più di 4k in totale di AI? Verifica i dati disponibili e dammi una conclusione.',
+      task: 'È vero che ho speso più di 4k di AI? Verifica i dati disponibili e dammi una conclusione.',
       scope: fixture.scope as any,
       runtime: { id: 'ollama', label: 'Ollama local' },
       model: { id: 'model-a', label: 'model-a' },
@@ -319,6 +360,53 @@ describe('Native Harness Swarm synthesis boundary', () => {
     expect(generate).not.toHaveBeenCalled()
     expect(result.status).toBe('completed')
     expect(result.answer).toContain('Verified spend is $12.00')
+  })
+
+  it('accepts a natural dedicated synthesis that answers the threshold question from canonical worker numbers', async () => {
+    const workerAnswer = 'Metrora measured $4,118.17 in lifetime spend.'
+    const runtime: AdvisorModelRuntime = {
+      id: 'natural-synthesis-fixture',
+      label: 'Natural synthesis fixture',
+      mode: 'ollama-local',
+      providerSupport: ['fixture'],
+      generate: vi.fn(async () => { throw new Error('ordinary Harness generation must not synthesize Swarm') }),
+      generateSwarmSynthesis: vi.fn(async () => ({
+        answer: 'Sì: la spesa lifetime misurata è $4,118.17, quindi supera la soglia indicata.',
+        evidenceSummary: 'Both workers reported the same lifetime spend.',
+      })),
+    }
+    const result = await createNativeHarnessSwarmSynthesizer(runtime)(synthesisInput([
+      synthesisWorker('investigator', workerAnswer),
+      synthesisWorker('verifier', workerAnswer),
+    ]), new AbortController().signal)
+
+    expect(result.status).toBe('completed')
+    expect(result.answer).toContain('supera la soglia indicata')
+    expect(result.errors).toEqual([])
+  })
+
+  it('rejects a dedicated synthesis that introduces an unsupported number', async () => {
+    const workerAnswer = 'Metrora measured $12.00 in the selected period.'
+    const runtime: AdvisorModelRuntime = {
+      id: 'unsupported-number-fixture',
+      label: 'Unsupported number fixture',
+      mode: 'ollama-local',
+      providerSupport: ['fixture'],
+      generate: vi.fn(async () => { throw new Error('ordinary Harness generation must not synthesize Swarm') }),
+      generateSwarmSynthesis: vi.fn(async () => ({
+        answer: 'Metrora measured $99.00 in the selected period.',
+        evidenceSummary: 'Unsupported numeric claim.',
+      })),
+    }
+    const result = await createNativeHarnessSwarmSynthesizer(runtime)(synthesisInput([
+      synthesisWorker('investigator', workerAnswer),
+      synthesisWorker('verifier', workerAnswer),
+    ]), new AbortController().signal)
+
+    expect(result.status).toBe('completed')
+    expect(result.answer).toContain(workerAnswer)
+    expect(result.answer).not.toContain('$99.00')
+    expect(result.errors.join(' ')).toMatch(/not grounded|deterministic/i)
   })
 
   it.each([

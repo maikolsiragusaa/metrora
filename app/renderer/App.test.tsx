@@ -694,7 +694,7 @@ describe('usage_snapshot telemetry props', () => {
     // A path-like project name that MUST NEVER reach telemetry: the snapshot never
     // reads topProjects, and this guards against a future field accidentally doing so.
     p.current.topProjects = [{
-      name: '/Users/torukmakto/secret-client/private-repo',
+      name: '/Users/fixture/secret-client/private-repo',
       cost: 42, savingsUSD: 0, sessions: 1, avgCostPerSession: 42, sessionDetails: [],
     }]
     return p

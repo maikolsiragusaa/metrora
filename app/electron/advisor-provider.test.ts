@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { advisorHostedProviderDescriptors, createAdvisorHostedHandlers, type AdvisorHostedEvent, type AdvisorHostedProviderId } from './advisor-provider'
-import { resolveOpenCodeZenProtocolFromMetadata } from './advisor-provider-contract'
+import { reasoningCapabilityFromMetadata, resolveOpenCodeZenProtocolFromMetadata } from './advisor-provider-contract'
 
 const providers: AdvisorHostedProviderId[] = ['openai', 'anthropic', 'gemini']
 const request = (provider: AdvisorHostedProviderId, stream = false) => ({
@@ -43,6 +43,16 @@ function textPayload(provider: AdvisorHostedProviderId): Record<string, unknown>
   if (provider === 'anthropic') return { content: [{ type: 'text', text: 'Measured response.' }], usage: { input_tokens: 4, output_tokens: 3 } }
   return { output: [{ type: 'message', content: [{ type: 'output_text', text: 'Measured response.' }] }], usage: { input_tokens: 4, output_tokens: 3, total_tokens: 7 } }
 }
+
+// Observed from GET https://opencode.ai/zen/v1/models on 2026-09-02. The
+// listing is intentionally kept as observed: it advertises IDs, object type,
+// creation time, and owner, but no protocol or reasoning capability fields.
+const OPENCODE_ZEN_OBSERVED_MODEL_ROWS = [
+  { id: 'muse-spark-1.2-contributor-free', object: 'model', created: 1788307756, owned_by: 'opencode' },
+  { id: 'mimo-v2.5-free', object: 'model', created: 1788307756, owned_by: 'opencode' },
+  { id: 'nemotron-3-ultra-free', object: 'model', created: 1788307756, owned_by: 'opencode' },
+  { id: 'nemotron-3.5-lightning-free', object: 'model', created: 1788307756, owned_by: 'opencode' },
+] as const
 
 describe('Advisor hosted provider authority', () => {
   it('keeps provider origins and paths code-owned', () => {
@@ -573,6 +583,72 @@ describe('Advisor hosted provider authority', () => {
       })).resolves.toMatchObject({ ok: true, value: { model: item.model } })
       expect(calls.at(-1)).toBe('https://opencode.ai' + item.path)
     }
+  })
+
+  it('keeps the observed OpenCode Zen model-list shape fail-closed while routing MiMo through its reviewed protocol', async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    const fetchImpl = (async (url: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(url), init })
+      if (String(url).endsWith('/zen/v1/models')) return jsonResponse({ data: OPENCODE_ZEN_OBSERVED_MODEL_ROWS })
+      return jsonResponse({ choices: [{ message: { content: [{ type: 'text', text: 'MiMo response.' }] } }] })
+    }) as typeof fetch
+    const handlers = readyHandlers(fetchImpl)
+    const probe = await handlers['metrora:advisorHostedProbe']!('opencode-zen') as { ok: boolean; value: any }
+    expect(probe.value.models).toEqual(OPENCODE_ZEN_OBSERVED_MODEL_ROWS.map(row => expect.objectContaining({ id: row.id, state: 'unverified' })))
+    expect(probe.value.models.find((model: { id: string }) => model.id === 'mimo-v2.5-free')?.capabilities).not.toHaveProperty('reasoningEfforts')
+
+    const result = await handlers['metrora:advisorHostedChat']!('zen-observed-mimo', {
+      provider: 'opencode-zen',
+      model: 'mimo-v2.5-free',
+      messages: [{ role: 'user', content: 'Use the approved bounded path.' }],
+      stream: false,
+      consent: true,
+    }) as { ok: boolean; value: any }
+
+    expect(result).toMatchObject({ ok: true, value: { provider: 'opencode-zen', model: 'mimo-v2.5-free', message: { content: 'MiMo response.' } } })
+    expect(calls.at(-1)?.url).toBe('https://opencode.ai/zen/v1/chat/completions')
+    const body = JSON.parse(String(calls.at(-1)?.init?.body)) as Record<string, unknown>
+    expect(body).toMatchObject({ model: 'mimo-v2.5-free', messages: [{ role: 'user', content: 'Use the approved bounded path.' }] })
+    expect(body).not.toHaveProperty('reasoning_effort')
+  })
+
+  it('maps an explicitly advertised reasoning parameter to supported normalized levels only', async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    const fetchImpl = (async (url: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(url), init })
+      if (String(url).includes('/api/v1/models')) return jsonResponse({ data: [{ id: 'openai/reasoning-fixture', supported_parameters: ['reasoning_effort'] }] })
+      return jsonResponse({ choices: [{ message: { content: 'Reasoning response.' } }] })
+    }) as typeof fetch
+    const handlers = readyHandlers(fetchImpl)
+    const probe = await handlers['metrora:advisorHostedProbe']!('openrouter') as { ok: boolean; value: any }
+    expect(probe.value.models[0]).toMatchObject({
+      id: 'openai/reasoning-fixture',
+      capabilities: { reasoningEfforts: ['default', 'low', 'medium', 'high'] },
+    })
+
+    const result = await handlers['metrora:advisorHostedChat']!('openrouter-reasoning-medium', {
+      provider: 'openrouter',
+      model: 'openai/reasoning-fixture',
+      messages: [{ role: 'user', content: 'Use the selected effort.' }],
+      reasoningEffort: 'medium',
+      stream: false,
+      consent: true,
+    }) as { ok: boolean; value: any }
+    expect(result).toMatchObject({ ok: true, value: { message: { content: 'Reasoning response.' } } })
+    const body = JSON.parse(String(calls.at(-1)?.init?.body)) as Record<string, unknown>
+    expect(body.reasoning_effort).toBe('medium')
+
+    const unsupported = await handlers['metrora:advisorHostedChat']!('openrouter-reasoning-max', {
+      provider: 'openrouter',
+      model: 'openai/reasoning-fixture',
+      messages: [{ role: 'user', content: 'Do not send an unsupported level.' }],
+      reasoningEffort: 'max',
+      stream: false,
+      consent: true,
+    }) as { ok: boolean; error: { kind: string } }
+    expect(unsupported).toMatchObject({ ok: false, error: { kind: 'request-unsupported' } })
+    expect(calls).toHaveLength(2)
+    expect(reasoningCapabilityFromMetadata({ supported_parameters: ['reasoning_effort'] }, 'openai-chat')).toEqual({ efforts: ['default', 'low', 'medium', 'high'], parameter: 'openai-effort' })
   })
 
   it('does not reuse exact-model conformance when OpenCode Zen protocol metadata changes', async () => {

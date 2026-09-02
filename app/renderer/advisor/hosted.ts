@@ -1,12 +1,12 @@
 import { metrora } from '../lib/ipc'
 import { AdvisorToolContractError, assertStrictBoundedAdvisorToolContent } from './contract'
-import { buildAdvisorChatMessages, buildAdvisorConversationMessages, buildAdvisorSwarmSynthesisMessages, buildAdvisorToolContinuationMessages, finalizeAdvisorConversationAnswer, finalizeModelAnswer, buildAdvisorSynthesisMessages } from './model-flow'
+import { buildAdvisorChatMessages, buildAdvisorConversationMessages, buildAdvisorEvidenceSynthesisMessages, buildAdvisorSwarmSynthesisMessages, buildAdvisorToolContinuationMessages, finalizeAdvisorConversationAnswer, finalizeModelAnswer, buildAdvisorSynthesisMessages, evidenceUsable } from './model-flow'
 import { deterministicPlanningFallback, parseAdvisorPlanningDraft, planningDraftFromNativeToolCalls, runtimeGuardPlan, validateAdvisorPlanningDraft, type AdvisorPlanningValidation } from './planner'
 import { hasMixedEvidenceScopes, mergeEvidence } from './merge-evidence'
 import { HARNESS_TOOL_LOOP_LIMITS } from './limits'
 import { parseAdvisorSynthesisDraft } from './synthesis'
 import { createAdvisorTurnDeadline, raceAdvisorAbort, shouldRethrowAdvisorAbort } from './abort'
-import type { AdvisorAnswer, AdvisorEvidence, AdvisorHostedModel, AdvisorHostedModelCapabilities, AdvisorHostedProviderId, AdvisorModelRuntime, AdvisorRuntimeInput, AdvisorSwarmSynthesisInput, AdvisorSwarmSynthesisResult, AdvisorToolDefinition, AdvisorToolRequestV1 } from './types'
+import type { AdvisorAnswer, AdvisorEvidence, AdvisorHostedModel, AdvisorHostedModelCapabilities, AdvisorHostedProviderId, AdvisorModelRuntime, AdvisorReasoningEffort, AdvisorRuntimeInput, AdvisorSwarmSynthesisInput, AdvisorSwarmSynthesisResult, AdvisorToolDefinition, AdvisorToolRequestV1 } from './types'
 
 const BOUNDED_TURN_DEADLINE_NOTE = 'The bounded Metrora turn deadline was reached; verified facts are shown instead.'
 
@@ -145,24 +145,32 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
   readonly mode = 'hosted-byok' as const
   readonly providerSupport: readonly string[]
   readonly supportsStreaming: boolean
+  readonly reasoningEfforts: readonly AdvisorReasoningEffort[]
   readonly availability = 'ready' as const
   private readonly provider: HostedAdvisorProvider
   private readonly model: string
   private readonly consent: boolean
   private readonly capabilities: AdvisorHostedModelCapabilities
+  private readonly reasoningEffort: AdvisorReasoningEffort
   private readonly transport: HostedAdvisorTransport
 
-  constructor(options: { provider: HostedAdvisorProvider; model: string; capabilities?: AdvisorHostedModelCapabilities; consent?: boolean; transport?: HostedAdvisorTransport }) {
+  constructor(options: { provider: HostedAdvisorProvider; model: string; capabilities?: AdvisorHostedModelCapabilities; reasoningEffort?: AdvisorReasoningEffort; consent?: boolean; transport?: HostedAdvisorTransport }) {
     this.provider = options.provider
     this.model = options.model
     this.transport = options.transport ?? bridgeTransport
     this.consent = options.consent === true
     this.capabilities = options.capabilities ?? { conversational: 'unknown', streaming: 'unknown', toolCall: 'unknown' }
+    this.reasoningEfforts = options.capabilities?.reasoningEfforts?.length ? [...new Set(options.capabilities.reasoningEfforts)] : ['default']
+    this.reasoningEffort = options.reasoningEffort && this.reasoningEfforts.includes(options.reasoningEffort) ? options.reasoningEffort : 'default'
     this.supportsStreaming = this.capabilities.streaming !== 'unsupported'
     this.id = 'hosted-' + options.provider
     const providerLabel = options.provider === 'opencode-zen' ? 'OpenCode Zen' : options.provider === 'openrouter' ? 'OpenRouter' : options.provider.charAt(0).toUpperCase() + options.provider.slice(1)
     this.label = providerLabel + ' · ' + options.model.replace(/^models\//u, '')
     this.providerSupport = [options.provider + ' official API']
+  }
+
+  private reasoningRequest(): Record<string, unknown> {
+    return this.reasoningEffort === 'default' ? {} : { reasoningEffort: this.reasoningEffort }
   }
 
   async generateSwarmSynthesis(input: AdvisorSwarmSynthesisInput, signal?: AbortSignal): Promise<AdvisorSwarmSynthesisResult> {
@@ -178,6 +186,7 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
       const response = await raceAdvisorAbort(this.transport.chat(activeRequestId, {
         provider: this.provider,
         model: this.model,
+        ...this.reasoningRequest(),
         messages: buildAdvisorSwarmSynthesisMessages(input),
         tools: [],
         stream: false,
@@ -225,6 +234,7 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
           const response = await raceAdvisorAbort(this.transport.chat(activeRequestId, {
             provider: this.provider,
             model: this.model,
+            ...this.reasoningRequest(),
             messages: buildAdvisorConversationMessages(effectiveInput, kind),
             tools: [],
             stream: false,
@@ -252,6 +262,11 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
         return finalizeModelAnswer({ runtime: this, input: { ...input, plan: deterministic.plan, guard }, evidenceItems: evidenceItems.length ? evidenceItems : [input.evidence], finalContent: '', modelUsed, fallbackNote: deadline.didTimeout() ? BOUNDED_TURN_DEADLINE_NOTE : note }, finalizationSignal())
       }
 
+      const requiredEvidenceItems = [...(input.requiredEvidence ?? [])]
+      const requiredEvidenceReady = evidenceUsable(requiredEvidenceItems)
+      const controllerEvidence = requiredEvidenceReady
+        ? mergeEvidence(requiredEvidenceItems, input.evidence)
+        : input.evidence
       let firstResponse: { message: { content: string; tool_calls?: Array<Record<string, unknown>> }; streamed: boolean }
       const allowNativeToolCalls = this.capabilities.toolCall === 'supported'
       try {
@@ -259,7 +274,10 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
         firstResponse = await raceAdvisorAbort(this.transport.chat(activeRequestId, {
           provider: this.provider,
           model: this.model,
-          messages: buildAdvisorChatMessages(input, fallbackPlan, guard, { nativeToolCalls: allowNativeToolCalls, textPlanningFallback: !allowNativeToolCalls }),
+          ...this.reasoningRequest(),
+          messages: requiredEvidenceReady
+            ? buildAdvisorEvidenceSynthesisMessages({ ...input, evidence: controllerEvidence }, fallbackPlan, guard, controllerEvidence, { nativeToolCalls: allowNativeToolCalls, textPlanningFallback: !allowNativeToolCalls })
+            : buildAdvisorChatMessages(input, fallbackPlan, guard, { nativeToolCalls: allowNativeToolCalls, textPlanningFallback: !allowNativeToolCalls }),
           tools: allowNativeToolCalls ? definitions : [],
           stream: false,
           consent: true,
@@ -282,9 +300,20 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
       reportConformance()
 
       const validation = planningValidation(input, firstResponse, allowNativeToolCalls)
+      let evidenceItems: AdvisorEvidence[] = requiredEvidenceItems
       if (!validation) {
         if (Array.isArray(firstResponse.message?.tool_calls) && firstResponse.message.tool_calls.length > 0) return fallback('The model requested a tool outside the bounded Metrora Tools contract.')
         const content = firstResponse.message?.content ?? ''
+        const structured = /^(?:\{|\[)/u.test(content.trim()) || content.trim().startsWith(String.fromCharCode(96))
+        if (requiredEvidenceReady && content.trim() && (!structured || Boolean(parseAdvisorSynthesisDraft(content)))) {
+          return finalizeModelAnswer({
+            runtime: this,
+            input: { ...input, evidence: controllerEvidence, plan: fallbackPlan, guard },
+            evidenceItems,
+            finalContent: content,
+            modelUsed: true,
+          }, finalizationSignal())
+        }
         const fallbackIntent = input.fallbackIntent ?? input.evidence.intent
         const requiresEvidence = fallbackIntent === 'spend-change' || fallbackIntent === 'model-efficiency' || fallbackIntent === 'quota-capacity' || fallbackIntent === 'bench-result'
         if (requiresEvidence) return fallback('The direct model response did not request a verified Metrora read; canonical evidence is shown instead.')
@@ -299,7 +328,6 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
       let currentInput = effectiveInput
       let currentPlan = validation.plan
       let currentResponse = firstResponse
-      let evidenceItems: AdvisorEvidence[] = [...(input.requiredEvidence ?? [])]
       let toolRound = 0
       let totalToolCalls = 0
       const fallbackFromEvidence = (note: string, finalContent = '') => finalizeModelAnswer({
@@ -353,6 +381,7 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
             currentResponse = await raceAdvisorAbort(this.transport.chat(activeRequestId, {
               provider: this.provider,
               model: this.model,
+              ...this.reasoningRequest(),
               messages: buildAdvisorToolContinuationMessages(currentInput, currentPlan, mergeEvidence(effectiveEvidenceItems, input.evidence), toolRound + 1, { nativeToolCalls: allowNativeToolCalls, textPlanningFallback: !allowNativeToolCalls }),
               tools: allowNativeToolCalls ? definitions : [],
               stream: false,
@@ -379,6 +408,7 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
           synthesisResponse = await raceAdvisorAbort(this.transport.chat(activeRequestId, {
             provider: this.provider,
             model: this.model,
+            ...this.reasoningRequest(),
             messages: buildAdvisorSynthesisMessages(currentInput, currentPlan, mergedEvidence),
             tools: [],
             stream: false,

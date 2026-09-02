@@ -72,7 +72,7 @@ describe('provider discovery outcome v1', () => {
 
   it('preserves known unavailable sources without exposing raw error details', async () => {
     const outcome = await discoverProviderWithOutcome(fakeProvider('locked', async () => {
-      throw Object.assign(new Error('C:\\Users\\private\\secret.db'), { code: 'EACCES' })
+      throw Object.assign(new Error('C:\\Users\\fixture\\secret.db'), { code: 'EACCES' })
     }))
     expect(outcome.status).toBe('unavailable')
     expect(outcome.diagnostic?.message).not.toContain('secret.db')

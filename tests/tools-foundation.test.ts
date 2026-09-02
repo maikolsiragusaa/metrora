@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { createMetroraToolRegistry } from '../src/tools/registry.js'
+import { createMetroraOverviewSnapshot, createMetroraToolRegistry } from '../src/tools/registry.js'
 import type { MetroraOverview, MetroraToolDataSource, MetroraToolScope } from '../src/tools/types.js'
 
 const scope: MetroraToolScope = {
@@ -26,7 +26,7 @@ function overview(): MetroraOverview {
       pricingCoverage: 1,
       topModels: [{ name: 'qwen3:8b', cost: 8, calls: 5 }],
       topProjects: [{ name: 'api_key=sk_test_12345678901234567890', cost: 7, sessions: 2 }],
-      topSessions: [{ project: 'C:\\Users\\owner\\source', cost: 4, calls: 2 }],
+      topSessions: [{ project: 'C:\\Users\\fixture\\source', cost: 4, calls: 2 }],
       modelAccounting: { rows: [{ name: 'qwen3:8b', cost: 8, calls: 5, inputTokens: 500, outputTokens: 300 }] },
     },
     history: {
@@ -88,7 +88,7 @@ describe('canonical Metrora Tools foundation', () => {
   })
 
   it('uses the supplied canonical snapshot and returns a bounded privacy-safe envelope', async () => {
-    const registry = createMetroraToolRegistry(source(), scope, overview())
+    const registry = createMetroraToolRegistry(source(), scope, createMetroraOverviewSnapshot(scope, overview()))
     const result = await registry.execute('get_spend_snapshot', {})
     expect(result.evidence.spend?.measuredCostUSD).toBe(12.5)
     expect(result.envelope).toMatchObject({
@@ -98,14 +98,14 @@ describe('canonical Metrora Tools foundation', () => {
       unavailable: false,
       privacy: 'content-minimal',
     })
-    expect(result.content).not.toContain('C:\\Users\\owner')
+    expect(result.content).not.toContain('C:\\Users\\fixture')
     expect(result.content).not.toContain('sk_test_12345678901234567890')
     expect(result.content).not.toContain('api_key=')
     expect(result.content.length).toBeLessThanOrEqual(32 * 1024)
   })
 
   it('keeps authoritative measured zero distinct from an unavailable source', async () => {
-    const zero = await createMetroraToolRegistry(source(), scope, measuredZeroOverview()).execute('get_spend_snapshot', {})
+    const zero = await createMetroraToolRegistry(source(), scope, createMetroraOverviewSnapshot(scope, measuredZeroOverview())).execute('get_spend_snapshot', {})
     expect(zero.evidence.spend?.measuredCostUSD).toBe(0)
     expect(zero.evidence.coverage.state).toBe('NO_DATA')
     expect(zero.envelope).toMatchObject({ unavailable: false })
@@ -163,5 +163,19 @@ describe('canonical Metrora Tools foundation', () => {
     expect(result.evidence.coverage.level).toBe('unavailable')
     expect(result.envelope?.unavailable).toBe(true)
     expect(result.content).toContain('unavailable')
+  })
+
+  it('never reuses a provenanced Today snapshot for a Lifetime invocation', async () => {
+    const todayScope = { ...scope, period: 'today' as const }
+    const lifetimeScope = { ...scope, period: 'lifetime' as const }
+    const today = { ...overview(), current: { ...overview().current!, label: 'Today', cost: 0.96 } }
+    const lifetime = { ...overview(), current: { ...overview().current!, label: 'Lifetime', cost: 4118.17 } }
+    const getOverview = vi.fn(async (requested: MetroraToolScope) => requested.period === 'lifetime' ? lifetime : today)
+    const registry = createMetroraToolRegistry({ ...source(), getOverview }, lifetimeScope, createMetroraOverviewSnapshot(todayScope, today))
+
+    const result = await registry.execute('get_spend_snapshot', {})
+
+    expect(result.evidence.spend?.measuredCostUSD).toBe(4118.17)
+    expect(getOverview).toHaveBeenCalledWith(lifetimeScope)
   })
 })

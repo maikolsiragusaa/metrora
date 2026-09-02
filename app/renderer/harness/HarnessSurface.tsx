@@ -1,6 +1,6 @@
 import type { ComponentProps } from 'react'
 import type { AdvisorContextualScopeMode } from '../advisor/context'
-import type { AdvisorScope } from '../advisor/types'
+import type { AdvisorScope, AdvisorScopeConflictOptionV1, AdvisorScopeConflictV1 } from '../advisor/types'
 import type { MetroraHarnessActionEvent } from '../lib/metrora-bridge-types'
 import { useState } from 'react'
 import type { HarnessRuntimeControlsProps } from './HarnessRuntimePopover'
@@ -42,6 +42,7 @@ export type HarnessSurfaceProps = {
   selectedAnswerId: string | null
   onSelectAnswer: (id: string) => void
   onFollowUp: (question: string) => void
+  onScopeConflictOption: (question: string, conflict: AdvisorScopeConflictV1, option: AdvisorScopeConflictOptionV1) => void
   harnessActions: Record<string, MetroraHarnessActionEvent>
   harnessActionBusyId: string | null
   onConfirmHarnessAction: (actionId: string, proposalDigest: string) => void | Promise<void>
@@ -62,7 +63,7 @@ export type HarnessSurfaceProps = {
   onNextInvestigation: (question: string) => void
 }
 
-export function HarnessSurface({ mode, swarmExperimentalEnabled, onModeChange, swarm, projectOptions, modelOptions, providerOptions, scope, contextualScopeMode, contextualOrigin, scopeSummary, onScopeChange, runtimeUnavailable, onRetryRuntime, overviewError, runtimeControls, filteredConversations, activeConversationId, historyQuery, onNewChat, onConversationSelect, onHistoryQueryChange, messages, selectedAnswerId, onSelectAnswer, onFollowUp, harnessActions, harnessActionBusyId, onConfirmHarnessAction, onCancelHarnessAction, loadingQuestion, toolStatus, toolActivity, streamPreview, onCancel, error, onRetry, failedRequestPresent, notice, composer, hostedSubmitBlockReason, onComposerChange, onAsk, onNextInvestigation }: HarnessSurfaceProps) {
+export function HarnessSurface({ mode, swarmExperimentalEnabled, onModeChange, swarm, projectOptions, modelOptions, providerOptions, scope, contextualScopeMode, contextualOrigin, scopeSummary, onScopeChange, runtimeUnavailable, onRetryRuntime, overviewError, runtimeControls, filteredConversations, activeConversationId, historyQuery, onNewChat, onConversationSelect, onHistoryQueryChange, messages, selectedAnswerId, onSelectAnswer, onFollowUp, onScopeConflictOption, harnessActions, harnessActionBusyId, onConfirmHarnessAction, onCancelHarnessAction, loadingQuestion, toolStatus, toolActivity, streamPreview, onCancel, error, onRetry, failedRequestPresent, notice, composer, hostedSubmitBlockReason, onComposerChange, onAsk, onNextInvestigation }: HarnessSurfaceProps) {
   const [historyOpen, setHistoryOpen] = useState(false)
   const contextProps: ComponentProps<typeof HarnessContextPopover> = { projectOptions, modelOptions, providerOptions, scope, contextualScopeMode, contextualOrigin, scopeSummary, onScopeChange }
   return (
@@ -71,7 +72,7 @@ export function HarnessSurface({ mode, swarmExperimentalEnabled, onModeChange, s
       {runtimeUnavailable ? <div className="harness-v3-inline-notice"><strong>No local model connected.</strong> You can still use the explicit offline evidence fallback. <button type="button" onClick={onRetryRuntime}>Try again</button></div> : null}
       {overviewError ? <div className="harness-v3-inline-notice warning"><strong>Canonical Metrora data is unavailable.</strong> {overviewError}</div> : null}
       <div className="harness-v3-content">
-        <HarnessThread mode={mode} swarmExperimentalEnabled={swarmExperimentalEnabled} swarm={swarm} scope={scope} messages={messages} selectedAnswerId={selectedAnswerId} onSelectAnswer={onSelectAnswer} onFollowUp={onFollowUp} harnessActions={harnessActions} harnessActionBusyId={harnessActionBusyId} onConfirmHarnessAction={onConfirmHarnessAction} onCancelHarnessAction={onCancelHarnessAction} loadingQuestion={loadingQuestion} toolStatus={toolStatus} toolActivity={toolActivity} streamPreview={streamPreview} onCancel={onCancel} error={error} onRetry={onRetry} failedRequestPresent={failedRequestPresent} notice={notice} onAsk={onAsk} onNextInvestigation={onNextInvestigation} />
+        <HarnessThread mode={mode} swarmExperimentalEnabled={swarmExperimentalEnabled} swarm={swarm} scope={scope} messages={messages} selectedAnswerId={selectedAnswerId} onSelectAnswer={onSelectAnswer} onFollowUp={onFollowUp} onScopeConflictOption={onScopeConflictOption} harnessActions={harnessActions} harnessActionBusyId={harnessActionBusyId} onConfirmHarnessAction={onConfirmHarnessAction} onCancelHarnessAction={onCancelHarnessAction} loadingQuestion={loadingQuestion} toolStatus={toolStatus} toolActivity={toolActivity} streamPreview={streamPreview} onCancel={onCancel} error={error} onRetry={onRetry} failedRequestPresent={failedRequestPresent} notice={notice} onAsk={onAsk} onNextInvestigation={onNextInvestigation} />
         <HarnessComposer mode={mode} swarmExperimentalEnabled={swarmExperimentalEnabled} swarmRunning={swarm.state.running} loadingQuestion={loadingQuestion} hostedSubmitBlockReason={hostedSubmitBlockReason} notice={notice} composer={composer} onModeChange={onModeChange} onComposerChange={onComposerChange} onAsk={onAsk} onSwarmRun={swarm.onRun} onCancel={mode === 'swarm' && swarm.state.running ? swarm.onCancel : onCancel} />
       </div>
       {historyOpen ? <HarnessHistoryDrawer conversations={filteredConversations} activeConversationId={activeConversationId} historyQuery={historyQuery} onNewChat={onNewChat} onConversationSelect={onConversationSelect} onHistoryQueryChange={onHistoryQueryChange} onClose={() => setHistoryOpen(false)} /> : null}

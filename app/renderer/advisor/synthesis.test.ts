@@ -180,6 +180,15 @@ describe('Advisor typed verified claim atoms', () => {
     expect(isAdvisorNaturalNarrativeSupported('Project A caused the spend increase.', evidence)).toBe(false)
   })
 
+  it('accepts grounded numeric interpretation but rejects an unsupported number', () => {
+    expect(isAdvisorNaturalNarrativeSupported('Metrora measured $12.00 in this period, which is a meaningful amount for the recorded activity.', evidence)).toBe(true)
+    expect(isAdvisorNaturalNarrativeSupported('Metrora measured $99.00 in this period, which is a meaningful amount for the recorded activity.', evidence)).toBe(false)
+  })
+
+  it('accepts a grounded contributor sentence when its canonical amount is included', () => {
+    expect(isAdvisorNaturalNarrativeSupported('Project A is an observed contributor with $12.00 in the spend breakdown.', evidence)).toBe(true)
+  })
+
   it('keeps bounded interpretation and recommendation separate from typed facts', () => {
     const draft = parsedDraft({
       claims: ['measured-total-cost'],

@@ -6,7 +6,8 @@
  * without creating a second implementation.
  */
 import { createMetroraToolRegistry } from '../../../src/tools/registry'
-import type { MetroraToolDataSource, MetroraToolScope } from '../../../src/tools/types'
+import { metroraToolScopeFingerprint } from '../../../src/tools/types'
+import type { MetroraOverviewSnapshot, MetroraToolDataSource, MetroraToolScope } from '../../../src/tools/types'
 import type { MenubarPayload } from '../lib/types'
 import type {
   AdvisorDataSource,
@@ -28,11 +29,24 @@ export type AdvisorToolRegistry = {
   execute: AdvisorToolExecutor
 }
 
-export function createAdvisorToolRegistry(source: AdvisorDataSource, scope: AdvisorScope, suppliedOverview: MenubarPayload | null, options: { allowedPeriods?: readonly AdvisorPeriodFilter[] } = {}): AdvisorToolRegistry {
+export type AdvisorOverviewSnapshot = { scopeFingerprint: string; payload: MenubarPayload }
+
+export function createAdvisorOverviewSnapshot(scope: AdvisorScope, payload: MenubarPayload): AdvisorOverviewSnapshot {
+  const scoped = scope as unknown as MetroraToolScope
+  return {
+    scopeFingerprint: metroraToolScopeFingerprint(scoped),
+    payload,
+  }
+}
+
+export function createAdvisorToolRegistry(source: AdvisorDataSource, scope: AdvisorScope, suppliedOverview: MenubarPayload | AdvisorOverviewSnapshot | null, options: { allowedPeriods?: readonly AdvisorPeriodFilter[] } = {}): AdvisorToolRegistry {
+  const canonicalOverview = suppliedOverview && 'scopeFingerprint' in suppliedOverview
+    ? suppliedOverview as MetroraOverviewSnapshot
+    : suppliedOverview as MenubarPayload | null
   const registry = createMetroraToolRegistry(
     source as unknown as MetroraToolDataSource,
     scope as unknown as MetroraToolScope,
-    suppliedOverview as unknown as import('../../../src/tools/types').MetroraOverview | null,
+    canonicalOverview as unknown as import('../../../src/tools/types').MetroraOverview | MetroraOverviewSnapshot | null,
     options as unknown as import('../../../src/tools/types').MetroraToolScopeOptions,
   )
   return {

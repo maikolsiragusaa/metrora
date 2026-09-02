@@ -1,6 +1,6 @@
-import { containsAdvisorContributionLanguage, containsAdvisorForbiddenOutputClass, containsAdvisorSensitiveText, sanitizeAdvisorDisplayText, sanitizeAdvisorNarrative } from './privacy'
+import { containsAdvisorContributionLanguage, containsAdvisorForbiddenOutputClass, containsAdvisorSensitiveText, sanitizeAdvisorDisplayText, sanitizeAdvisorGroundedNarrative, sanitizeAdvisorNarrative } from './privacy'
 import { buildAdvisorVerifiedClaimAtoms, verifyAdvisorVerifiedClaimAtom } from './claim-atoms'
-import type { AdvisorClaimSelectionV1, AdvisorEvidence, AdvisorPresentationIntent, AdvisorPresentationRequestV1, AdvisorSynthesisBlockV1, AdvisorSynthesisDraftV1, AdvisorSynthesisNarrativeV1, AdvisorVerifiedClaimAtomV1 } from './types'
+import type { AdvisorClaimMetricV1, AdvisorClaimSelectionV1, AdvisorEvidence, AdvisorPresentationIntent, AdvisorPresentationRequestV1, AdvisorSynthesisBlockV1, AdvisorSynthesisDraftV1, AdvisorSynthesisNarrativeV1, AdvisorVerifiedClaimAtomV1 } from './types'
 
 const PRESENTATION_KINDS: readonly AdvisorPresentationIntent[] = ['text', 'metric-cards', 'line-chart', 'bar-chart', 'comparison-table', 'quota-card', 'bench-summary', 'warning', 'evidence-disclosure']
 const MAX_DRAFT_BYTES = 16 * 1024
@@ -175,6 +175,97 @@ function normalizedPhrase(value: string): string {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/gu, '').toLowerCase().replace(/\s+/gu, ' ').trim()
 }
 
+function naturalGroundingWords(value: string): Set<string> {
+  const stop = new Set(['about', 'after', 'again', 'also', 'and', 'are', 'because', 'been', 'being', 'could', 'data', 'does', 'evidence', 'from', 'have', 'into', 'just', 'measured', 'metrora', 'only', 'that', 'the', 'this', 'using', 'with', 'your', 'della', 'delle', 'degli', 'del', 'e', 'hai', 'ho', 'il', 'la', 'le', 'nei', 'nel', 'per', 'sono', 'una', 'un'])
+  return new Set((value.toLocaleLowerCase().match(/[\p{L}\p{N}]{4,}/gu) ?? []).filter(word => !stop.has(word)))
+}
+
+function naturalGroundingNumbers(value: string): Set<string> {
+  const numbers = new Set<string>()
+  for (const token of value.match(/\d+(?:[.,]\d+)*(?:[kKmMbB])?/gu) ?? []) {
+    const suffix = /[kKmMbB]$/u.test(token) ? token.slice(-1).toLowerCase() : ''
+    const numericToken = suffix ? token.slice(0, -1) : token
+    const lastComma = numericToken.lastIndexOf(',')
+    const lastDot = numericToken.lastIndexOf('.')
+    let normalized = numericToken
+    if (lastComma >= 0 && lastDot >= 0) {
+      const decimalSeparator = lastComma > lastDot ? ',' : '.'
+      const thousandsSeparator = decimalSeparator === ',' ? '.' : ','
+      normalized = numericToken.replaceAll(thousandsSeparator, '').replace(decimalSeparator, '.')
+    } else if (lastComma >= 0 && /,\d{3}(?:,\d{3})*$/u.test(numericToken)) {
+      normalized = numericToken.replaceAll(',', '')
+    } else {
+      normalized = numericToken.replace(',', '.')
+    }
+    const parsed = Number(normalized)
+    if (Number.isFinite(parsed)) {
+      const multiplier = suffix === 'k' ? 1_000 : suffix === 'm' ? 1_000_000 : suffix === 'b' ? 1_000_000_000 : 1
+      numbers.add(String(parsed * multiplier))
+    }
+  }
+  return numbers
+}
+
+type NaturalNumberToken = { value: string; index: number; end: number }
+
+function naturalNumberTokens(value: string): NaturalNumberToken[] {
+  return Array.from(value.matchAll(/\d+(?:[.,]\d+)*(?:[kKmMbB])?/gu)).flatMap(match => {
+    const token = match[0]
+    const parsed = naturalGroundingNumbers(token)
+    const index = match.index ?? -1
+    return index >= 0 && parsed.size ? [{ value: [...parsed][0]!, index, end: index + token.length }] : []
+  })
+}
+
+const NATURAL_NUMBER_CONTEXTS: Readonly<Record<AdvisorClaimMetricV1, RegExp>> = {
+  cost: /(?:[$€£]|\busd\b|\bdollars?\b|\bdollari\b|\beuros?\b|\beuro\b|\bspend\b|\bspent\b|\bcost\b|\bexpense\w*\b|\bamount\b|\bspes[ao]\b|\bcost[oa]\b)/u,
+  cost_per_call: /(?:[$€£]|\busd\b|\bdollars?\b|\beuros?\b|\bcost\s+per\s+call|costo\s+per\s+chiamata)/u,
+  calls: /(?:\bcalls?\b|\bchiamat\w*\b)/u,
+  sessions: /(?:\bsessions?\b|\bsessioni\b)/u,
+  tokens: /(?:\btokens?\b|\bgettoni\b)/u,
+  remaining_percent: /(?:%|\bpercent\w*\b|\bremaining\b|\bquota\b|\bdisponibil\w*\b|\brimane\w*\b)/u,
+  credits: /(?:\bcredits?\b|\bcrediti\b|[$€£]|\busd\b)/u,
+  reset: /(?:\breset\w*\b|\bazzer\w*\b)/u,
+  score: /(?:\bscore\b|\bpunteggi\w*\b|\bscored\b|%)/u,
+  throughput: /(?:\bthroughput\b|\btokens?\/s\b)/u,
+  latency: /(?:\blatency\b|\blatenza\b|\bms\b)/u,
+  direction: /(?:\btrend\b|\brose\b|\bincreased?\b|\bdecreased?\b|\bup\b|\bdown\b|\baument\w*\b|\bdiminuit\w*\b)/u,
+  coverage: /(?:\bcoverage\b|\bcopertura\b)/u,
+  freshness: /(?:\bfresh\w*\b|\bstale\b|\baggiornat\w*\b)/u,
+  comparability: /(?:\bcomparab\w*\b|\bcompatible\b|\bcompatibil\w*\b)/u,
+  status: /(?:\bstatus\b|\bpassed\b|\bfailed\b|\bcompleted\b|\bfallit\w*\b)/u,
+}
+
+function naturalMetricValues(evidence: AdvisorEvidence, metric: AdvisorClaimMetricV1): Set<string> {
+  return new Set(buildAdvisorVerifiedClaimAtoms(evidence)
+    .filter(atom => atom.metric === metric && typeof atom.value === 'number')
+    .flatMap(atom => [...naturalGroundingNumbers(String(atom.value))]))
+}
+
+function naturalNumberMetrics(context: string): AdvisorClaimMetricV1[] {
+  return (Object.keys(NATURAL_NUMBER_CONTEXTS) as AdvisorClaimMetricV1[]).filter(metric => NATURAL_NUMBER_CONTEXTS[metric].test(context))
+}
+
+function naturalNumbersSupported(value: string, evidenceItems: readonly AdvisorEvidence[]): boolean {
+  const tokens = naturalNumberTokens(value)
+  if (!tokens.length) return true
+  return tokens.every(token => {
+    const supportedByEvidence = evidenceItems.some(evidence => {
+      const context = value.slice(Math.max(0, token.index - 48), Math.min(value.length, token.end + 48))
+      const metrics = naturalNumberMetrics(context)
+      return metrics.some(metric => naturalMetricValues(evidence, metric).has(token.value))
+        || /(?:\b(?:over|more\s+than|exceed\w*|above|oltre|piu\s+di|super\w*)\b|\bthreshold\b|\bsoglia\b)/iu.test(context)
+          && naturalGroundingNumbers(evidence.question).has(token.value)
+    })
+    return supportedByEvidence
+  })
+}
+
+function unsupportedTrendClaim(value: string, evidence: AdvisorEvidence): boolean {
+  if (!/(?:\brose\b|\bincreased?\b|\bdecreased?\b|\bwent\s+(?:up|down)\b|\baument\w*\b|\bdiminuit\w*\b|\bcre[s]?ciut\w*\b)/iu.test(value)) return false
+  return !evidence.spend?.trend
+}
+
 function phraseIn(value: string, phrase: string): boolean {
   const haystack = ' ' + normalizedPhrase(value).replace(/[^\p{L}\p{N}._/-]+/gu, ' ') + ' '
   const needle = ' ' + normalizedPhrase(phrase).replace(/[^\p{L}\p{N}._/-]+/gu, ' ') + ' '
@@ -277,8 +368,8 @@ function selectedModelPlaceholderSupported(value: string, evidence: AdvisorEvide
   return Boolean(selectedModel && atoms.some(atom => atom.subject && normalizedPhrase(atom.subject) === normalizedPhrase(selectedModel)))
 }
 
-function contributionNarrativeSupported(value: string, evidence: AdvisorEvidence, relevantAtoms: AdvisorVerifiedClaimAtomV1[]): boolean {
-  const safe = sanitizeAdvisorNarrative(value)
+function contributionNarrativeSupported(value: string, evidence: AdvisorEvidence, relevantAtoms: AdvisorVerifiedClaimAtomV1[], allowGroundedNumbers = false): boolean {
+  const safe = allowGroundedNumbers ? sanitizeAdvisorGroundedNarrative(value) : sanitizeAdvisorNarrative(value)
   if (!safe || !containsAdvisorContributionLanguage(safe)) return Boolean(safe)
   if (!relevantAtoms.length || !selectedModelPlaceholderSupported(safe, evidence, relevantAtoms)) return false
   const subjectAtoms = subjectRelevantCanonicalAtoms(safe, evidence, relevantAtoms)
@@ -297,10 +388,59 @@ function groundedNarrative(narrative: AdvisorSynthesisNarrativeV1 | undefined, e
 }
 
 export function isAdvisorNaturalNarrativeSupported(value: string, evidence: AdvisorEvidence): boolean {
-  const safe = sanitizeAdvisorNarrative(value)
+  const safe = sanitizeAdvisorGroundedNarrative(value)
   if (!safe) return false
-  if (!containsAdvisorContributionLanguage(safe)) return true
-  return contributionNarrativeSupported(safe, evidence, canonicalContributionAtoms(evidence))
+  if (/^(?:hello|hi|hey|ciao|salve|buongiorno|buonasera)\b[^\n]{0,160}\b(?:help|understand|assist|aiut)/iu.test(safe)) return false
+  if (!naturalNumbersSupported(safe, [evidence]) || unsupportedTrendClaim(safe, evidence)) return false
+  const narrativeNumbers = naturalGroundingNumbers(safe)
+  if (containsAdvisorContributionLanguage(safe)) return contributionNarrativeSupported(safe, evidence, canonicalContributionAtoms(evidence), true)
+  const evidenceWords = naturalGroundingWords([
+    evidence.question,
+    evidence.coverage.label,
+    evidence.coverage.detail,
+    evidence.refs.map(ref => ref.id + ' ' + ref.label).join(' '),
+    evidence.spend ? 'measured spend cost calls sessions' : '',
+    evidence.modelEfficiency ? 'model efficiency cost calls' : '',
+    evidence.quota ? 'quota capacity remaining reset' : '',
+    evidence.bench ? 'controlled Bench result score status' : '',
+  ].join(' '))
+  const sharedWords = [...naturalGroundingWords(safe)].filter(word => evidenceWords.has(word))
+  // A non-factual greeting or unrelated prose cannot become an interpretation
+  // merely because the caller attached a real evidence object. A grounded
+  // natural answer needs a semantic anchor or a verified number.
+  return sharedWords.length > 0 || narrativeNumbers.size > 0
+}
+
+/**
+ * Validate a closeout against several controller-authorized evidence items.
+ * This is used for bounded comparisons where each period owns a different
+ * canonical measurement and a merged evidence object cannot represent every
+ * value in one scalar field.
+ */
+export function isAdvisorNaturalNarrativeSupportedAcrossEvidence(value: string, evidenceItems: readonly AdvisorEvidence[]): boolean {
+  if (evidenceItems.length === 0) return false
+  if (evidenceItems.length === 1) return isAdvisorNaturalNarrativeSupported(value, evidenceItems[0]!)
+  const safe = sanitizeAdvisorGroundedNarrative(value)
+  if (!safe) return false
+  if (/^(?:hello|hi|hey|ciao|salve|buongiorno|buonasera)\b[^\n]{0,160}\b(?:help|understand|assist|aiut)/iu.test(safe)) return false
+  // Contribution subjects and rankings must be proven within one evidence
+  // item; do not combine rows from different periods to establish a driver.
+  if (containsAdvisorContributionLanguage(safe)) return evidenceItems.some(item => isAdvisorNaturalNarrativeSupported(safe, item))
+  const narrativeNumbers = naturalGroundingNumbers(safe)
+  if (!naturalNumbersSupported(safe, evidenceItems) || evidenceItems.some(evidence => unsupportedTrendClaim(safe, evidence))) return false
+  const evidenceText = evidenceItems.map(evidence => [
+    evidence.question,
+    evidence.coverage.label,
+    evidence.coverage.detail,
+    evidence.refs.map(ref => ref.id + ' ' + ref.label).join(' '),
+    evidence.spend ? 'measured spend cost calls sessions' : '',
+    evidence.modelEfficiency ? 'model efficiency cost calls' : '',
+    evidence.quota ? 'quota capacity remaining reset' : '',
+    evidence.bench ? 'controlled Bench result score status' : '',
+  ].join(' ')).join(' ')
+  const evidenceWords = naturalGroundingWords(evidenceText)
+  const sharedWords = [...naturalGroundingWords(safe)].filter(word => evidenceWords.has(word))
+  return sharedWords.length > 0 || narrativeNumbers.size > 0
 }
 
 export function verifyAdvisorSynthesis(draft: AdvisorSynthesisDraftV1, evidence: AdvisorEvidence): AdvisorSynthesisVerification {

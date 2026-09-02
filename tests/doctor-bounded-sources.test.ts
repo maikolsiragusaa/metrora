@@ -52,8 +52,8 @@ describe('bounded source diagnostic primitive', () => {
     expect(classifyDoctorError({ code: 'EACCES' }).state).toBe('INACCESSIBLE')
     expect(classifyDoctorError(new SyntaxError('invalid JSON')).state).toBe('MALFORMED')
     expect(classifyDoctorError({ message: 'database is locked' }).state).toBe('UNKNOWN')
-    expect(redactText("open 'C:\\Users\\alice\\Private Workspace\\cache.json'"))
-      .not.toContain('alice')
+    expect(redactText("open 'C:\\Users\\fixture\\Private Workspace\\cache.json'"))
+      .not.toContain('fixture')
     const provider: Provider = {
       name: 'codex',
       displayName: 'Codex',
@@ -101,7 +101,7 @@ describe('bounded source diagnostic primitive', () => {
   })
 
   it('redacts override values and source paths in both output modes', async () => {
-    const secretPath = 'C:\\Users\\alice\\Private Workspace\\cache.json'
+    const secretPath = 'C:\\Users\\fixture\\Private Workspace\\cache.json'
     vi.stubEnv('CODEX_HOME', secretPath)
     const provider: Provider = {
       name: 'codex',
@@ -114,23 +114,23 @@ describe('bounded source diagnostic primitive', () => {
     }
     const report = await collectDoctorReport('codex', { providers: [provider], cache: emptyCache() })
     expect(report.providers[0]?.envOverrides).toEqual([{ name: 'CODEX_HOME' }])
-    expect(renderDoctorJson(report)).not.toContain('alice')
+    expect(renderDoctorJson(report)).not.toContain('fixture')
     expect(renderDoctorTable(report, { color: false })).not.toContain('Private Workspace')
   })
 
   it.each([
-    ['Windows absolute', 'C:\\Users\\alice\\AppData\\Roaming\\Private Workspace\\session'],
-    ['Unix absolute', '/home/alice/.config/private/workspace/session'],
-    ['UNC', '\\\\server\\share\\alice\\private\\workspace'],
-    ['home', 'C:\\Users\\alice'],
-    ['APPDATA', 'C:\\Users\\alice\\AppData\\Roaming\\private\\workspace'],
-    ['LOCALAPPDATA', 'C:\\Users\\alice\\AppData\\Local\\private\\workspace'],
-    ['XDG config', '/home/alice/.config/private/workspace'],
-    ['XDG data', '/home/alice/.local/share/private/workspace'],
+    ['Windows absolute', 'C:\\Users\\fixture\\AppData\\Roaming\\Private Workspace\\session'],
+    ['Unix absolute', '/home/fixture/.config/private/workspace/session'],
+    ['UNC', '\\\\server\\share\\fixture\\private\\workspace'],
+    ['home', 'C:\\Users\\fixture'],
+    ['APPDATA', 'C:\\Users\\fixture\\AppData\\Roaming\\private\\workspace'],
+    ['LOCALAPPDATA', 'C:\\Users\\fixture\\AppData\\Local\\private\\workspace'],
+    ['XDG config', '/home/fixture/.config/private/workspace'],
+    ['XDG data', '/home/fixture/.local/share/private/workspace'],
     ['outside standard roots', 'D:\\private\\workspace\\session'],
-    ['username component', '/srv/alice/private/cache'],
-    ['workspace-like suffix', 'C:\\Users\\alice\\workspace-like\\project'],
-    ['nested private suffix', '/home/alice/private/one/two/three'],
+    ['username component', '/srv/fixture/private/cache'],
+    ['workspace-like suffix', 'C:\\Users\\fixture\\workspace-like\\project'],
+    ['nested private suffix', '/home/fixture/private/one/two/three'],
     ['already symbolic', '%APPDATA%/SomePrivateWorkspace/session'],
     ['relative safe label', 'relative-safe-label'],
   ])('fully redacts %s override values', (_label, secretPath) => {

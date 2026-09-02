@@ -64,7 +64,7 @@ describe('Electron Harness ACT bridge loader', () => {
       resourcesPath: 'unused',
       importModule: async () => ({
         createMetroraHarnessActBridge: () => ({
-          proposeCoreCompatibility: async () => { throw new Error('failed at C:\\Users\\owner\\secret token=abc123') },
+          proposeCoreCompatibility: async () => { throw new Error('failed at C:\\Users\\fixture\\secret token=abc123') },
           approveAndExecuteCoreCompatibility: async () => event,
           cancelCoreCompatibility: async () => null,
           readCoreCompatibility: async () => null,
@@ -74,7 +74,7 @@ describe('Electron Harness ACT bridge loader', () => {
     const result = await handlers['metrora:harnessProposeCoreCompatibility']('qwen3:8b')
     expect(result).toMatchObject({ ok: false })
     if (!result.ok) {
-      expect(result.error.message).not.toContain('C:\\Users\\owner')
+      expect(result.error.message).not.toContain('C:\\Users\\fixture')
       expect(result.error.message).not.toContain('token=abc123')
     }
   })

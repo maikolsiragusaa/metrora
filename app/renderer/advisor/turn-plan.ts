@@ -1,5 +1,5 @@
 import { classifyAdvisorQuestion } from './evidence'
-import { advisorScopeFingerprint, type AdvisorConversationTurn, type AdvisorEvidenceDomain, type AdvisorIntent, type AdvisorPresentationIntent, type AdvisorQuestionFamily, type AdvisorScope, type AdvisorTurnPlanV1 } from './types'
+import { advisorScopeFingerprint, type AdvisorConversationTurn, type AdvisorEvidenceDomain, type AdvisorIntent, type AdvisorPeriodFilter, type AdvisorPresentationIntent, type AdvisorQuestionFamily, type AdvisorScope, type AdvisorScopeConflictV1, type AdvisorTurnPlanV1 } from './types'
 
 const PLAN_VERSION = 'advisor-turn-plan-v1' as const
 
@@ -7,10 +7,77 @@ function normalize(question: string): string {
   return question.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
 }
 
+function scopePeriodLabel(period: AdvisorPeriodFilter): string {
+  if (period === 'yesterday') return 'Yesterday'
+  if (period === 'today') return 'Today'
+  if (period === 'week') return 'This week'
+  if (period === '30days') return 'Last 30 days'
+  if (period === 'month') return 'This month'
+  if (period === 'all') return 'Last 6 months'
+  return 'Lifetime'
+}
+
+function explicitScopePeriods(value: string): AdvisorPeriodFilter[] {
+  const matches: Array<{ period: AdvisorPeriodFilter; index: number }> = []
+  const add = (period: AdvisorPeriodFilter, pattern: RegExp) => {
+    const match = pattern.exec(value)
+    pattern.lastIndex = 0
+    if (match && match.index !== undefined) matches.push({ period, index: match.index })
+  }
+  add('yesterday', /\b(?:yesterday|ieri)\b/u)
+  add('today', /\b(?:today|oggi)\b/u)
+  add('week', /(?:\b(?:last|past|this)\s+(?:week|7\s+days)|\b(?:questa|la\s+scorsa)\s+settimana|\bultimi\s+7\s+giorni)/u)
+  add('30days', /(?:\b(?:last|past)\s+30\s+days|\bultimi\s+30\s+giorni)/u)
+  add('month', /(?:\b(?:this|last)\s+month|\bquesto\s+mese|\bmese\s+scorso)/u)
+  add('lifetime', /(?:\b(?:all[ -]?time|lifetime|overall|total(?:ly)?)\b|\b(?:in\s+totale|da\s+sempre|tutta\s+la\s+vita)\b)/u)
+  return Array.from(new Set(matches.sort((left, right) => left.index - right.index).map(item => item.period)))
+}
+
+function selectedScopeMatchesRequestedPeriod(scope: AdvisorScope, requested: AdvisorPeriodFilter): boolean {
+  if (requested === 'lifetime') return scope.period === 'lifetime'
+  return scope.period === requested
+}
+
+function scopeConflict(value: string, scope: AdvisorScope): AdvisorScopeConflictV1 | undefined {
+  const requestedPeriods = explicitScopePeriods(value)
+  if (requestedPeriods.length !== 1) return undefined
+  const requested = requestedPeriods[0]!
+  if (!requested || selectedScopeMatchesRequestedPeriod(scope, requested)) return undefined
+  const current = scopePeriodLabel(scope.period)
+  const requestedLabel = scopePeriodLabel(requested)
+  const italian = advisorCopyLanguage(value) === 'it'
+  return {
+    currentPeriod: scope.period,
+    requestedPeriod: requested,
+    message: italian
+      ? `Questa domanda richiede ${requestedLabel}, ma lo scope corrente è ${current}. Scegli "Use ${requestedLabel} for this turn" oppure "Change scope".`
+      : `This question requires ${requestedLabel}, but the current scope is ${current}. Choose "Use ${requestedLabel} for this turn" or "Change scope".`,
+    options: [
+      { id: 'use-requested-period', label: 'Use ' + requestedLabel + ' for this turn' },
+      { id: 'change-scope', label: 'Change scope' },
+    ],
+  }
+}
+
+/** Build a bounded turn-local scope after the user chooses the requested period. */
+export function advisorScopeForRequestedPeriod(scope: AdvisorScope, requested: AdvisorPeriodFilter, now = new Date()): AdvisorScope {
+  if (requested === 'yesterday') {
+    const yesterday = new Date(now.getTime())
+    yesterday.setHours(12, 0, 0, 0)
+    yesterday.setDate(yesterday.getDate() - 1)
+    const year = yesterday.getFullYear()
+    const month = String(yesterday.getMonth() + 1).padStart(2, '0')
+    const day = String(yesterday.getDate()).padStart(2, '0')
+    const date = year + '-' + month + '-' + day
+    return { ...scope, period: 'today', range: { from: date, to: date } }
+  }
+  return { ...scope, period: requested, range: null }
+}
+
 export function advisorCopyLanguage(question: string): 'en' | 'it' {
   const value = normalize(question)
   return /^(?:ciao|salve|buongiorno|buonasera|buon giorno|come stai|grazie|grazie mille|esegui|avvia|lancia|cambia|applica|programma|quanto|perche|perché|qual|quale|quali|mostrami|confronta|spesa|speso|costo|quota|limite|disponibilita|disponibilità)\b/u.test(value)
-    || /\b(?:prima del reset|dopo il reset|quanto ho speso|perche la spesa|perché la spesa|fornitore|modello|progetto|sessione|andamento|consumi)\b/u.test(value)
+    || /\b(?:prima del reset|dopo il reset|quanto ho speso|perche la spesa|perché la spesa|in totale|da sempre|fornitore|modello|progetto|sessione|andamento|consumi)\b/u.test(value)
     ? 'it'
     : 'en'
 }
@@ -145,7 +212,7 @@ function domainsForFamily(family: AdvisorQuestionFamily): AdvisorEvidenceDomain[
 }
 
 function scopeWasExplicit(value: string): boolean {
-  return /(?:today|yesterday|this week|last 7|last week|30 days|this month|last month|lifetime|period|project|provider|model|oggi|ieri|questa settimana|ultimi 7|mese scorso|questo mese|progetto|fornitore|modello)/u.test(value)
+  return /(?:today|yesterday|this week|last 7|last week|30 days|this month|last month|all[ -]?time|lifetime|overall|total(?:ly)?|da sempre|in totale|period|project|provider|model|oggi|ieri|questa settimana|ultimi 7|mese scorso|questo mese|progetto|fornitore|modello)/u.test(value)
 }
 
 function priorIntents(scope: AdvisorScope, conversation: AdvisorConversationTurn[]): AdvisorIntent[] {
@@ -170,6 +237,7 @@ export function createAdvisorTurnPlanV1(question: string, scope: AdvisorScope, c
   let intent = baseIntent
   let scopeIntent: AdvisorTurnPlanV1['scopeIntent'] = scopeWasExplicit(value) ? 'explicit' : 'current'
   let clarification: string | null = null
+  let requestedScopeConflict: AdvisorScopeConflictV1 | undefined
   if (!social && !action && isBareLimitAmbiguity(value)) {
     intent = 'clarification'
     scopeIntent = 'ambiguous'
@@ -189,12 +257,19 @@ export function createAdvisorTurnPlanV1(question: string, scope: AdvisorScope, c
         : 'Which should I continue with: measured spend, provider quota, or the controlled test result?'
     }
   }
+  if (!social && !action && !clarification && intent !== 'unsupported' && intent !== 'unknown') {
+    requestedScopeConflict = scopeConflict(value, scope)
+    if (requestedScopeConflict) {
+      scopeIntent = 'ambiguous'
+      clarification = requestedScopeConflict.message
+    }
+  }
   const family = social ? 'unknown' : questionFamily(value, intent)
   const boundary = action || intent === 'unsupported'
   return {
     contractVersion: PLAN_VERSION,
     schemaVersion: 1,
-    turnKind: social ? 'social' : intent === 'clarification' ? 'clarify' : boundary ? 'boundary' : 'investigate',
+    turnKind: social ? 'social' : intent === 'clarification' || requestedScopeConflict ? 'clarify' : boundary ? 'boundary' : 'investigate',
     questionFamily: family,
     scopeIntent,
     requestedEvidenceDomains: domainsForFamily(family),
@@ -202,6 +277,7 @@ export function createAdvisorTurnPlanV1(question: string, scope: AdvisorScope, c
     presentationIntent: presentationIntent(value, family),
     expertDetailRequested: expertDetail(value),
     authorization: action ? 'proposal-required' : 'read-only',
+    ...(requestedScopeConflict ? { scopeConflict: requestedScopeConflict } : {}),
     intent,
     usedDefaultScope: !scopeWasExplicit(value),
   }

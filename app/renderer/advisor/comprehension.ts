@@ -36,8 +36,8 @@ function actionBoundary(question: string): string {
   return 'I understand this is an operational request. Harness factual tools are read-only; execution requires an action proposal and explicit user and policy authorization.'
 }
 
-function understanding(intent: AdvisorIntent, usedDefaultScope: boolean, clarification: string | null, boundary: string | null): AdvisorQuestionUnderstanding {
-  return { intent, summary: intentSummary(intent), usedDefaultScope, clarification, boundary }
+function understanding(intent: AdvisorIntent, usedDefaultScope: boolean, clarification: string | null, boundary: string | null, scopeConflict: AdvisorQuestionPlan['plan']['scopeConflict']): AdvisorQuestionUnderstanding {
+  return { intent, summary: intentSummary(intent), usedDefaultScope, clarification, boundary, ...(scopeConflict ? { scopeConflict } : {}) }
 }
 
 export function resolveAdvisorQuestion(
@@ -70,7 +70,7 @@ export function resolveAdvisorQuestion(
       intent: intent === 'social' || intent === 'action-proposal' || intent === 'clarification' || intent === 'unsupported' ? intent : 'unknown',
       usedDefaultScope,
     },
-    understanding: understanding(intent, usedDefaultScope, plan.clarification, boundary),
+    understanding: understanding(intent, usedDefaultScope, plan.clarification, boundary, plan.scopeConflict),
     // Unknown but otherwise safe investigations are deliberately eligible for
     // model planning; malformed planning falls back to the supported answer.
     needsEvidence: plan.turnKind === 'investigate' && !orphanedFollowUp,
