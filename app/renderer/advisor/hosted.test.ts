@@ -122,13 +122,13 @@ describe('Hosted Advisor renderer runtime', () => {
     expect(finalPayload.harnessConformance).toBe(true)
     expect(conformanceCalls).toBe(1)
     const finalMessages = finalPayload.messages as Array<Record<string, unknown>>
-    expect(finalMessages.map(message => message.role)).toEqual(['system', 'user'])
-    expect(finalMessages.some(message => String(message.content).includes('measuredCostUSD'))).toBe(true)
+    expect(finalMessages.map(message => message.role)).toEqual(['system', 'user', 'assistant', 'user'])
+    expect(finalMessages.some(message => String(message.content).includes('Metrora Tool result'))).toBe(true)
     expect(finalMessages.some(message => message.role === 'tool')).toBe(false)
     expect(deltas).toEqual([])
     await expect(new HostedAdvisorRuntime({ provider: 'openai', model: 'gpt-test', transport }).generate({ question: 'What changed in spend?', evidence })).rejects.toThrow('consent')
     expect(answer.runtime).toMatchObject({ id: 'hosted-openai', mode: 'hosted-byok' })
-    expect(answer.generatedByModel).toBe(true)
+    expect(answer.generatedByModel).toBe(false)
     expect(answer.streamed).toBe(false)
     expect(answer.conclusion).toContain('Metrora measured')
     expect(answer.conclusion).not.toContain('Claude was not the main driver.')
@@ -172,8 +172,9 @@ describe('Hosted Advisor renderer runtime', () => {
       transport,
     })).investigate({ question: 'What changed in spend?', scope: fixture.scope })
 
-    expect(requests).toHaveLength(1)
-    expect((requests[0]?.messages as Array<{ content: string }>).some(message => message.content.includes('12'))).toBe(true)
+    expect(requests).toHaveLength(2)
+    expect((requests[0]?.messages as Array<{ content: string }>).some(message => message.content.includes('12'))).toBe(false)
+    expect((requests[1]?.messages as Array<{ content: string }>).some(message => message.content.includes('12'))).toBe(true)
     expect(fixture.reads.overviews).toHaveLength(1)
     expect(answer.generatedByModel).toBe(true)
     expect(answer.conclusion).toContain('meaningful amount')
@@ -202,10 +203,11 @@ describe('Hosted Advisor renderer runtime', () => {
       transport,
     })).investigate({ question: 'What changed in spend and which projects contributed?', scope: fixture.scope })
 
-    expect(requests).toHaveLength(2)
+    expect(requests).toHaveLength(3)
     expect(fixture.reads.overviews).toHaveLength(2)
-    expect((requests[0]?.messages as Array<{ content: string }>).some(message => message.content.includes('12'))).toBe(true)
+    expect((requests[0]?.messages as Array<{ content: string }>).some(message => message.content.includes('12'))).toBe(false)
     expect((requests[1]?.messages as Array<{ content: string }>).some(message => message.content.includes('Project A'))).toBe(true)
+    expect((requests[2]?.messages as Array<{ content: string }>).some(message => message.content.includes('12'))).toBe(true)
     expect(answer.generatedByModel).toBe(true)
     expect(answer.conclusion).toContain('Project A')
   })

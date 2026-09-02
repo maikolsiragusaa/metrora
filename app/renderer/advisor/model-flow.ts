@@ -1,10 +1,11 @@
 import { advisorScopeFingerprint, type AdvisorAnswer, type AdvisorEvidence, type AdvisorGuardPlanV1, type AdvisorModelRuntime, type AdvisorRuntimeInput, type AdvisorScope, type AdvisorSwarmSynthesisInput, type AdvisorTurnPlanV1 } from './types'
-import { contentMinimalEvidence, contentMinimalScope, sanitizeAdvisorAnswer, sanitizeAdvisorDisplayText, sanitizeAdvisorGroundedNarrative, sanitizeAdvisorModelOutput } from './privacy'
+import { contentMinimalEvidence, contentMinimalScope, sanitizeAdvisorAnswer, sanitizeAdvisorDisplayText, sanitizeAdvisorModelOutput } from './privacy'
 import { buildAdvisorPresentationBlocks } from './presentation'
-import { isAdvisorNaturalNarrativeSupported, parseAdvisorSynthesisDraft, verifyAdvisorSynthesis } from './synthesis'
+import { parseAdvisorSynthesisDraft, verifyAdvisorSynthesis } from './synthesis'
 import { hasMixedEvidenceScopes, mergeEvidence, sameEvidenceScope } from './merge-evidence'
 import { DeterministicAdvisorRuntime } from './runtime'
 import { contentMinimalVerifiedClaimAtoms, renderAdvisorVerifiedSynthesis } from './claim-atoms'
+import { classifyMetroraProvenance } from '../agent-loop/provenance'
 
 type ModelMessage = { role: 'system' | 'user' | 'assistant'; content: string }
 export type AdvisorConversationKind = 'social' | 'boundary' | 'action'
@@ -100,7 +101,7 @@ export function buildAdvisorChatMessages(input: AdvisorRuntimeInput, fallbackPla
         'Tool requests may contain only fixed Metrora read-only tools and bounded filters. Never request or execute actions, writes, web search, shell commands, files, repository changes, agent orchestration, or arbitrary endpoints.',
         'An operational request may be understood and described as a proposal, but it must never be executed or represented as completed from conversation text.',
         planningInstruction(options),
-        'When a read tool has returned, the application will perform a fresh evidence-bound synthesis. Do not treat conversation history or surrounding application context as factual evidence; use them only for referents and scope.',
+        'When a read tool returns, its bounded result is appended to the same turn ledger. Continue naturally: request another supplied read only when needed, otherwise answer from the verified result and clearly label interpretation or recommendation.',
         'Stay within the selected Metrora context and use only the supplied read tools. Do not broaden the period, provider, Project, or model context.',
         ...(workerInstruction(input) ? [workerInstruction(input)!] : []),
         'Selected context: ' + modelScope(input),
@@ -134,9 +135,9 @@ export function buildAdvisorEvidenceSynthesisMessages(
       role: 'system',
       content: [
         'You are answering a bounded Metrora Harness factual turn.',
-        'The controller has already performed the mandatory canonical read. The canonical evidence below is authoritative and is available in this same turn.',
+        'The controller has already supplied a canonical result in this same turn. It is authoritative, and the model remains responsible for the natural explanation.',
         'Answer the original question now in natural language and interpret the verified facts, rather than merely repeating that a read occurred.',
-        'If one additional supplied read-only Metrora Tool is genuinely needed to answer the question, request it directly using the bounded Tool contract; do not request the mandatory read again.',
+        'If one additional supplied read-only Metrora Tool is genuinely needed, request it directly using the bounded Tool contract; do not discard the current turn and do not request unrelated data.',
         'A follow-up read must remain within the selected scope and the supplied fixed read-only tools. Never request writes, web search, shell commands, files, or arbitrary endpoints.',
         'Do not invent numbers, subjects, rankings, causality, or quality claims. Keep any interpretation grounded in the canonical evidence.',
         ...(workerInstruction(input) ? [workerInstruction(input)!] : []),
@@ -159,7 +160,7 @@ export function buildAdvisorToolContinuationMessages(input: AdvisorRuntimeInput,
         'You are continuing a bounded Metrora Harness evidence turn.',
         'Inspect the canonical evidence below before deciding whether one more fixed read-only Metrora Tool is needed.',
         planningInstruction(options),
-        'If the evidence is sufficient, return a short natural-language interpretation or recommendation grounded only in it, without inventing facts. The application will render verified facts separately.',
+        'If the evidence is sufficient, return a short natural-language answer, interpretation, or recommendation grounded only in it, without inventing facts.',
         round === 1 ? 'This is the last opportunity for one additional bounded read.' : 'No additional read should be requested.',
         ...(workerInstruction(input) ? [workerInstruction(input)!] : []),
         'Selected context: ' + modelScopeForEvidence(evidence),
@@ -328,21 +329,27 @@ export async function finalizeModelAnswer(options: FinalizeModelAnswerOptions, s
     ...(draft ? ['The model atom selection did not pass Metrora semantic verification; verified facts are shown instead.'] : []),
   ]
   const naturalCandidate = !draft && finalContent.trim() && !/^(?:\{|\[|```)/u.test(finalContent.trim())
-  const naturalSupported = Boolean(naturalCandidate && isAdvisorNaturalNarrativeSupported(finalContent, evidence))
-  if (naturalCandidate && !naturalSupported) notes.push('The model interpretation was not grounded in canonical evidence; deterministic verified facts are shown instead.')
-  const naturalInterpretation = naturalSupported
-    ? sanitizeAdvisorGroundedNarrative(finalContent)
-    : ''
+  const naturalResult = naturalCandidate && sameScope && !hasMixedEvidenceScopes(evidenceItems)
+    ? classifyMetroraProvenance(finalContent, input.question, evidenceItems)
+    : null
+  if (naturalCandidate && !naturalResult?.accepted) notes.push('The model answer did not contain a safe supported explanation; verified facts are shown instead.')
+  if (naturalResult?.removedClauses) notes.push('Some model claims were omitted because they were not supported by verified Metrora evidence.')
+  const naturalInterpretation = naturalResult?.accepted ? naturalResult.text : ''
+  const naturalIncludesCanonicalFact = Boolean(naturalResult?.usedCanonicalFact || naturalResult?.usedDerivation)
+  const naturalConclusion = naturalIncludesCanonicalFact
+    ? naturalInterpretation
+    : [verifiedConclusion, naturalInterpretation].filter(Boolean).join(' ')
   return sanitizeAdvisorAnswer({
     ...fallback,
-    // Deterministic facts remain first-class. A bounded natural continuation
-    // may add interpretation, but cannot replace or author factual clauses.
-    conclusion: [verifiedConclusion, naturalInterpretation].filter(Boolean).join(' '),
+    // Canonical facts remain authoritative while the model supplies the
+    // bounded prose that explains them. Unsupported clauses are removed at
+    // sentence granularity instead of invalidating the whole response.
+    conclusion: naturalConclusion || verifiedConclusion,
     details,
     materialLimits: notes,
     presentation: plan ? buildAdvisorPresentationBlocks(evidence, plan, input.question, null, fallback.claims ?? []) : undefined,
     runtime: { id: runtime.id, label: runtime.label, mode: runtime.mode },
-    generatedByModel: modelUsed,
+    generatedByModel: modelUsed && Boolean(naturalInterpretation),
     streamed: false,
   })
 }

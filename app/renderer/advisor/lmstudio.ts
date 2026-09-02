@@ -58,6 +58,8 @@ export class LMStudioAdvisorRuntime extends LocalAdvisorRuntime {
       transport: options.transport ?? bridgeTransport,
       availability: options.availability,
       unavailableMessage: 'Local LM Studio model is not available.',
+      wireMode: 'openai',
+      nativeToolCalls: true,
     })
   }
 }

@@ -30,17 +30,13 @@ function capturingRuntime(inputs: AdvisorRuntimeInput[]): AdvisorModelRuntime {
 }
 
 describe('Advisor model planning boundary', () => {
-  it('passes controller-selected canonical evidence before model generation', async () => {
+  it('starts the model with the authorized turn plan and minimum-read contract', async () => {
     const data = source()
     const inputs: AdvisorRuntimeInput[] = []
     await createAdvisorKernel(data, capturingRuntime(inputs)).investigate({ question: 'What changed in spend?', scope })
 
     expect(data.getOverview).toHaveBeenCalledOnce()
-    expect(inputs[0]?.evidence).toMatchObject({
-      intent: 'spend-change',
-      coverage: { level: 'high' },
-      refs: [expect.objectContaining({ id: 'overview.current' })],
-    })
+    expect(inputs[0]?.evidence).toMatchObject({ intent: 'social', refs: [], coverage: { level: 'high' } })
     expect(inputs[0]?.requiredToolRequests).toEqual([{ tool: 'get_spend_snapshot', arguments: {} }])
     expect(inputs[0]?.guard?.intent).toBe('unknown')
     expect(inputs[0]?.plan?.questionFamily).toBe('spend')
@@ -80,10 +76,27 @@ describe('Advisor model planning boundary', () => {
     expect(answer.conclusion).not.toContain('0.96')
   })
 
-  it('executes the mandatory spend read for the Italian over-4k question and grounds the answer', async () => {
+  it('executes the mandatory spend read inside the loop and returns natural same-turn synthesis', async () => {
     const fixture = createAdvisorConformanceFixture()
     const events: Array<{ name: string; status: string }> = []
-    const answer = await createAdvisorKernel(fixture.source, new DeterministicAdvisorRuntime()).investigate({
+    const requests: Array<Record<string, unknown>> = []
+    let calls = 0
+    const runtime = new OllamaAdvisorRuntime({
+      model: 'chat-model',
+      transport: {
+        probe: async () => ({ available: true, models: ['chat-model'], detail: 'ready' }),
+        cancel: async () => true,
+        onDelta: () => () => {},
+        chat: async (_requestId, payload) => {
+          requests.push(payload)
+          calls += 1
+          return calls === 1
+            ? { streamed: false, message: { content: 'I will check the measured spend first.', tool_calls: [] } }
+            : { streamed: false, message: { content: 'Metrora measured $12.00, which is below your $4,000 threshold.' } }
+        },
+      },
+    })
+    const answer = await createAdvisorKernel(fixture.source, runtime).investigate({
       question: 'È vero che ho speso più di 4k in totale di AI? Verifica i dati disponibili e dammi una conclusione.',
       scope: { ...fixture.scope, period: 'lifetime' },
       onToolEvent: event => events.push(event),
@@ -96,9 +109,11 @@ describe('Advisor model planning boundary', () => {
       { name: 'get_spend_snapshot', status: 'started' },
       { name: 'get_spend_snapshot', status: 'completed' },
     ])
+    expect(requests).toHaveLength(2)
     expect(answer.evidence).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'overview.current' })]))
     expect(answer.coverage.level).toBe('high')
-    expect(answer.conclusion).toMatch(/12[.,]00/u)
+    expect(answer.conclusion).toContain('below your $4,000 threshold')
+    expect(answer.generatedByModel).toBe(true)
     expect(answer.conclusion).not.toMatch(/Buongiorno|Hello\. I can help you understand spend/i)
   })
 

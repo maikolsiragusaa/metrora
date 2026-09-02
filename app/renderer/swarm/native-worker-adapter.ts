@@ -5,7 +5,7 @@ import { ADVISOR_TOOL_CONTRACT } from '../advisor/contract'
 import { createAdvisorToolRegistry, type AdvisorOverviewSnapshot } from '../advisor/tools'
 import { DeterministicAdvisorRuntime } from '../advisor/runtime'
 import { mergeEvidence } from '../advisor/merge-evidence'
-import { advisorAnswerUsesCanonicalEvidence, advisorQuestionRequiresCanonicalReads, executeRequiredAdvisorReads, advisorToolRequestKey, type RequiredAdvisorReadsResult } from '../advisor/required-reads'
+import { requiredAdvisorToolRequests } from '../advisor/required-reads'
 import type {
   AdvisorDataSource,
   AdvisorEvidence,
@@ -88,22 +88,17 @@ function filteredToolContract(
   }
 }
 
-function evidenceStatus(requiredReads: RequiredAdvisorReadsResult | null, evidenceItems: readonly AdvisorEvidence[]): SwarmEvidenceResultStatusV1 {
-  // Non-factual bounded worker jobs have no canonical evidence domain to
-  // read. They remain execution-usable without inventing a High evidence
-  // claim; factual jobs always arrive with a RequiredAdvisorReadsResult.
-  if (!requiredReads) return 'usable'
-  if (requiredReads.status === 'unavailable') return 'unavailable'
-  const requiredCount = requiredReads.evidence.length
-  const optionalItems = evidenceItems.slice(requiredCount)
-  const optionalUnavailable = optionalItems.some(item => item.coverage.level === 'unavailable' || item.refs.length === 0)
-  return requiredReads.status === 'partial' || optionalUnavailable ? 'partial' : 'usable'
+function evidenceStatus(requiredToolNames: readonly string[], successfulToolNames: ReadonlySet<string>, unavailableToolNames: ReadonlySet<string>): SwarmEvidenceResultStatusV1 {
+  if (!requiredToolNames.length) return 'usable'
+  const required = new Set(requiredToolNames)
+  const successful = [...required].filter(name => successfulToolNames.has(name)).length
+  if (!successful) return 'unavailable'
+  return successful < required.size || [...required].some(name => unavailableToolNames.has(name)) ? 'partial' : 'usable'
 }
 
-function evidenceResult(requiredReads: RequiredAdvisorReadsResult | null, evidenceItems: readonly AdvisorEvidence[], usedToolNames: readonly string[]): SwarmEvidenceResultV1 {
-  const requiredToolNames = requiredReads?.requests.map(request => request.tool) ?? []
+function evidenceResult(requiredToolNames: readonly string[], successfulToolNames: ReadonlySet<string>, unavailableToolNames: ReadonlySet<string>, usedToolNames: readonly string[]): SwarmEvidenceResultV1 {
   return {
-    status: evidenceStatus(requiredReads, evidenceItems),
+    status: evidenceStatus(requiredToolNames, successfulToolNames, unavailableToolNames),
     requiredToolNames: [...new Set(requiredToolNames)].slice(0, 16),
     usedToolNames: [...new Set(usedToolNames)].slice(0, 16),
   }
@@ -273,18 +268,9 @@ export class NativeHarnessWorkerAdapter implements WorkerAdapterV1 {
       const definitions = registry.definitions.filter(definition => allowed.has(definition.function.name)).slice(0, 16)
       const contract = filteredToolContract(registry.contract, definitions)
       let toolCalls = 0
-      // The worker adapter exposes one bounded Tool round to the selected
-      // runtime. The runtime may make several calls inside that round, but
-      // it cannot widen the immutable worker budget.
-      const toolRounds = 1
-      const ensureToolRoundAllowed = () => {
-        if (toolRounds > request.limits.maxToolRounds) throw new SwarmBoundsError('Worker Tool-round limit reached.')
-      }
-      // Every factual worker receives the same controller-selected baseline
-      // read. The model can request additional bounded reads, but it cannot
-      // decide that the minimum Metrora evidence does not exist.
+      const successfulToolNames = new Set<string>()
+      const unavailableToolNames = new Set<string>()
       const onToolEvent = (event: AdvisorToolEvent) => {
-        if (event.status === 'queued' || event.status === 'started') ensureToolRoundAllowed()
         activityEvents.push(event)
         if (event.status === 'started' || event.status === 'queued') {
           observe({ contractVersion: 'metrora.swarm.v1', schemaVersion: 1, kind: 'worker', runId: request.runId, workerId: request.workerId, role: request.role, status: 'tool-started', at: this.now(), toolName: safeToolName(event.name) })
@@ -292,87 +278,65 @@ export class NativeHarnessWorkerAdapter implements WorkerAdapterV1 {
           observe({ contractVersion: 'metrora.swarm.v1', schemaVersion: 1, kind: 'worker', runId: request.runId, workerId: request.workerId, role: request.role, status: 'tool-completed', at: this.now(), toolName: safeToolName(event.name), detail: event.status })
         }
       }
-      const onToolRound = (round: number) => {
-        if (round > request.limits.maxToolRounds) throw new SwarmBoundsError('Worker Tool-round limit reached.')
-      }
-      const requiredReads = advisorQuestionRequiresCanonicalReads(plan)
-        ? await executeRequiredAdvisorReads({
-            source: this.source,
-            scope,
-            question,
-            plan,
-            suppliedOverview: this.overview,
-            allowedToolNames: allowed,
-            definitions,
-            limits: { maxCalls: request.limits.maxToolCalls },
-            signal,
-            onToolEvent,
-            registry,
-          })
-        : null
-      const requiredEvidence = requiredReads?.evidence.length ? [...requiredReads.evidence] : []
-      const evidence = requiredEvidence.length
-        ? mergeEvidence(requiredEvidence, requiredEvidence[0]!)
-        : { ...buildConversationEvidence(question, scope), understanding: plan.understanding, plan: plan.plan }
-      const baselineExecutions = new Map<string, AdvisorToolExecution>()
-      for (const read of requiredReads?.reads ?? []) {
-        if (read.execution) baselineExecutions.set(advisorToolRequestKey(read.request), read.execution)
-      }
-      const baselineReuse = new Map<string, number>()
-      const evidenceItems: AdvisorEvidence[] = [...requiredEvidence]
+      const requiredToolRequests = requiredAdvisorToolRequests(plan, definitions, question)
+      const requiredToolNames = requiredToolRequests.map(request => request.tool)
+      const evidence = { ...buildConversationEvidence(question, scope), understanding: plan.understanding, plan: plan.plan }
+      const evidenceItems: AdvisorEvidence[] = []
       const executeTool = async (name: string, args: Record<string, unknown>, toolSignal?: AbortSignal): Promise<AdvisorToolExecution> => {
         throwIfAborted(signal)
         if (!allowed.has(name) || !definitions.some(definition => definition.function.name === name)) throw new SwarmBoundsError('Worker requested a Tool outside its immutable allowlist.')
-        const cachedKey = name + '\u0000' + JSON.stringify(args)
-        const cached = baselineExecutions.get(cachedKey)
-        if (cached) {
-          const reuseCount = baselineReuse.get(cachedKey) ?? 0
-          // A one-call worker may consume the controller baseline once; a
-          // second request is outside its immutable call bound. Larger fixed
-          // budgets can inspect the same bounded snapshot without rereading it.
-          if (request.limits.maxToolCalls <= 1 && reuseCount > 0) throw new SwarmBoundsError('Worker Tool-call limit reached.')
-          baselineReuse.set(cachedKey, reuseCount + 1)
-          return cached
-        }
         if (toolCalls >= request.limits.maxToolCalls) throw new SwarmBoundsError('Worker Tool-call limit reached.')
-        ensureToolRoundAllowed()
         toolCalls += 1
         const execution = await registry.execute(name, args, toolSignal ?? signal)
         const unavailable = execution.envelope?.unavailable === true || execution.evidence.coverage.level === 'unavailable'
         const evidence = unavailable ? { ...execution.evidence, refs: [] } : execution.evidence
         evidenceItems.push(evidence)
+        if (unavailable) unavailableToolNames.add(name)
+        else successfulToolNames.add(name)
         return unavailable ? { ...execution, evidence } : execution
       }
       const answer = await this.runtime.generate({
         question,
         evidence,
-        requiredEvidence,
-        requiredToolRequests: requiredReads?.requests,
+        requiredToolRequests,
         plan: plan.plan,
         guard: createAdvisorModelGuardV1(plan),
         fallbackIntent: plan.intent,
         tools: definitions,
         toolContract: contract,
         executeTool,
-        onToolRound,
         onToolEvent,
+        agentLoopBounds: {
+          maxSteps: request.limits.maxToolRounds + 1,
+          maxCallsPerStep: request.limits.maxToolCalls,
+          maxCallsPerTurn: request.limits.maxToolCalls,
+          maxToolRounds: request.limits.maxToolRounds,
+          maxParallelToolCalls: 1,
+          turnTimeoutMs: request.limits.timeoutMs,
+          maxContentBytes: request.limits.maxOutputBytes,
+          maxLedgerMessages: 32,
+        },
         workerContext: workerContext(request),
       }, signal)
       throwIfAborted(signal)
       const mergedEvidence = evidenceItems.length ? mergeEvidence(evidenceItems, evidenceItems[0]!) : evidence
       const safe = safeAnswer(answer, request.limits.maxOutputBytes)
       const canonicalRefs = safeRefs(mergedEvidence.refs)
-      const grounded = advisorAnswerUsesCanonicalEvidence(answer, mergedEvidence)
-      const closeout = grounded
-        ? { answer: prefixWorkerAnswer(request.role, safe.answer), evidenceSummary: safe.evidenceSummary, refs: canonicalRefs, rejected: false }
-        : requiredReads
-          ? { ...safeAnswer(await new DeterministicAdvisorRuntime().generate({ question, evidence: mergedEvidence, plan: plan.plan, guard: createAdvisorModelGuardV1(plan) }, signal), request.limits.maxOutputBytes), rejected: true }
-          : safe.answer
-            ? { ...safe, answer: prefixWorkerAnswer(request.role, safe.answer), rejected: false }
-            : { answer: 'This worker had no supported canonical Metrora evidence responsibility for the task.', evidenceSummary: 'No supported canonical Metrora evidence read was assigned.', refs: [], rejected: false }
+      const usedToolNames = [...new Set([
+        ...successfulToolNames,
+        ...activity().filter(item => item.status === 'completed').map(item => item.name),
+      ])]
+      const resultEvidence = evidenceResult(requiredToolNames, successfulToolNames, unavailableToolNames, usedToolNames)
+      const publishable = !requiredToolNames.length || resultEvidence.status !== 'unavailable'
+      const closeout = publishable && safe.answer
+        ? { answer: prefixWorkerAnswer(request.role, safe.answer), evidenceSummary: safe.evidenceSummary, refs: canonicalRefs }
+        : {
+            answer: prefixWorkerAnswer(request.role, requiredToolNames.length ? 'The required canonical Metrora evidence was unavailable for this bounded task.' : 'This worker had no supported canonical Metrora evidence responsibility for the task.'),
+            evidenceSummary: requiredToolNames.length ? 'Canonical evidence unavailable.' : 'No supported canonical Metrora evidence read was assigned.',
+            refs: canonicalRefs,
+          }
       const activityResult = activity()
-      const resultEvidence = evidenceResult(requiredReads, evidenceItems, activityResult.filter(item => item.status === 'completed').map(item => item.name))
-      const summary = boundedSwarmText(requiredReads
+      const summary = boundedSwarmText(requiredToolNames.length
         ? [
             resultEvidence.status === 'usable' ? 'Usable canonical evidence' : resultEvidence.status === 'partial' ? 'Partial canonical evidence' : 'Canonical evidence unavailable',
             mergedEvidence.coverage.label,
@@ -380,10 +344,7 @@ export class NativeHarnessWorkerAdapter implements WorkerAdapterV1 {
             canonicalRefs.map(ref => ref.label).join('; '),
           ].filter(Boolean).join(' - ')
         : 'No canonical Metrora read was required for this bounded worker task.')
-      const closeoutErrors = closeout.rejected
-        ? ['Model synthesis rejected; deterministic closeout used.']
-        : []
-      const result = baseResult(request, closeout.answer ? 'completed' : 'partial', startedAt, this.now(), activityResult, closeout.answer, summary, closeoutErrors, resultEvidence)
+      const result = baseResult(request, closeout.answer ? 'completed' : 'partial', startedAt, this.now(), activityResult, closeout.answer, summary, [], resultEvidence)
       return finish({ ...result, evidenceRefs: canonicalRefs })
     } catch (error) {
       const status: SwarmWorkerResultV1['status'] = timedOut()

@@ -157,10 +157,10 @@ describe('Ollama Advisor renderer state machine', () => {
     expect(deltas).toEqual([])
   })
 
-  it('keeps model identifiers while rejecting an unverified numeric model claim', async () => {
+  it('keeps verified model identifiers while rejecting an unverified numeric model claim', async () => {
     const transport = transportFor([], [[]])
     const answer = await new OllamaAdvisorRuntime({ model: 'llama3.2', transport }).generate({
-      question: 'Which model should I inspect?',
+      question: 'Which model was observed in spend?',
       evidence: spendEvidence,
       tools: [],
       onDelta: () => {},
@@ -169,7 +169,7 @@ describe('Ollama Advisor renderer state machine', () => {
   })
 
   it.each(['Spend rose by 12.', 'The scope contains 12 calls.'])(
-    'suppresses the entire model narrative when it contains an unverified numeric token: %s',
+    'removes an unsupported model clause without leaking it: %s',
     async narrative => {
       const transport = transportFor([], [[{ function: { name: 'get_spend_snapshot', arguments: '{}' } }]], narrative, narrative)
       const answer = await new OllamaAdvisorRuntime({ model: 'llama3.2', transport }).generate({
@@ -180,15 +180,16 @@ describe('Ollama Advisor renderer state machine', () => {
       })
       expect(answer.conclusion).not.toContain('Local model context')
       expect(answer.conclusion).not.toContain(narrative)
+      expect(answer.conclusion).toContain('Metrora measured')
     },
   )
 
-  it('suppresses qualitative no-tool context even when recognized evidence was prefetched', async () => {
+  it('allows grounded qualitative interpretation when recognized evidence is available', async () => {
     const narrative = 'The observed pattern deserves a closer look.'
     const answer = await new OllamaAdvisorRuntime({ model: 'llama3.2', transport: noToolTransport(narrative) }).generate({
       question: 'What changed in spend?', evidence: spendEvidence, tools: [],
     })
-    expect(answer.conclusion).not.toContain(narrative)
+    expect(answer.conclusion).toContain(narrative)
     expect(answer.conclusion).not.toContain('Local model context')
   })
 
@@ -235,6 +236,32 @@ describe('Ollama Advisor renderer state machine', () => {
     expect(answer.conclusion).not.toContain('Local model context')
   })
 
+  it('streams ordinary local conversation through the shared loop but not factual turns', async () => {
+    const deltas: string[] = []
+    let listener: ((event: { requestId: string; text: string }) => void) | null = null
+    const transport: OllamaTransport = {
+      probe: async () => ({ available: true, models: ['llama3.2'], detail: 'ready' }),
+      cancel: async () => true,
+      onDelta: callback => {
+        listener = callback
+        return () => { listener = null }
+      },
+      chat: async (requestId, payload) => {
+        expect(payload.stream).toBe(true)
+        expect(payload.tools).toEqual([])
+        listener?.({ requestId, text: 'Certo, ' })
+        listener?.({ requestId, text: 'ecco una battuta.' })
+        return { streamed: true, message: { content: 'Certo, ecco una battuta.' } }
+      },
+    }
+    const answer = await new OllamaAdvisorRuntime({ model: 'llama3.2', transport }).generate({
+      question: 'Tell me a joke', evidence: { ...spendEvidence, intent: 'unknown', refs: [], coverage: { level: 'unavailable', label: 'Unavailable', detail: 'No mapped evidence.' } }, tools: [], onDelta: text => deltas.push(text),
+    })
+    expect(deltas).toEqual(['Certo, ', 'ecco una battuta.'])
+    expect(answer.streamed).toBe(true)
+    expect(answer.conclusion).toBe('Certo, ecco una battuta.')
+  })
+
   it.each([
     ['claude', 'codex'],
     ['codex', 'claude'],
@@ -265,7 +292,7 @@ describe('Ollama Advisor renderer state machine', () => {
     expect(answer.scopeLabel).toContain('All providers')
     expect(answer.conclusion).not.toMatch(/41|73|claude spend|codex spend/i)
     expect(answer.details.join(' ')).not.toMatch(/41|73|claude spend|codex spend/i)
-    expect(finalRequests).toEqual([])
+    expect(finalRequests.length).toBeGreaterThan(0)
   })
 
   it('buffers split sensitive streaming content and emits no raw or post-hoc narrative', async () => {

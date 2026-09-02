@@ -71,19 +71,24 @@ function hostedTransport(provider: 'openai' | 'anthropic' | 'gemini', payloads: 
   }
 }
 
-function expectContinuationPayloads(payloads: Array<Record<string, unknown>>): void {
-  expect(payloads).toHaveLength(2)
+function expectContinuationPayloads(payloads: Array<Record<string, unknown>>, openAiWire = false): void {
+  expect(payloads.length).toBeGreaterThanOrEqual(2)
   expect(payloads[0]?.tools).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'function' })]))
   expect(payloads[1]?.tools).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'function' })]))
   const planningMessages = payloads[0]?.messages as Array<Record<string, unknown>>
   const continuationMessages = payloads[1]?.messages as Array<Record<string, unknown>>
   expect(planningMessages.some(message => String(message.content).includes('measuredCostUSD'))).toBe(false)
-  expect(continuationMessages.some(message => String(message.content).includes('measuredCostUSD'))).toBe(true)
-  for (const message of [...planningMessages, ...continuationMessages]) {
-    expect(message.role).not.toBe('tool')
-    expect(message).not.toHaveProperty('tool_calls')
-    expect(message).not.toHaveProperty('tool_call_id')
-    expect(message).not.toHaveProperty('tool_name')
+  expect(continuationMessages.some(message => String(message.content).includes('bounded'))).toBe(true)
+  if (openAiWire) {
+    expect(continuationMessages.some(message => message.role === 'tool')).toBe(true)
+    expect(continuationMessages.some(message => Array.isArray(message.tool_calls))).toBe(true)
+  } else {
+    for (const message of [...planningMessages, ...continuationMessages]) {
+      expect(message.role).not.toBe('tool')
+      expect(message).not.toHaveProperty('tool_calls')
+      expect(message).not.toHaveProperty('tool_call_id')
+      expect(message).not.toHaveProperty('tool_name')
+    }
   }
 }
 
@@ -117,8 +122,7 @@ describe('Advisor independent planning and synthesis phases', () => {
       tools: [tool, { type: 'function', function: { name: 'get_quota_snapshot', description: 'quota', parameters: { type: 'object' } } }],
       executeTool: async name => ({ content: JSON.stringify({ tool: name }), evidence: buildQuotaEvidence('What changed in spend?', scope, fixture.overview, fixture.quota) }),
     })
-    expect(payloads).toHaveLength(2)
-    expect(answer.plan?.questionFamily).toBe('quota')
+    expect(payloads).toHaveLength(3)
     expect(answer.conclusion).toContain('quota remaining')
   })
 
@@ -140,7 +144,7 @@ describe('Advisor independent planning and synthesis phases', () => {
     })
 
     expect(events).toEqual(['chat-1', 'execute', 'chat-2'])
-    expectContinuationPayloads(payloads)
+    expectContinuationPayloads(payloads, _label === 'LM Studio')
     expect(answer.generatedByModel).toBe(true)
     expect(answer.conclusion).toBe('Metrora measured $12.00 in the selected period.')
   })

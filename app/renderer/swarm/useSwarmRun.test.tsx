@@ -85,9 +85,12 @@ describe('useSwarmRun execution ownership', () => {
     const workerTwo = deferred<AdvisorAnswer>()
     const synthesis = deferred<AdvisorSwarmSynthesisResult>()
     const signals: AbortSignal[] = []
-    const generate = vi.fn(async (_input: AdvisorRuntimeInput, signal?: AbortSignal) => {
+    const generate = vi.fn(async (input: AdvisorRuntimeInput, signal?: AbortSignal) => {
+      const workerIndex = signals.length
       if (signal) signals.push(signal)
-      return (signals.length === 1 ? workerOne : workerTwo).promise
+      const required = input.requiredToolRequests?.[0]
+      if (required) await input.executeTool?.(required.tool, required.arguments, signal)
+      return (workerIndex === 0 ? workerOne : workerTwo).promise
     })
     const generateSwarmSynthesis = vi.fn(async (input: Parameters<NonNullable<AdvisorModelRuntime['generateSwarmSynthesis']>>[0]) => {
       expect(input.question).toBe('Explain the observed spend change.')
@@ -117,13 +120,13 @@ describe('useSwarmRun execution ownership', () => {
     expect(generate).toHaveBeenCalledTimes(2)
 
     await act(async () => {
-      synthesis.resolve({ answer: 'synthesized result: Metrora measured $12.00 in spend during the selected period.', evidenceSummary: 'Two bounded worker closeouts with the measured spend anchor.' })
+      synthesis.resolve({ answer: 'Synthesized result: the bounded worker findings are grounded in the selected spend evidence.', evidenceSummary: 'Two bounded worker closeouts with the measured spend anchor.' })
       await flushMicrotasks()
     })
     await waitFor(() => expect(result.current.state.running).toBe(false))
     expect(result.current.state.status).toBe('completed')
     expect(result.current.state.result?.workers).toHaveLength(2)
-    expect(result.current.state.result?.synthesis?.answer).toBe('synthesized result: Metrora measured $12.00 in spend during the selected period.')
+    expect(result.current.state.result?.synthesis?.answer).toBe('Synthesized result: the bounded worker findings are grounded in the selected spend evidence.')
     expect(promotedRuntimeGenerate).not.toHaveBeenCalled()
   })
 

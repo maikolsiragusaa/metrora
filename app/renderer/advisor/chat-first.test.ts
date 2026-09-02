@@ -94,9 +94,21 @@ describe('Advisor chat-first model boundary', () => {
     const fixture = createAdvisorConformanceFixture()
     const requests: Array<Record<string, unknown>> = []
     const events: Array<{ name: string; status: string }> = []
+    let calls = 0
     const runtime = new OllamaAdvisorRuntime({
       model: 'chat-model',
-      transport: directTransport(requests, { content: 'Hello. I can help you understand spend.' }),
+      transport: {
+        probe: async () => ({ available: true, models: ['chat-model'], detail: 'ready' }),
+        cancel: async () => true,
+        onDelta: () => () => {},
+        chat: async (_requestId, payload) => {
+          requests.push(payload)
+          calls += 1
+          return calls === 1
+            ? { streamed: false, message: { content: 'I will check the measured spend first.', tool_calls: [] } }
+            : { streamed: false, message: { content: 'Metrora measured $12.00, which is below your $4,000 threshold.' } }
+        },
+      },
     })
 
     const answer = await createAdvisorKernel(fixture.source, runtime).investigate({
@@ -111,10 +123,10 @@ describe('Advisor chat-first model boundary', () => {
       { name: 'get_spend_snapshot', status: 'started' },
       { name: 'get_spend_snapshot', status: 'completed' },
     ])
-    expect(requests).toHaveLength(1)
+    expect(requests).toHaveLength(2)
     expect(answer.evidence).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'overview.current' })]))
-    expect(answer.conclusion).toContain('$12.00')
-    expect(answer.conclusion).not.toMatch(/Hello\. I can help you understand spend/i)
+    expect(answer.conclusion).toContain('below your $4,000 threshold')
+    expect(answer.generatedByModel).toBe(true)
   })
 
   it('sends only bounded same-scope history and minimal semantic context', async () => {

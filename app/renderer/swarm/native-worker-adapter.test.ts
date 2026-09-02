@@ -1,7 +1,9 @@
+// @vitest-environment jsdom
+
 import { describe, expect, it, vi } from 'vitest'
 import type { MenubarPayload } from '../lib/types'
 import { createAdvisorConformanceFixture } from '../advisor/conformance'
-import { DeterministicAdvisorRuntime } from '../advisor/runtime'
+import { OllamaAdvisorRuntime } from '../advisor/ollama'
 import type { AdvisorAnswer, AdvisorDataSource, AdvisorRuntimeInput, AdvisorModelRuntime } from '../advisor/types'
 import { createBaselineWorkerRequests } from '../../../src/swarm/coordinator-v1'
 import type { SwarmEventV1, SwarmSynthesisInputV1, SwarmWorkerResultV1 } from '../../../src/swarm/contract-v1'
@@ -176,15 +178,29 @@ describe('Native Harness Swarm worker adapter', () => {
   it('gives Investigator and Verifier distinct trusted responsibilities and independent canonical reads', async () => {
     const fixture = createAdvisorConformanceFixture()
     const inputs: AdvisorRuntimeInput[] = []
+    const roleCalls = new Map<string, number>()
+    const loopRuntime = new OllamaAdvisorRuntime({
+      model: 'role-model',
+      transport: {
+        probe: async () => ({ available: true, models: ['role-model'], detail: 'ready' }),
+        cancel: async () => true,
+        onDelta: () => () => {},
+        chat: async (_requestId, payload) => {
+          const system = String((payload.messages as Array<{ content?: unknown }>)[0]?.content ?? '')
+          const role = /responsibility \((investigator|verifier),/u.exec(system)?.[1] ?? 'investigator'
+          const count = (roleCalls.get(role) ?? 0) + 1
+          roleCalls.set(role, count)
+          return count === 1
+            ? { streamed: false, message: { content: '', tool_calls: [{ function: { name: 'get_spend_snapshot', arguments: '{}' } }] } }
+            : { streamed: false, message: { content: role === 'investigator' ? 'I measured $12.00 in the selected scope; I would inspect the visible drivers next.' : 'I independently checked the canonical $12.00 measurement; the requested evidence is consistent.' } }
+        },
+      },
+    })
     const runtime: AdvisorModelRuntime = {
-      id: 'role-fixture',
-      label: 'Role fixture',
-      mode: 'ollama-local',
-      providerSupport: ['fixture'],
-      availability: 'ready',
-      generate: vi.fn(async (input: AdvisorRuntimeInput) => {
+      ...loopRuntime,
+      generate: vi.fn(async (input: AdvisorRuntimeInput, signal?: AbortSignal) => {
         inputs.push(input)
-        return new DeterministicAdvisorRuntime().generate(input)
+        return loopRuntime.generate(input, signal)
       }),
     }
     const adapter = new NativeHarnessWorkerAdapter({ source: fixture.source, runtime, overview: null, now: () => '2026-08-31T00:00:00.000Z' })
@@ -220,14 +236,21 @@ describe('Native Harness Swarm worker adapter', () => {
       current: { ...today.current, cost: 4118.17, calls: 417, sessions: 28 },
     } as unknown as MenubarPayload
     const fixture = createAdvisorConformanceFixture({ overview: lifetime })
-    const runtime: AdvisorModelRuntime = {
-      id: 'lifetime-fixture',
-      label: 'Lifetime fixture',
-      mode: 'ollama-local',
-      providerSupport: ['fixture'],
-      availability: 'ready',
-      generate: input => new DeterministicAdvisorRuntime().generate(input),
-    }
+    let calls = 0
+    const runtime = new OllamaAdvisorRuntime({
+      model: 'lifetime-model',
+      transport: {
+        probe: async () => ({ available: true, models: ['lifetime-model'], detail: 'ready' }),
+        cancel: async () => true,
+        onDelta: () => () => {},
+        chat: async () => {
+          calls += 1
+          return calls === 1
+            ? { streamed: false, message: { content: '', tool_calls: [{ function: { name: 'get_spend_snapshot', arguments: '{}' } }] } }
+            : { streamed: false, message: { content: 'Metrora measured $4,118.17 in lifetime spend.' } }
+        },
+      },
+    })
     const adapter = new NativeHarnessWorkerAdapter({
       source: fixture.source,
       runtime,
@@ -258,25 +281,15 @@ describe('Native Harness Swarm worker adapter', () => {
       ...fixture.source,
       getOverview: vi.fn(async () => { throw new Error('canonical spend source unavailable') }),
     }
-    const runtime: AdvisorModelRuntime = {
-      id: 'generic-fixture',
-      label: 'Generic fixture',
-      mode: 'ollama-local',
-      providerSupport: ['fixture'],
-      availability: 'ready',
-      generate: vi.fn(async () => ({
-        conclusion: 'Hello. I can help you understand spend.',
-        scopeLabel: 'Today',
-        periodLabel: 'Today',
-        evidence: [],
-        coverage: { level: 'high', label: 'High coverage', detail: 'The model returned text.' },
-        assumptions: [],
-        unknown: [],
-        nextInvestigations: [],
-        details: [],
-        runtime: { id: 'generic-fixture', label: 'Generic fixture', mode: 'ollama-local' },
-      } satisfies AdvisorAnswer)),
-    }
+    const runtime = new OllamaAdvisorRuntime({
+      model: 'unavailable-model',
+      transport: {
+        probe: async () => ({ available: true, models: ['unavailable-model'], detail: 'ready' }),
+        cancel: async () => true,
+        onDelta: () => () => {},
+        chat: async () => ({ streamed: false, message: { content: 'I cannot verify the measured spend yet.' } }),
+      },
+    })
     const adapter = new NativeHarnessWorkerAdapter({ source: failingSource, runtime, overview: null, now: () => '2026-08-31T00:00:00.000Z' })
     const [request] = createBaselineWorkerRequests({
       runId: 'run-unavailable-evidence',
@@ -295,7 +308,7 @@ describe('Native Harness Swarm worker adapter', () => {
     expect(result.evidenceSummary).toMatch(/unavailable/i)
     expect(result.evidenceSummary).not.toMatch(/high coverage/i)
     expect(result.toolActivity).toEqual([{ name: 'get_spend_snapshot', status: expect.stringMatching(/unavailable|failed/) }])
-    expect(result.answer).not.toMatch(/Hello\. I can help you understand spend/i)
+    expect(result.answer).toMatch(/required canonical Metrora evidence was unavailable/i)
   })
 })
 
@@ -406,7 +419,7 @@ describe('Native Harness Swarm synthesis boundary', () => {
     expect(result.status).toBe('completed')
     expect(result.answer).toContain(workerAnswer)
     expect(result.answer).not.toContain('$99.00')
-    expect(result.errors.join(' ')).toMatch(/not grounded|deterministic/i)
+    expect(result.errors.join(' ')).toMatch(/safe supported explanation|worker closeout/i)
   })
 
   it.each([

@@ -518,6 +518,7 @@ function claimsForIntent(evidence: AdvisorEvidence, atoms = buildAdvisorVerified
   const include = (predicate: (item: AdvisorVerifiedClaimAtomV1) => boolean, limit = 8) => atoms.filter(predicate).slice(0, limit)
   if (evidence.intent === 'spend-change') return [
     ...include(item => item.id === 'measured-total-cost' || item.id === 'observed-calls' || item.id === 'observed-sessions', 3),
+    ...include(item => item.claimKind === 'model_identity', 4),
     ...include(item => item.claimKind === 'model_measured_cost', 4),
     ...include(item => item.claimKind === 'trend_direction', 1),
   ]

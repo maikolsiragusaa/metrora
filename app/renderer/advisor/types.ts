@@ -2,6 +2,7 @@ import type { MetroraBridge } from '../lib/metrora-bridge-types'
 import type { DateRange, MenubarPayload, ModelReportRow, Period, QuotaProvider } from '../lib/types'
 import type { PerformanceComparisonV1 } from '../../../src/bench/performance-compare-v1'
 import type { PerformanceRunV1 } from '../../../src/bench/performance-contract-v1'
+import type { MetroraAgentLoopBounds, MetroraAgentLoopEvent } from '../agent-loop/contracts'
 
 export type AdvisorIntent =
   | 'social'
@@ -238,7 +239,7 @@ export type AdvisorUiContextV1 = {
 export type AdvisorRuntimeInput = {
   question: string
   evidence: AdvisorEvidence
-  /** Canonical reads executed by the controller before model planning. */
+  /** Controller-authorized minimum read requests for this bounded loop. */
   requiredEvidence?: readonly AdvisorEvidence[]
   /** Exact bounded requests represented by requiredEvidence; used to avoid a duplicate read. */
   requiredToolRequests?: readonly AdvisorToolRequestV1[]
@@ -257,6 +258,10 @@ export type AdvisorRuntimeInput = {
   /** Called before each bounded read-tool round. */
   onToolRound?: (round: number) => void
   onToolEvent?: (event: { name: string; status: 'queued' | 'started' | 'completed' | 'unavailable' | 'failed' | 'cancelled' }) => void
+  /** Normalized lifecycle events from the shared bounded MetroraAgentLoop. */
+  onAgentEvent?: (event: MetroraAgentLoopEvent) => void
+  /** Per-run bounds are immutable input to the loop and may only narrow defaults. */
+  agentLoopBounds?: Partial<MetroraAgentLoopBounds>
   onDelta?: (text: string) => void
   /** Trusted bounded responsibility for a Swarm worker; this changes the model input, not just UI metadata. */
   workerContext?: {

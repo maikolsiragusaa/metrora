@@ -39,21 +39,24 @@ function synthesisReports(input: SwarmSynthesisInputV1): Array<{
 
 function synthesisNumbers(value: string): Set<string> {
   const numbers = new Set<string>()
-  for (const token of value.match(/\d+(?:[.,]\d+)*/gu) ?? []) {
+  for (const token of value.match(/\d+(?:[.,]\d+)*(?:[kKmMbB])?/gu) ?? []) {
+    const suffix = /[kKmMbB]$/u.test(token) ? token.slice(-1).toLowerCase() : ''
+    const raw = suffix ? token.slice(0, -1) : token
     const lastComma = token.lastIndexOf(',')
-    const lastDot = token.lastIndexOf('.')
-    let normalized = token
+    const lastDot = raw.lastIndexOf('.')
+    let normalized = raw
     if (lastComma >= 0 && lastDot >= 0) {
       const decimalSeparator = lastComma > lastDot ? ',' : '.'
       const thousandsSeparator = decimalSeparator === ',' ? '.' : ','
-      normalized = token.replaceAll(thousandsSeparator, '').replace(decimalSeparator, '.')
-    } else if (lastComma >= 0 && /,\d{3}(?:,\d{3})*$/u.test(token)) {
-      normalized = token.replaceAll(',', '')
+      normalized = raw.replaceAll(thousandsSeparator, '').replace(decimalSeparator, '.')
+    } else if (lastComma >= 0 && /,\d{3}(?:,\d{3})*$/u.test(raw)) {
+      normalized = raw.replaceAll(',', '')
     } else {
-      normalized = token.replace(',', '.')
+      normalized = raw.replace(',', '.')
     }
     const parsed = Number(normalized)
-    if (Number.isFinite(parsed)) numbers.add(String(parsed))
+    const multiplier = suffix === 'k' ? 1_000 : suffix === 'm' ? 1_000_000 : suffix === 'b' ? 1_000_000_000 : 1
+    if (Number.isFinite(parsed)) numbers.add(String(parsed * multiplier))
   }
   return numbers
 }
@@ -96,44 +99,86 @@ function hasUnsupportedSubject(answer: string, evidence: string): boolean {
   return false
 }
 
-function synthesisIsGrounded(answer: string, input: SwarmSynthesisInputV1, reports: ReturnType<typeof synthesisReports>): boolean {
+function sentenceParts(value: string): string[] {
+  return value.split(/\r?\n+/u)
+    .flatMap(line => line.split(/(?<=[.!?])\s+(?=[\p{L}\p{N}"'])/u))
+    .flatMap(sentence => sentence.split(/\s+(?:but|however|ma|però|tuttavia)\s+/iu))
+    .flatMap(sentence => sentence.split(/;\s*/u))
+    .map(sentence => sentence.trim())
+    .filter(Boolean)
+}
+
+function derivedNumbers(values: ReadonlySet<string>): Set<string> {
+  const result = new Set(values)
+  const parsed = [...values].map(Number).filter(Number.isFinite)
+  for (const left of parsed) for (const right of parsed) if (left !== right) result.add(String(Math.abs(left - right)))
+  return result
+}
+
+function interpretationClaim(value: string): boolean {
+  return /\b(?:significant|meaningful|material|recommend|suggest|inspect|review|investigat|worth\s+(?:checking|inspecting)|importante|rilevante|consiglio|controllerei|ispezionerei)\w*/iu.test(value)
+}
+
+function sanitizeSynthesis(answer: string, input: SwarmSynthesisInputV1, reports: ReturnType<typeof synthesisReports>): { text: string; removed: number; diagnostics: string[] } {
   const text = boundedSwarmText(answer).trim()
   const task = boundedSwarmText(input.task).trim()
-  if (!task) return false
-  if (!text) return false
+  if (!task || !text) return { text: '', removed: 0, diagnostics: ['ungrounded_narrative'] }
   const useful = reports.filter(report => report.evidenceStatus !== 'unavailable' && report.answer.trim() && (report.evidenceRefs.length > 0 || report.requiredToolNames.length === 0))
-  if (!useful.length) return false
+  if (!useful.length) return { text: '', removed: 0, diagnostics: ['ungrounded_narrative'] }
   const evidenceText = synthesisEvidenceText(useful)
-  const answerWords = synthesisSemanticWords(text)
   const evidenceWords = synthesisSemanticWords(evidenceText)
   const taskWords = synthesisSemanticWords(task)
-  const allowedNumbers = synthesisNumbers(evidenceText)
-  const answerNumbers = synthesisNumbers(text)
-  const hasCanonicalNumber = [...answerNumbers].some(number => allowedNumbers.has(number))
-  if ([...answerNumbers].some(number => !allowedNumbers.has(number))) return false
-  if (hasUnsupportedSubject(text, evidenceText)) return false
-  if (/\b(?:caused?|causes?|due\s+to|because\s+of|reason\s+(?:is|was)|responsible\s+for|a\s+causa\s+di|ha\s+causato)\b/iu.test(text)) return false
-  if (/\b(?:hello|hi|hey|good\s+morning|good\s+evening|i\s+can\s+help|what\s+would\s+you\s+like|how\s+can\s+i\s+help)\b/iu.test(text)) return false
-  const sharedEvidenceWords = [...answerWords].filter(word => evidenceWords.has(word))
-  const taskEvidenceWords = [...taskWords].filter(word => evidenceWords.has(word))
-  const sharedTaskAnswerWords = [...answerWords].filter(word => taskEvidenceWords.includes(word))
+  const allowedNumbers = derivedNumbers(new Set([...synthesisNumbers(evidenceText), ...synthesisNumbers(task)]))
   const factualAnswerWords = new Set(['spend', 'measured', 'total', 'lifetime', 'usage', 'calls', 'sessions', 'models', 'projects', 'providers', 'quota', 'threshold', 'verified', 'interpretation'])
   const canonicalReadRequired = reports.some(report => report.requiredToolNames.length > 0)
-  if (!sharedEvidenceWords.length) return false
-  if (!canonicalReadRequired) return true
-  if (![...answerWords].some(word => factualAnswerWords.has(word))) return false
-  if (taskEvidenceWords.length > 0 && !sharedTaskAnswerWords.length && !hasCanonicalNumber) return false
-  if (!hasCanonicalNumber && sharedEvidenceWords.length < 1) return false
-  if (/(?:\b(?:driver|drivers|contributor|contributors|ranking|ranked|main|primary|top|highest|largest|biggest|most)\b)/iu.test(text) && !sharedEvidenceWords.some(word => ['spend', 'models', 'projects', 'sessions', 'providers'].includes(word))) return false
   const limitedEvidence = reports.some(report => report.requiredToolNames.length > 0 && report.evidenceStatus !== 'usable')
-  const stateDisclosure = /\b(?:partial|parziale|unavailable|non\s+disponibile|insufficient|insufficiente|missing|mancante|failed|fallito|failure|timeout|timed\s+out|scaduto|not\s+available|could\s+not|cannot|impossibile)\b/iu.test(text)
-  if (limitedEvidence && !stateDisclosure) return false
-  if (limitedEvidence && /\b(?:high\s+coverage|fully\s+verified|all\s+evidence\s+is\s+available|conclusive|alta\s+copertura|completamente\s+verificato|conclusivo)\b/iu.test(text)) return false
-  // The reports are bound to the original task by the controller. Requiring
-  // semantic evidence anchors, canonical numbers, and subject checks accepts
-  // paraphrases without treating generic or causally overreaching prose as a
-  // successful synthesis.
-  return true
+  const accepted: string[] = []
+  const diagnostics: string[] = []
+  for (const clause of sentenceParts(text)) {
+    const answerWords = synthesisSemanticWords(clause)
+    const answerNumbers = synthesisNumbers(clause)
+    const sharedEvidenceWords = [...answerWords].filter(word => evidenceWords.has(word))
+    const sharedTaskWords = [...answerWords].filter(word => taskWords.has(word))
+    if ([...answerNumbers].some(number => !allowedNumbers.has(number))) {
+      diagnostics.push('unsupported_numeric_claim')
+      continue
+    }
+    if (hasUnsupportedSubject(clause, evidenceText)) {
+      diagnostics.push('unsupported_subject_claim')
+      continue
+    }
+    if (/\b(?:caused?|causes?|due\s+to|because\s+of|reason\s+(?:is|was)|responsible\s+for|a\s+causa\s+di|ha\s+causato)\b/iu.test(clause)) {
+      diagnostics.push('unsupported_causality')
+      continue
+    }
+    if (/\b(?:hello|hi|hey|good\s+morning|good\s+evening|i\s+can\s+help|what\s+would\s+you\s+like|how\s+can\s+i\s+help)\b/iu.test(clause)) {
+      diagnostics.push('ungrounded_narrative')
+      continue
+    }
+    if (canonicalReadRequired && !sharedEvidenceWords.length && !sharedTaskWords.length && !interpretationClaim(clause)) {
+      diagnostics.push('ungrounded_narrative')
+      continue
+    }
+    if (canonicalReadRequired && !answerWordsHasFactualAnchor(answerWords) && !interpretationClaim(clause)) {
+      diagnostics.push('ungrounded_narrative')
+      continue
+    }
+    const stateDisclosure = /\b(?:partial|parziale|unavailable|non\s+disponibile|insufficient|insufficiente|missing|mancante|failed|fallito|failure|timeout|timed\s+out|scaduto|not\s+available|could\s+not|cannot|impossibile)\b/iu.test(clause)
+    if (limitedEvidence && !stateDisclosure) {
+      diagnostics.push('unsupported_factual_claim')
+      continue
+    }
+    if (limitedEvidence && /\b(?:high\s+coverage|fully\s+verified|all\s+evidence\s+is\s+available|conclusive|alta\s+copertura|completamente\s+verificato|conclusivo)\b/iu.test(clause)) {
+      diagnostics.push('unsupported_factual_claim')
+      continue
+    }
+    accepted.push(clause)
+  }
+  return { text: accepted.join(' ').trim(), removed: Math.max(0, sentenceParts(text).length - accepted.length), diagnostics: [...new Set(diagnostics)] }
+}
+
+function answerWordsHasFactualAnchor(words: ReadonlySet<string>): boolean {
+  return [...words].some(word => ['spend', 'measured', 'total', 'lifetime', 'usage', 'calls', 'sessions', 'models', 'projects', 'providers', 'quota', 'threshold', 'verified', 'interpretation'].includes(word))
 }
 
 function deterministicWorkerCloseout(input: SwarmSynthesisInputV1, reports: ReturnType<typeof synthesisReports>, extraError?: string): SwarmSynthesisResultV1 {
@@ -171,14 +216,13 @@ export function createNativeHarnessSwarmSynthesizer(runtime: AdvisorModelRuntime
       // so it cannot re-enter ordinary social/question classification.
       const generated = await runtime.generateSwarmSynthesis({ question: input.task, scope: input.scope as unknown as AdvisorScope, workers: reports }, signal)
       throwIfAborted(signal)
-      if (!synthesisIsGrounded(generated.answer, input, reports)) {
-        return deterministicWorkerCloseout(input, reports, 'Dedicated Swarm synthesis was not grounded in worker evidence; deterministic worker closeout was used.')
-      }
+      const sanitized = sanitizeSynthesis(generated.answer, input, reports)
+      if (!sanitized.text) return deterministicWorkerCloseout(input, reports, 'Dedicated Swarm synthesis contained no safe supported explanation; worker closeout was used.')
       return {
         status: 'completed',
-        answer: boundedSwarmText(sanitizeSwarmText(generated.answer)),
+        answer: boundedSwarmText(sanitizeSwarmText(sanitized.text)),
         evidenceSummary: boundedSwarmText([generated.evidenceSummary, reports.map(report => report.evidenceStatus + ' evidence via ' + report.evidenceRefs.map(ref => ref.label).join('; ')).join(' | ')].filter(Boolean).join(' ')),
-        errors: [],
+        errors: sanitized.removed ? ['Some synthesis claims were omitted because worker evidence did not support them.'] : [],
       }
     } catch (error) {
       if (isCancellation(error, signal)) throw error

@@ -73,6 +73,8 @@ export class LlamaServerAdvisorRuntime extends LocalAdvisorRuntime {
       transport: options.transport ?? bridgeTransport(port),
       availability: options.availability,
       unavailableMessage: 'Local llama-server model is not available.',
+      wireMode: 'openai',
+      nativeToolCalls: true,
     })
   }
 }

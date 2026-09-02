@@ -1,12 +1,10 @@
-/**
- * Harness runtime safety bounds. A turn has at most one planning/read round
- * followed by one synthesis/conversation round. Tool calls remain strictly
- * read-only and bounded even when a model returns a large native call list.
- */
+/** One authoritative set of bounds shared by Chat and delegated Agents. */
 export const HARNESS_TOOL_LOOP_LIMITS = Object.freeze({
+  maxSteps: 3,
   maxRounds: 2,
   maxCallsPerTurn: 4,
   maxCallsPerRound: 4,
+  maxParallelToolCalls: 1,
   /** One foreground Chat turn cannot outlive this deadline, including reads and synthesis. */
   turnTimeoutMs: 120_000,
 })
