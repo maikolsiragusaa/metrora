@@ -259,7 +259,7 @@ export class MetroraAgentLoop {
             return finish('limit')
           }
           const allAccepted = await executeCalls(step.calls, modelSteps)
-          if (!allAccepted || toolCalls >= bounds.maxCallsPerTurn) {
+          if (!allAccepted) {
             emit('turn-failed', { step: modelSteps, detail: 'tool_limit' })
             return finish('limit')
           }
@@ -272,7 +272,7 @@ export class MetroraAgentLoop {
           baselineAttempted = true
           const allAccepted = await executeCalls(calls, modelSteps)
           requiredReady = this.requiredReady(requiredState)
-          if (!allAccepted || toolCalls >= bounds.maxCallsPerTurn) {
+          if (!allAccepted) {
             emit('turn-failed', { step: modelSteps, detail: 'tool_limit' })
             return finish('limit')
           }

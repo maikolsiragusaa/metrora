@@ -101,6 +101,62 @@ describe('MetroraAgentLoop', () => {
     expect(output.finalText).toContain('natural explanation')
   })
 
+  it('continues after one Tool round exactly fills the turn budget', async () => {
+    const executed: string[] = []
+    const output = await run({
+      complete: async context => context.step === 1
+        ? toolStep(call('one'), call('two'), call('three'), call('four'))
+        : step('All four reads were synthesized into this natural answer.'),
+      executeTool: async current => {
+        executed.push(current.id)
+        return result()
+      },
+    })
+    expect(output.status).toBe('completed')
+    expect(output.toolCalls).toBe(4)
+    expect(executed).toEqual(['one', 'two', 'three', 'four'])
+    expect(output.finalText).toContain('natural answer')
+  })
+
+  it('continues across multiple Tool rounds when the final round fills the budget', async () => {
+    const executed: string[] = []
+    const output = await run({
+      bounds: { ...bounds, maxCallsPerStep: 1, maxCallsPerTurn: 2 },
+      complete: async context => context.step === 1
+        ? toolStep(call('round-one'))
+        : context.step === 2
+          ? toolStep(call('round-two'))
+          : step('Both bounded rounds were synthesized naturally.'),
+      executeTool: async current => {
+        executed.push(current.id)
+        return result()
+      },
+    })
+    expect(output.status).toBe('completed')
+    expect(output.toolCalls).toBe(2)
+    expect(output.toolRounds).toBe(2)
+    expect(executed).toEqual(['round-one', 'round-two'])
+    expect(output.finalText).toContain('synthesized naturally')
+  })
+
+  it('limits a subsequent Tool request after the exact budget is exhausted', async () => {
+    const executed: string[] = []
+    const output = await run({
+      bounds: { ...bounds, maxCallsPerStep: 1, maxCallsPerTurn: 2 },
+      complete: async context => context.step <= 2
+        ? toolStep(call('allowed-' + context.step))
+        : toolStep(call('over-budget')),
+      executeTool: async current => {
+        executed.push(current.id)
+        return result()
+      },
+    })
+    expect(output.status).toBe('limit')
+    expect(output.toolCalls).toBe(2)
+    expect(executed).toEqual(['allowed-1', 'allowed-2'])
+    expect(output.diagnostics).toContain('tool_limit')
+  })
+
   it('supports a bounded two-step Tool chain', async () => {
     const calls: string[] = []
     let stepNumber = 0
@@ -125,6 +181,7 @@ describe('MetroraAgentLoop', () => {
   it('executes a required baseline read when the model answers prematurely', async () => {
     const seen: string[][] = []
     const output = await run({
+      bounds: { ...bounds, maxCallsPerStep: 1, maxCallsPerTurn: 1 },
       requiredToolCalls: [call('required-spend')],
       requiredEvidenceReady: false,
       complete: async context => {
