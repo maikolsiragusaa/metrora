@@ -2,6 +2,11 @@
  * Metrora-owned projection of the reviewed Models.dev snapshot. The upstream
  * TOML/JSON is intentionally not copied into the product: only the bounded
  * capability facts needed for discovery are retained here.
+ *
+ * The Muse provider entry is resolved through the reviewed catalog's
+ * `base_model` deep-merge semantics: its core capabilities and limits come
+ * from `models/meta/muse-spark-1.2.toml`, while the OpenCode override supplies
+ * the free-host name, effort vocabulary, cost, and provider package.
  */
 export const MODELS_DEV_SNAPSHOT_REVISION = '03c2631946bb7ce2735e8e37d04197c4b910ff66' as const
 export const MODELS_DEV_SNAPSHOT_SOURCE = 'anomalyco/models.dev' as const
@@ -41,8 +46,8 @@ const REVIEWED_CAPABILITIES: readonly ReviewedModelsDevCapability[] = [
     reasoning: true,
     reasoningEfforts: ['default', 'minimal', 'low', 'medium', 'high', 'xhigh'],
     reasoningParameter: 'reasoning-object',
-    contextTokens: 200_000,
-    outputTokens: 32_000,
+    contextTokens: 1_048_576,
+    outputTokens: 131_072,
   },
   {
     provider: 'opencode-zen',
@@ -53,8 +58,8 @@ const REVIEWED_CAPABILITIES: readonly ReviewedModelsDevCapability[] = [
     reasoningEfforts: ['default'],
     reasoningParameter: 'openai-effort',
     interleavedField: 'reasoning_content',
-    contextTokens: 200_000,
-    outputTokens: 32_000,
+    contextTokens: 1_000_000,
+    outputTokens: 128_000,
   },
 ]
 

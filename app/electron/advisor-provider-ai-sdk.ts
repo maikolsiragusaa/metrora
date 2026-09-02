@@ -2,7 +2,6 @@ import type {
   AdvisorHostedChatMessage,
   AdvisorHostedChatRequest,
   AdvisorHostedChatResult,
-  AdvisorHostedContinuation,
   AdvisorHostedProviderId,
   AdvisorHostedToolCall,
   AdvisorHostedToolDefinition,
@@ -22,10 +21,19 @@ import {
   providerHttpError,
   usageFrom,
 } from './advisor-provider-contract'
-import { normalizeHostedContinuation } from './advisor-provider-continuation'
+import {
+  HOSTED_CONTINUATION_ADAPTER,
+  normalizeHostedContinuationPayload,
+  type AdvisorHostedContinuationPayload,
+} from './advisor-provider-continuation'
 
 /** The only AI SDK adapter currently enabled in the desktop runtime. */
-export const AI_SDK_OPENAI_COMPATIBLE_ADAPTER = 'ai-sdk-openai-compatible-v1' as const
+export const AI_SDK_OPENAI_COMPATIBLE_ADAPTER = HOSTED_CONTINUATION_ADAPTER
+
+/** Main-process result; `continuationPayload` is stripped before IPC returns. */
+export type AdvisorHostedAiSdkStep = Omit<AdvisorHostedChatResult, 'continuation'> & {
+  continuationPayload?: AdvisorHostedContinuationPayload
+}
 
 const AI_BASE_URLS: Partial<Record<AdvisorHostedProviderId, string>> = {
   openrouter: 'https://openrouter.ai/api/v1',
@@ -49,7 +57,7 @@ function parsedArguments(value: string): Record<string, unknown> {
   }
 }
 
-function aiMessages(messages: readonly AdvisorHostedChatMessage[], continuation?: AdvisorHostedContinuation): AnyRecord[] {
+function aiMessages(messages: readonly AdvisorHostedChatMessage[], continuation?: AdvisorHostedContinuationPayload): AnyRecord[] {
   const continuationIds = new Set(
     continuation?.responseMessages.flatMap(message => {
       const content = message.content
@@ -146,14 +154,14 @@ function appendText(current: string, value: unknown): string {
   return next
 }
 
-function continuationFromResponse(
+function continuationPayloadFromResponse(
   provider: AdvisorHostedProviderId,
   model: string,
   responseMessages: unknown,
   calls: readonly AdvisorHostedToolCall[],
-): AdvisorHostedContinuation | undefined {
+): AdvisorHostedContinuationPayload | undefined {
   if (!calls.length || !Array.isArray(responseMessages)) return undefined
-  return normalizeHostedContinuation({
+  return normalizeHostedContinuationPayload({
     provider,
     model,
     protocol: 'openai-chat',
@@ -189,12 +197,6 @@ function normalizeCall(value: unknown, fallback: string): AdvisorHostedToolCall 
   return normalizeToolCall(value.toolCallId ?? value.id ?? fallback, value.toolName ?? value.name, value.input ?? value.arguments ?? {}, fallback)
 }
 
-function matchingContinuation(request: AdvisorHostedChatRequest): AdvisorHostedContinuation | undefined {
-  const continuation = request.continuation
-  if (!continuation || continuation.provider !== request.provider || continuation.model !== request.model || continuation.protocol !== 'openai-chat' || continuation.adapter !== AI_SDK_OPENAI_COMPATIBLE_ADAPTER) return undefined
-  return continuation
-}
-
 function modelFor(request: AdvisorHostedChatRequest, secret: string, fetchImpl: FetchLike, createOpenAICompatible: (...args: any[]) => any) {
   const provider = createOpenAICompatible({
     name: 'metrora-openai-compatible',
@@ -215,7 +217,8 @@ export async function runOpenAiCompatibleStep(options: {
   fetchImpl: FetchLike
   signal: AbortSignal
   emit: EventEmitter
-}): Promise<AdvisorHostedChatResult> {
+  continuation?: AdvisorHostedContinuationPayload
+}): Promise<AdvisorHostedAiSdkStep> {
   const { provider, secret, request, requestId, fetchImpl, signal, emit } = options
   if (request.messageMode === 'flattened' || (provider !== 'openrouter' && provider !== 'opencode-zen')) {
     throw new HostedAdapterError('request-unsupported', 'The OpenAI-compatible adapter requires native semantic messages.')
@@ -228,7 +231,7 @@ export async function runOpenAiCompatibleStep(options: {
     import('@ai-sdk/openai-compatible'),
   ])
   const model = modelFor(request, secret, fetchImpl, createOpenAICompatible)
-  const messages = aiMessages(request.messages, matchingContinuation(request))
+  const messages = aiMessages(request.messages, options.continuation)
   const definitions = request.tools ?? []
   const settings: AnyRecord = {
     model,
@@ -297,15 +300,15 @@ export async function runOpenAiCompatibleStep(options: {
       resultUsage = usage(result.usage)
     }
     if (!text && !calls.length) throw new HostedAdapterError('response-malformed', 'The provider returned no usable content.')
-    const continuation = continuationFromResponse(provider, request.model, responseMessages, calls)
+    const continuationPayload = continuationPayloadFromResponse(provider, request.model, responseMessages, calls)
     emitUsage(requestId, provider, request.model, resultUsage, emit)
-    const value: AdvisorHostedChatResult = {
+    const value: AdvisorHostedAiSdkStep = {
       provider,
       model: request.model,
       message: { content: text, tool_calls: calls },
       usage: resultUsage,
       streamed: request.stream === true,
-      ...(continuation ? { continuation } : {}),
+      ...(continuationPayload ? { continuationPayload } : {}),
     }
     emit({ requestId, provider, model: request.model, kind: 'completed', streamed: request.stream === true, usage: resultUsage, toolCalls: calls })
     return value

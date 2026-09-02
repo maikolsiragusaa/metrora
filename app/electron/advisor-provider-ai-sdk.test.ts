@@ -58,9 +58,13 @@ describe('AI SDK provider substrate', () => {
     expect(first.ok).toBe(true)
     expect(first.value.message.tool_calls).toEqual([{ id: 'mimo-call-1', name: 'get_spend_snapshot', arguments: '{"provider":"all"}' }])
     expect(first.value).not.toHaveProperty('providerMetadata')
-    expect(first.value.continuation).toMatchObject({ provider: 'opencode-zen', model: 'mimo-v2.5-free', protocol: 'openai-chat', adapter: 'ai-sdk-openai-compatible-v1' })
+    expect(first.value.continuation).toMatchObject({ id: expect.any(String), provider: 'opencode-zen', model: 'mimo-v2.5-free', protocol: 'openai-chat', adapter: 'ai-sdk-openai-compatible-v1' })
+    expect(first.value.continuation).not.toHaveProperty('responseMessages')
     expect(first.value.message.content).not.toContain('private provider reasoning')
+    expect(JSON.stringify(first)).not.toContain('private provider reasoning')
+    expect(JSON.stringify(first.value.continuation)).not.toContain('private provider reasoning')
     expect(events.every(event => !Object.prototype.hasOwnProperty.call(event, 'providerMetadata'))).toBe(true)
+    expect(JSON.stringify(events)).not.toContain('private provider reasoning')
 
     const second = await hosted['metrora:advisorHostedChat']!('ai-second', {
       provider: 'opencode-zen',
@@ -93,7 +97,7 @@ describe('AI SDK provider substrate', () => {
     expect(JSON.stringify(events)).not.toContain('providerMetadata')
   })
 
-  it('ignores continuation from a different exact model and stays on semantic history', async () => {
+  it('rejects a continuation reference from a different exact model', async () => {
     const requests: Record<string, unknown>[] = []
     const fetchImpl = (async (_url: RequestInfo | URL, init?: RequestInit) => {
       requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
@@ -112,17 +116,39 @@ describe('AI SDK provider substrate', () => {
       stream: false,
       consent: true,
       continuation: {
+        id: 'opaque-continuation-reference-1',
         provider: 'openrouter',
         model: 'openai/other-model',
         protocol: 'openai-chat',
         adapter: 'ai-sdk-openai-compatible-v1',
-        responseMessages: [{ role: 'assistant', content: [{ type: 'reasoning', text: 'do not replay me' }, { type: 'tool-call', toolCallId: 'call-1', toolName: 'get_spend_snapshot', input: {} }] }],
       },
       harnessConformance: true,
     }) as { ok: boolean; value: any }
-    expect(result).toMatchObject({ ok: true })
-    expect(JSON.stringify(requests[0])).not.toContain('do not replay me')
-    expect(JSON.stringify(requests[0])).toContain('call-1')
+    expect(result).toMatchObject({ ok: false, error: { kind: 'continuation-unavailable' } })
+    expect(requests).toHaveLength(0)
+  })
+
+  it('rejects raw provider-native continuation payloads at the IPC boundary', async () => {
+    const fetchImpl = (async () => jsonResponse({ choices: [{ message: { role: 'assistant', content: 'not reached' } }] })) as typeof fetch
+    const hosted = handlers(fetchImpl)
+    const result = await hosted['metrora:advisorHostedChat']!('ai-raw-continuation', {
+      provider: 'opencode-zen',
+      model: 'mimo-v2.5-free',
+      messages: [{ role: 'user', content: 'Check usage.' }],
+      stream: false,
+      consent: true,
+      continuation: {
+        id: 'opaque-continuation-reference-raw',
+        provider: 'opencode-zen',
+        model: 'mimo-v2.5-free',
+        protocol: 'openai-chat',
+        adapter: 'ai-sdk-openai-compatible-v1',
+        responseMessages: [{ role: 'assistant', content: [{ type: 'reasoning', text: 'private provider reasoning' }] }],
+      },
+      harnessConformance: true,
+    }) as { ok: boolean; error: { kind: string } }
+    expect(result).toMatchObject({ ok: false, error: { kind: 'request-malformed' } })
+    expect(JSON.stringify(result)).not.toContain('private provider reasoning')
   })
 
   it('maps OpenAI-compatible streaming text and lifecycle events without provider metadata', async () => {

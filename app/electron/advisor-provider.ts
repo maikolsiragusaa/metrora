@@ -8,6 +8,7 @@ import type {
   AdvisorHostedEvent,
   AdvisorHostedProbe,
   AdvisorHostedProviderId,
+  AdvisorHostedContinuationReference,
   AdvisorReasoningEffort,
   AdvisorHostedUsage,
   CredentialReader,
@@ -17,7 +18,8 @@ import type {
 } from './advisor-provider-contract'
 import { bodyFor, finalizeOpenToolCalls, protocolAdapter, streamState } from './advisor-provider-adapters'
 import { runOpenAiCompatibleStep } from './advisor-provider-ai-sdk'
-import { normalizeHostedContinuation, validReasoningEffort } from './advisor-provider-continuation'
+import { HOSTED_CONTINUATION_ADAPTER, normalizeHostedContinuationReference, validReasoningEffort, type AdvisorHostedContinuationPayload } from './advisor-provider-continuation'
+import { createHostedContinuationStore, type HostedContinuationIdentity, type HostedContinuationStore } from './advisor-provider-continuation-store'
 import {
   createMemoryAdvisorConformanceStore,
   type AdvisorConformanceStore,
@@ -49,7 +51,7 @@ export type {
   AdvisorHostedProtocol,
   AdvisorHostedProviderId,
   AdvisorHostedReasoningCapability,
-  AdvisorHostedContinuation,
+  AdvisorHostedContinuationReference,
   AdvisorReasoningEffort,
   AdvisorHostedToolCall,
   AdvisorHostedToolDefinition,
@@ -135,7 +137,7 @@ function parseChatRequest(requestId: unknown, value: unknown): { requestId: stri
   if (reasoningEffort !== undefined && !validReasoningEffort(reasoningEffort)) throw new HostedAdapterError('request-malformed', 'Advisor reasoning effort is invalid.')
   const messageMode = value.messageMode === undefined ? 'native' : value.messageMode
   if (messageMode !== 'native' && messageMode !== 'flattened') throw new HostedAdapterError('request-malformed', 'Advisor message mode is invalid.')
-  const continuation = value.continuation === undefined ? undefined : normalizeHostedContinuation(value.continuation)
+  const continuation = value.continuation === undefined ? undefined : normalizeHostedContinuationReference(value.continuation)
   if (value.continuation !== undefined && !continuation) throw new HostedAdapterError('request-malformed', 'Advisor provider continuation is malformed.')
   return {
     requestId,
@@ -269,6 +271,7 @@ async function hostedChat(
   conformance: HostedConformanceRegistry,
   capabilitiesByModel: HostedCapabilityRegistry,
   conformanceStore: AdvisorConformanceStore,
+  continuationStore: HostedContinuationStore,
 ): Promise<AdvisorHostedChatResult> {
   const stream = request.stream === true
   const key = modelKey(provider, request.model)
@@ -284,21 +287,55 @@ async function hostedChat(
   if (selectedEffort !== 'default' && (!reasoningCapability || !reasoningCapability.efforts.includes(selectedEffort))) {
     throw new HostedAdapterError('request-unsupported', 'The selected model does not advertise this reasoning level.')
   }
-  if ((provider === 'openrouter' || provider === 'opencode-zen') && protocol === 'openai-chat' && request.messageMode !== 'flattened' && request.harnessConformance === true) {
+  const useAiSdk = (provider === 'openrouter' || provider === 'opencode-zen') && protocol === 'openai-chat' && request.messageMode !== 'flattened' && request.harnessConformance === true
+  const continuationReference = request.continuation
+  let continuationPayload: AdvisorHostedContinuationPayload | null = null
+  if (continuationReference && !useAiSdk) {
+    throw new HostedAdapterError('continuation-unavailable', 'The provider continuation is not valid for this exact adapter.')
+  }
+  if (continuationReference) {
+    const expected: HostedContinuationIdentity = {
+      provider,
+      model: request.model,
+      protocol: 'openai-chat',
+      adapter: HOSTED_CONTINUATION_ADAPTER,
+    }
+    continuationPayload = continuationStore.acquire(continuationReference, expected)
+    if (!continuationPayload) throw new HostedAdapterError('continuation-unavailable', 'The provider continuation expired or does not match this exact provider adapter.')
+  }
+  if (useAiSdk) {
     const timed = contract.timeoutRequest(parent, REQUEST_TIMEOUT_MS)
+    let committedReference: AdvisorHostedContinuationReference | undefined
     try {
-      const value = await runOpenAiCompatibleStep({ provider, secret, request, requestId, fetchImpl, signal: timed.signal, emit })
+      const value = await runOpenAiCompatibleStep({ provider, secret, request, requestId, fetchImpl, signal: timed.signal, emit, ...(continuationPayload ? { continuation: continuationPayload } : {}) })
+      contract.throwIfAborted(timed.signal)
+      const { continuationPayload: nextPayload, ...publicValue } = value
+      const nextReference = nextPayload
+        ? continuationStore.replace(continuationReference, nextPayload)
+        : undefined
+      if (nextPayload && !nextReference) throw new HostedAdapterError('continuation-unavailable', 'The bounded provider continuation store is full or unavailable.')
+      if (continuationReference && !nextPayload) continuationStore.retire(continuationReference)
+      committedReference = nextReference ?? undefined
+      contract.throwIfAborted(timed.signal)
       if (request.harnessConformance === true) {
         conformance.set(conformanceKey(provider, request.model, protocol), {
           state: 'verified',
-          toolCall: value.message.tool_calls.length ? 'supported' : capabilityInputs.toolCall === 'supported' ? 'supported' : 'unknown',
+          toolCall: publicValue.message.tool_calls.length ? 'supported' : capabilityInputs.toolCall === 'supported' ? 'supported' : 'unknown',
           protocol,
           fingerprint,
           verifiedAt: new Date().toISOString(),
         })
         await persistConformance(conformanceStore, conformance)
       }
-      return value
+      return { ...publicValue, ...(nextReference ? { continuation: nextReference } : {}) }
+    } catch (error) {
+      if (committedReference) continuationStore.retire(committedReference)
+      if (continuationReference && continuationPayload) {
+        const cancelled = timed.signal.aborted || parent?.aborted || (error instanceof Error && error.name === 'AbortError')
+        if (cancelled) continuationStore.retire(continuationReference)
+        else continuationStore.release(continuationReference)
+      }
+      throw error
     } finally {
       timed.dispose()
     }
@@ -365,11 +402,14 @@ export function createAdvisorHostedHandlers(options: {
   readCredential: CredentialReader
   emitEvent?: EventEmitter
   conformanceStore?: AdvisorConformanceStore
+  continuationStore?: HostedContinuationStore
 }): Record<string, (...args: any[]) => Promise<AdvisorHostedEnvelope>> {
   const fetchImpl = options.fetchImpl ?? fetch
   const emitEvent = options.emitEvent ?? (() => {})
   const conformanceStore = options.conformanceStore ?? createMemoryAdvisorConformanceStore()
+  const continuationStore = options.continuationStore ?? createHostedContinuationStore()
   const flights = new Map<string, AbortController>()
+  const flightContinuations = new Map<string, AdvisorHostedContinuationReference>()
   // Credential validity, provider reachability, model discovery, and Harness
   // conformance are intentionally separate pieces of state. The protocol
   // registry is exact-provider/model state, not a global model-name map.
@@ -433,6 +473,7 @@ export function createAdvisorHostedHandlers(options: {
       if (flights.has(parsed.requestId)) return { ok: false, error: { kind: 'request-in-flight', message: 'Advisor request id is already active.' } }
       const controller = new AbortController()
       flights.set(parsed.requestId, controller)
+      if (parsed.request.continuation) flightContinuations.set(parsed.requestId, parsed.request.continuation)
       const emit = (event: AdvisorHostedEvent) => emitEvent({ ...event, requestId: parsed.requestId })
       try {
         await ensureConformanceLoaded()
@@ -451,10 +492,12 @@ export function createAdvisorHostedHandlers(options: {
         }
         throwIfCancelled(controller.signal)
         if (!secret) return { ok: false, error: { kind: 'credential-unavailable', message: 'The saved provider credential needs to be entered again.' } }
-        const value = await hostedChat(parsed.request.provider, secret, parsed.requestId, parsed.request, fetchImpl, emit, controller.signal, protocols, reasoning, conformance, capabilitiesByModel, conformanceStore)
+        const value = await hostedChat(parsed.request.provider, secret, parsed.requestId, parsed.request, fetchImpl, emit, controller.signal, protocols, reasoning, conformance, capabilitiesByModel, conformanceStore, continuationStore)
         return { ok: true, value }
       } catch (error) {
         if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
+          const continuation = flightContinuations.get(parsed.requestId)
+          if (continuation) continuationStore.retire(continuation)
           emit({ requestId: parsed.requestId, provider: parsed.request.provider, model: parsed.request.model, kind: 'cancelled' })
           return { ok: false, error: { kind: 'cancelled', message: 'Advisor request cancelled.' } }
         }
@@ -479,11 +522,14 @@ export function createAdvisorHostedHandlers(options: {
         return { ok: false, error: { kind: safe.code, message: safe.message } }
       } finally {
         if (flights.get(parsed.requestId) === controller) flights.delete(parsed.requestId)
+        if (flightContinuations.get(parsed.requestId) === parsed.request.continuation) flightContinuations.delete(parsed.requestId)
       }
     },
     'metrora:advisorHostedCancel': async (requestIdValue: unknown): Promise<AdvisorHostedEnvelope> => {
       if (!validRequestId(requestIdValue)) return { ok: false, error: { kind: 'validation', message: 'Advisor request id is invalid.' } }
       const controller = flights.get(requestIdValue)
+      const continuation = flightContinuations.get(requestIdValue)
+      if (continuation) continuationStore.retire(continuation)
       controller?.abort()
       return { ok: true, value: Boolean(controller) }
     },

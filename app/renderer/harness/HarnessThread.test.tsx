@@ -82,6 +82,7 @@ describe('Harness V3 thread composition', () => {
     render(<HarnessThread {...baseProps} messages={[{ id: 'question', role: 'user', text: 'Inspect usage' }, { id: 'answer', role: 'assistant', answer, workTrace }]} />)
     expect(screen.getByLabelText('Completed Harness work trace')).toHaveTextContent('1 source checked · Done')
     expect(screen.getByText('Usage checked')).toBeInTheDocument()
+    expect(JSON.stringify(workTrace)).not.toContain('private provider reasoning')
     expect(screen.queryByText(/reasoning_content|system prompt|provider payload/iu)).not.toBeInTheDocument()
   })
 

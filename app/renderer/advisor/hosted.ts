@@ -85,7 +85,8 @@ function isNormalizedHostedResponse(value: unknown): value is { message: { conte
   const toolCalls = value.message.tool_calls
   if (toolCalls !== undefined && (!Array.isArray(toolCalls) || toolCalls.length > 16 || toolCalls.some(call => !normalizedHostedToolCall(call)))) return false
   if (value.continuation !== undefined) {
-    if (!isRecord(value.continuation) || typeof value.continuation.provider !== 'string' || typeof value.continuation.model !== 'string' || typeof value.continuation.protocol !== 'string' || typeof value.continuation.adapter !== 'string' || !Array.isArray(value.continuation.responseMessages)) return false
+    const continuationKeys = isRecord(value.continuation) ? Object.keys(value.continuation) : []
+    if (!isRecord(value.continuation) || continuationKeys.length !== 5 || continuationKeys.some(key => !['id', 'provider', 'model', 'protocol', 'adapter'].includes(key)) || typeof value.continuation.id !== 'string' || typeof value.continuation.provider !== 'string' || typeof value.continuation.model !== 'string' || typeof value.continuation.protocol !== 'string' || typeof value.continuation.adapter !== 'string') return false
   }
   return Boolean(value.message.content) || Boolean(Array.isArray(toolCalls) && toolCalls.length)
 }

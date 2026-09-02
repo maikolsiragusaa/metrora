@@ -21,16 +21,16 @@ export type MetroraAgentMessage = {
 }
 
 /**
- * Provider-neutral handoff for one opaque native response. The loop may pass
- * it to the next compatible adapter step, but it is never part of the
- * semantic ledger or a renderer-facing answer.
+ * Provider-neutral reference for one native response retained in Electron.
+ * The loop may pass it to the next compatible adapter step, but it cannot
+ * carry provider-native response messages or hidden reasoning.
  */
 export type MetroraAgentContinuation = {
-  provider: string
-  model: string
-  protocol: string
-  adapter: string
-  responseMessages: readonly Record<string, unknown>[]
+  readonly id: string
+  readonly provider: string
+  readonly model: string
+  readonly protocol: string
+  readonly adapter: string
 }
 
 /**

@@ -71,12 +71,14 @@ function cloneMessage(message: MetroraAgentMessage): MetroraAgentMessage {
 }
 
 function cloneContinuation(value: MetroraAgentContinuation | undefined): MetroraAgentContinuation | undefined {
-  if (!value || typeof value !== 'object' || typeof value.provider !== 'string' || typeof value.model !== 'string' || typeof value.protocol !== 'string' || typeof value.adapter !== 'string' || !Array.isArray(value.responseMessages)) return undefined
+  if (!value || typeof value !== 'object' || typeof value.id !== 'string' || typeof value.provider !== 'string' || typeof value.model !== 'string' || typeof value.protocol !== 'string' || typeof value.adapter !== 'string') return undefined
+  const keys = Object.keys(value)
+  if (keys.length !== 5 || keys.some(key => !['id', 'provider', 'model', 'protocol', 'adapter'].includes(key))) return undefined
   try {
     const encoded = JSON.stringify(value)
-    if (new TextEncoder().encode(encoded).byteLength > 64 * 1024) return undefined
+    if (new TextEncoder().encode(encoded).byteLength > 1024) return undefined
     const cloned = JSON.parse(encoded) as MetroraAgentContinuation
-    return cloned.responseMessages.length <= 4 && cloned.responseMessages.every(message => Boolean(message && typeof message === 'object' && !Array.isArray(message))) ? cloned : undefined
+    return cloned
   } catch {
     return undefined
   }

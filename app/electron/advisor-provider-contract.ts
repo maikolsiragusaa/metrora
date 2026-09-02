@@ -58,19 +58,19 @@ export type AdvisorHostedChatMessage =
   | { role: 'tool'; content: string; toolCallId: string; toolName?: string }
 export type AdvisorHostedMessageMode = 'native' | 'flattened'
 /**
- * Opaque continuation retained only for the next compatible native provider
- * step. It is deliberately bounded and sanitized before it crosses IPC; the
- * UI, evidence ledger, and event projection never render it.
+ * Opaque continuation reference that is safe to cross the Electron IPC
+ * boundary. The actual provider-native response messages live only in the
+ * Electron continuation store.
  */
-export type AdvisorHostedContinuation = {
-  provider: AdvisorHostedProviderId
-  model: string
-  protocol: 'openai-chat'
-  adapter: 'ai-sdk-openai-compatible-v1'
-  responseMessages: readonly Record<string, unknown>[]
+export type AdvisorHostedContinuationReference = {
+  readonly id: string
+  readonly provider: AdvisorHostedProviderId
+  readonly model: string
+  readonly protocol: 'openai-chat'
+  readonly adapter: 'ai-sdk-openai-compatible-v1'
 }
-export type AdvisorHostedChatRequest = { provider: AdvisorHostedProviderId; model: string; messages: AdvisorHostedChatMessage[]; tools?: AdvisorHostedToolDefinition[]; stream?: boolean; consent: true; reasoningEffort?: AdvisorReasoningEffort; messageMode?: AdvisorHostedMessageMode; continuation?: AdvisorHostedContinuation; /** Set only for bounded Harness evidence/conformance calls. */ harnessConformance?: true }
-export type AdvisorHostedChatResult = { provider: AdvisorHostedProviderId; model: string; message: { content: string; tool_calls: AdvisorHostedToolCall[] }; usage: AdvisorHostedUsage | null; streamed: boolean; continuation?: AdvisorHostedContinuation }
+export type AdvisorHostedChatRequest = { provider: AdvisorHostedProviderId; model: string; messages: AdvisorHostedChatMessage[]; tools?: AdvisorHostedToolDefinition[]; stream?: boolean; consent: true; reasoningEffort?: AdvisorReasoningEffort; messageMode?: AdvisorHostedMessageMode; continuation?: AdvisorHostedContinuationReference; /** Set only for bounded Harness evidence/conformance calls. */ harnessConformance?: true }
+export type AdvisorHostedChatResult = { provider: AdvisorHostedProviderId; model: string; message: { content: string; tool_calls: AdvisorHostedToolCall[] }; usage: AdvisorHostedUsage | null; streamed: boolean; continuation?: AdvisorHostedContinuationReference }
 export type AdvisorHostedEnvelope = { ok: true; value: unknown } | { ok: false; error: { kind: string; message: string } }
 
 export type FetchLike = typeof fetch

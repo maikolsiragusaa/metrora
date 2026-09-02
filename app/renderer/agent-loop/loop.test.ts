@@ -103,11 +103,11 @@ describe('MetroraAgentLoop', () => {
 
   it('passes an opaque provider continuation to the next model step without putting it in the ledger', async () => {
     const continuation = {
+      id: 'opaque-continuation-reference-1',
       provider: 'opencode-zen',
       model: 'mimo-v2.5-free',
       protocol: 'openai-chat',
       adapter: 'ai-sdk-openai-compatible-v1',
-      responseMessages: [{ role: 'assistant', content: [{ type: 'reasoning', text: 'opaque provider state' }] }],
     }
     const seen: Array<unknown> = []
     const output = await run({
@@ -120,7 +120,30 @@ describe('MetroraAgentLoop', () => {
     })
     expect(seen[0]).toBeUndefined()
     expect(seen[1]).toEqual(continuation)
+    expect(JSON.stringify(seen)).not.toContain('private provider reasoning')
     expect(output.ledger.every(message => !Object.prototype.hasOwnProperty.call(message, 'continuation'))).toBe(true)
+  })
+
+  it('drops a renderer continuation that attempts to carry provider-native payload', async () => {
+    const reference = {
+      id: 'opaque-continuation-reference-2',
+      provider: 'opencode-zen',
+      model: 'mimo-v2.5-free',
+      protocol: 'openai-chat',
+      adapter: 'ai-sdk-openai-compatible-v1',
+    }
+    const unsafe = { ...reference, responseMessages: [{ role: 'assistant', content: 'private provider reasoning' }] } as unknown as typeof reference
+    const seen: Array<unknown> = []
+    await run({
+      complete: async context => {
+        seen.push(context.continuation)
+        return context.step === 1
+          ? { ...toolStep(call('continuation-2')), continuation: unsafe }
+          : step('Safe bounded completion.')
+      },
+    })
+    expect(seen[1]).toBeUndefined()
+    expect(JSON.stringify(seen)).not.toContain('private provider reasoning')
   })
 
   it('continues after one Tool round exactly fills the turn budget', async () => {
