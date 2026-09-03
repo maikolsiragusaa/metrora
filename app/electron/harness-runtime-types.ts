@@ -70,8 +70,46 @@ export type HarnessLifecycleState =
   | 'failed'
 
 export type HarnessToolStatus = 'queued' | 'running' | 'completed' | 'failed' | 'interrupted' | 'denied'
-export type HarnessToolKind = 'filesystem' | 'search' | 'terminal' | 'git' | 'web' | 'metrora' | 'subagent' | 'unknown'
-export type HarnessRiskCategory = 'read-only' | 'workspace-mutation' | 'process' | 'git-local' | 'git-destructive' | 'git-remote' | 'network'
+export type HarnessToolKind = 'filesystem' | 'search' | 'terminal' | 'git' | 'web' | 'metrora' | 'mcp' | 'subagent' | 'unknown'
+export type HarnessRiskCategory = 'read-only' | 'workspace-mutation' | 'process' | 'git-local' | 'git-destructive' | 'git-remote' | 'network' | 'external'
+
+export type HarnessMcpTransport = 'stdio' | 'streamable-http'
+export type HarnessMcpServerConfig = {
+  id: string
+  serverName: string
+  enabled: boolean
+  transport: 'stdio'
+  command: string
+  args: string[]
+  cwd: string | null
+  /** Non-secret explicit environment values only. Secret values use envRefs. */
+  env: Record<string, string>
+  /** Environment variable name → protected credential reference. */
+  envRefs: Record<string, string>
+} | {
+  id: string
+  serverName: string
+  enabled: boolean
+  transport: 'streamable-http'
+  url: string
+  /** Non-secret explicit headers only. Secret values use headerRefs. */
+  headers: Record<string, string>
+  /** Header name → protected credential reference. */
+  headerRefs: Record<string, string>
+}
+
+export type HarnessMcpServerState = 'disabled' | 'connecting' | 'connected' | 'failed' | 'unavailable'
+export type HarnessMcpServerStatus = {
+  id: string
+  serverName: string
+  transport: HarnessMcpTransport
+  enabled: boolean
+  state: HarnessMcpServerState
+  toolCount: number
+  toolNames: string[]
+  detail: string
+  checkedAt: string | null
+}
 
 export type HarnessFileDiff = {
   path: string
@@ -92,6 +130,7 @@ export type HarnessToolProjection = {
   parentCallId?: string
   name: string
   kind: HarnessToolKind
+  source?: { kind: 'mcp'; serverName: string; toolName: string }
   status: HarnessToolStatus
   inputSummary: string
   resultSummary?: string
@@ -217,6 +256,7 @@ export type HarnessRuntimeProfileV1 = {
   reasoningByModel: Record<string, HarnessReasoningEffort>
   hostedConsentByProvider: Partial<Record<HarnessHostedProvider, 'unknown' | 'accepted' | 'declined'>>
   lastUsable: { runtime: HarnessRuntimeChoice; provider: HarnessHostedProvider | null; model: string } | null
+  mcpServers: HarnessMcpServerConfig[]
   ui: { showReasoning: boolean; compactProcess: boolean; density: 'comfortable' | 'compact' }
 }
 
@@ -344,6 +384,7 @@ export function projectHarnessRuntimeEvent(event: MetroraHarnessRuntimeEvent): M
       ...(process.item.resultSummary ? { resultSummary: projectHarnessText(process.item.resultSummary, '') } : {}),
       ...(process.item.path ? { path: projectHarnessText(process.item.path, '[Workspace path]') } : {}),
       ...(process.item.command ? { command: projectHarnessText(process.item.command, '[command]') } : {}),
+      ...(process.item.source ? { source: { kind: 'mcp' as const, serverName: projectHarnessText(process.item.source.serverName, 'MCP server'), toolName: projectHarnessText(process.item.source.toolName, 'Tool') } } : {}),
       ...(process.item.agentId ? { agentId: projectHarnessId(process.item.agentId) } : {}),
       ...(process.item.details ? { details: projectDetails(process.item.details) } : {}),
     } }

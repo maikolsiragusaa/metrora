@@ -11,6 +11,7 @@ import type {
   HarnessRuntimeProfileV1,
 } from './harness-runtime-types.js'
 import { reasoningProfileKey } from './harness-runtime-types.js'
+import { parseHarnessMcpServers, validateHarnessMcpServers } from './harness-mcp.mjs'
 
 export const HARNESS_PROFILE_VERSION = 1 as const
 export const DEFAULT_LLAMA_SERVER_PORT = 8080
@@ -93,6 +94,7 @@ export function defaultHarnessRuntimeProfile(): HarnessRuntimeProfileV1 {
     reasoningByModel: {},
     hostedConsentByProvider: {},
     lastUsable: null,
+    mcpServers: [],
     ui: { showReasoning: true, compactProcess: true, density: 'comfortable' },
   }
 }
@@ -129,6 +131,7 @@ export function parseHarnessRuntimeProfile(value: unknown): HarnessRuntimeProfil
     reasoningByModel: boundedModelMap(row.reasoningByModel),
     hostedConsentByProvider: consent,
     lastUsable: usable,
+    mcpServers: parseHarnessMcpServers(row.mcpServers),
     ui: {
       showReasoning: typeof ui.showReasoning === 'boolean' ? ui.showReasoning : fallback.ui.showReasoning,
       compactProcess: typeof ui.compactProcess === 'boolean' ? ui.compactProcess : fallback.ui.compactProcess,
@@ -205,5 +208,9 @@ export class HarnessRuntimeProfileStore {
   async setPort(port: number): Promise<HarnessRuntimeProfileV1> {
     if (!validLlamaServerPort(port)) throw new Error('llama.cpp port must be between 1 and 65535.')
     return this.update({ llamaServerPort: port })
+  }
+
+  async setMcpServers(servers: unknown): Promise<HarnessRuntimeProfileV1> {
+    return this.update({ mcpServers: validateHarnessMcpServers(servers) })
   }
 }

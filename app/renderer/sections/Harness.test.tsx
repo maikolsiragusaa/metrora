@@ -34,6 +34,10 @@ const bridge = vi.hoisted(() => ({
   harnessProfileSetReasoning: vi.fn(),
   harnessProfileSetConsent: vi.fn(),
   harnessCredentialSet: vi.fn(),
+  harnessMcpGet: vi.fn(),
+  harnessMcpSetServers: vi.fn(),
+  harnessMcpReload: vi.fn(),
+  harnessMcpCredentialSet: vi.fn(),
   harnessCheckConformance: vi.fn(),
   onHarnessRuntimeEvent: vi.fn((_callback: (event: MetroraHarnessRuntimeEvent) => void) => () => {}),
 }))
@@ -50,6 +54,7 @@ const profile: HarnessRuntimeProfileV1 = {
   reasoningByModel: { [JSON.stringify(['ollama', null, 'qwen2.5-coder'])]: 'medium' },
   hostedConsentByProvider: {},
   lastUsable: { runtime: 'ollama', provider: null, model: 'qwen2.5-coder' },
+  mcpServers: [],
   ui: { showReasoning: true, compactProcess: true, density: 'comfortable' },
 }
 
@@ -101,6 +106,10 @@ beforeEach(() => {
   bridge.harnessProfileSetPort.mockResolvedValue(profile)
   bridge.harnessProfileSetConsent.mockResolvedValue(profile)
   bridge.harnessCredentialSet.mockResolvedValue({ provider: 'openai', state: 'ready' })
+  bridge.harnessMcpGet.mockResolvedValue([])
+  bridge.harnessMcpSetServers.mockResolvedValue({ profile, statuses: [] })
+  bridge.harnessMcpReload.mockResolvedValue([])
+  bridge.harnessMcpCredentialSet.mockResolvedValue({ reference: 'mcp:server:AUTH', state: 'ready' })
 })
 
 describe('Metrora Harness cockpit', () => {

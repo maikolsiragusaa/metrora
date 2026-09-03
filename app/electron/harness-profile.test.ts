@@ -13,6 +13,18 @@ import {
   validLlamaServerPort,
 } from './harness-profile.mjs'
 
+const mcpFixture = {
+  id: 'fixture',
+  serverName: 'fixture',
+  enabled: true,
+  transport: 'stdio' as const,
+  command: 'node',
+  args: ['fixture.mjs'],
+  cwd: 'C:\\workspace',
+  env: { MODE: 'test' },
+  envRefs: { TOKEN: 'mcp:fixture:TOKEN' },
+}
+
 describe('Harness runtime profile', () => {
   it('persists non-secret preferences across a fresh store instance', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'metrora-harness-profile-'))
@@ -22,6 +34,7 @@ describe('Harness runtime profile', () => {
       await store.setPort(19_876)
       await store.setLocalModel('llama-server', 'qwen2.5-coder')
       await store.setReasoning('llama-server', null, 'qwen2.5-coder', 'high')
+      await store.setMcpServers([mcpFixture])
       await store.update({
         hostedConsentByProvider: { openai: 'accepted' },
         ui: { showReasoning: false, compactProcess: true, density: 'compact' },
@@ -35,6 +48,7 @@ describe('Harness runtime profile', () => {
       expect(profile.reasoningByModel[JSON.stringify(['llama-server', null, 'qwen2.5-coder'])]).toBe('high')
       expect(profile.hostedConsentByProvider.openai).toBe('accepted')
       expect(profile.ui).toEqual({ showReasoning: false, compactProcess: true, density: 'compact' })
+      expect(profile.mcpServers).toEqual([mcpFixture])
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -79,6 +93,12 @@ describe('Harness runtime profile', () => {
     expect(parsed.reasoningByModel).toEqual({ 'gpt-5': 'medium' })
     expect(parsed).not.toHaveProperty('prompt')
     expect(parsed).not.toHaveProperty('apiKey')
+
+    const parsedMcp = parseHarnessRuntimeProfile({
+      version: 1,
+      mcpServers: [mcpFixture, { ...mcpFixture, id: 'bad', serverName: 'bad', cwd: 'relative' }],
+    })
+    expect(parsedMcp.mcpServers).toEqual([mcpFixture])
 
     const root = await mkdtemp(path.join(os.tmpdir(), 'metrora-harness-profile-bytes-'))
     try {

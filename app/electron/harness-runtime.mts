@@ -41,6 +41,7 @@ import * as ToolTerminal from '@deepseek-ai/dsh-tool-terminal'
 import * as WebFetch from '@deepseek-ai/dsh-web-fetch-http'
 import * as ToolWeb from '@deepseek-ai/dsh-tool-web'
 import * as FsObservationPolicy from '@deepseek-ai/dsh-fs-observation-policy'
+import * as DshMcpClient from '@deepseek-ai/dsh-mcp-client'
 
 import { createMetroraHarnessAuthority, type HarnessAuthority } from './harness-authority.mjs'
 import type { MetroraHarnessToolRegistry } from './canonical-metrora-tools.mjs'
@@ -51,6 +52,7 @@ import { HarnessRuntimeProfileStore } from './harness-profile.mjs'
 import { HarnessSessionMetadataStore, type HarnessSessionMetadata } from './harness-session-metadata.mjs'
 import { canonicalizeWorkspaceRoot, projectWorkspace } from './harness-workspace.mjs'
 import { verifyToolCapableModel } from './harness-conformance.mjs'
+import { mcpSourceForTool, parseHarnessMcpServers, resolveDshMcpConfig, statusForMcpServer, validateHarnessMcpServers } from './harness-mcp.mjs'
 import {
   projectHarnessId,
   projectHarnessRuntimeEvent,
@@ -89,6 +91,8 @@ export type MetroraHarnessHostOptions = {
   profile?: HarnessRuntimeProfileStore
   getWorkspaceRoot?: () => string | null
   getReasoningEfforts?: (provider: string, model: string) => readonly HarnessReasoningEffort[] | undefined
+  mcpServers?: readonly import('./harness-runtime-types.js').HarnessMcpServerConfig[]
+  readMcpSecret?: (reference: string) => Promise<string | null>
   onApproval?: (request: HarnessApprovalProjection) => Promise<ApprovalOutcome>
   onEvent?: (event: MetroraHarnessRuntimeEvent) => void
 }
@@ -146,6 +150,12 @@ const FACTUAL_TOOLS = new Set(['get_spend_snapshot', 'get_model_efficiency', 'ge
 
 function mount(ctx: Context, plugin: unknown, config?: unknown): Promise<void> {
   return (ctx.plugin as unknown as (plugin: unknown, config?: unknown) => Promise<void>)(plugin, config)
+}
+
+type PluginFiber = { dispose(): Promise<void> }
+
+function mountWithFiber(ctx: Context, plugin: unknown, config?: unknown): PluginFiber & PromiseLike<unknown> {
+  return (ctx.plugin as unknown as (plugin: unknown, config?: unknown) => PluginFiber & PromiseLike<unknown>)(plugin, config)
 }
 
 function assertConversationId(value: unknown): string {
@@ -214,6 +224,7 @@ function recordValue(value: unknown): Record<string, unknown> | null {
 
 function toolKind(name: string, args?: unknown): HarnessToolKind {
   if (FACTUAL_TOOLS.has(name)) return 'metrora'
+  if (mcpSourceForTool(name)) return 'mcp'
   if (name === 'subagent') return 'subagent'
   if (name === 'web_fetch' || name === 'web_search') return 'web'
   if ((name === 'bash' || name.startsWith('terminal_')) && /^\s*git(?:\s|$)/iu.test(commandFromArgs(args))) return 'git'
@@ -308,6 +319,7 @@ function resultSummary(name: string, failed: boolean, data: Record<string, any>)
   if (name === 'write' || name === 'edit' || name === 'patch' || name === 'apply_patch') return 'Edit applied'
   if (name === 'bash' || name.startsWith('terminal_')) return 'Command completed'
   if (name === 'web_fetch' || name === 'web_search') return 'Web request completed'
+  if (mcpSourceForTool(name)) return 'MCP result returned'
   if (name === 'subagent') return 'Delegated task completed'
   return 'Completed'
 }
@@ -411,7 +423,8 @@ function projectedMessages(session: Session, workspaceRoot: string | null): Harn
       const args = safeJson(data.arguments)
       const summary = summarizeToolInput(data.name, args, workspaceRoot)
       const pendingDetails = toolCallDetails(String(data.name), args, workspaceRoot)
-      const item: HarnessToolProjection = { callId, ...(typeof data.rootCallId === 'string' ? { rootCallId: data.rootCallId } : {}), ...(typeof data.parentCallId === 'string' ? { parentCallId: data.parentCallId } : {}), name: String(data.name), kind: toolKind(String(data.name), args), status: 'running', inputSummary: summary.inputSummary, risk: projectionAuthority.classify(String(data.name), args), ...(summary.path ? { path: summary.path } : {}), ...(summary.command ? { command: summary.command } : {}), ...(pendingDetails ? { details: pendingDetails } : {}), startedAt: dateText(event.time, Date.now()) }
+      const source = mcpSourceForTool(String(data.name))
+      const item: HarnessToolProjection = { callId, ...(typeof data.rootCallId === 'string' ? { rootCallId: data.rootCallId } : {}), ...(typeof data.parentCallId === 'string' ? { parentCallId: data.parentCallId } : {}), name: String(data.name), kind: toolKind(String(data.name), args), ...(source ? { source } : {}), status: 'running', inputSummary: summary.inputSummary, risk: projectionAuthority.classify(String(data.name), args), ...(summary.path ? { path: summary.path } : {}), ...(summary.command ? { command: summary.command } : {}), ...(pendingDetails ? { details: pendingDetails } : {}), startedAt: dateText(event.time, Date.now()) }
       tools.set(callId, item)
       toolStepByCallId.set(callId, stepKey(data.turn, data.step))
       processFor(stepKey(data.turn, data.step)).push({ kind: 'tool', item })
@@ -535,6 +548,10 @@ export class MetroraHarnessHost {
   private toolBridge: MetroraToolBridge | null = null
   private llmRegistration: (() => void) | null = null
   private adapter: LlmAdapter | null = null
+  private readonly mcpFibers = new Map<string, { fiber: { dispose(): Promise<void> }; config: import('@deepseek-ai/dsh-mcp-client').Config }>()
+  private readonly mcpStatuses = new Map<string, import('./harness-runtime-types.js').HarnessMcpServerStatus>()
+  private mcpServers: import('./harness-runtime-types.js').HarnessMcpServerConfig[] = []
+  private mcpMutation: Promise<void> = Promise.resolve()
   private shuttingDown = false
 
   constructor(options: MetroraHarnessHostOptions) {
@@ -693,6 +710,34 @@ export class MetroraHarnessHost {
     return conformance
   }
 
+  async getMcpStatuses(): Promise<import('./harness-runtime-types.js').HarnessMcpServerStatus[]> {
+    await this.ready
+    return [...this.mcpStatuses.values()].map(status => structuredClone(status))
+  }
+
+  async configureMcpServers(servers: unknown): Promise<import('./harness-runtime-types.js').HarnessMcpServerStatus[]> {
+    await this.ready
+    if (this.shuttingDown) throw new Error('Metrora Harness is shutting down.')
+    const next = validateHarnessMcpServers(servers)
+    const operation = this.mcpMutation.then(async () => {
+      if (this.shuttingDown) throw new Error('Metrora Harness is shutting down.')
+      await this.unmountMcpServers()
+      this.mcpServers = next
+      for (const server of next) await this.mountMcpServer(server)
+    })
+    this.mcpMutation = operation.catch(() => undefined)
+    await operation
+    return this.getMcpStatuses()
+  }
+
+  async reloadMcpServer(serverId: string): Promise<import('./harness-runtime-types.js').HarnessMcpServerStatus[]> {
+    await this.ready
+    if (typeof serverId !== 'string' || serverId.length > 32) throw new Error('MCP server id is invalid.')
+    const server = this.mcpServers.find(candidate => candidate.id === serverId)
+    if (!server) throw new Error('MCP server is not configured.')
+    return this.configureMcpServers(this.mcpServers.map(candidate => candidate.id === serverId ? { ...candidate } : candidate))
+  }
+
   async shutdown(): Promise<void> {
     if (this.shuttingDown) return
     this.shuttingDown = true
@@ -704,6 +749,8 @@ export class MetroraHarnessHost {
       try { await live.handle.dispose() } catch { /* best effort */ }
     }
     this.live.clear()
+    await this.mcpMutation.catch(() => {})
+    await this.unmountMcpServers()
     this.toolBridge?.dispose()
     this.llmRegistration?.()
     if (this.ctx) await this.ctx.fiber.dispose()
@@ -724,7 +771,45 @@ export class MetroraHarnessHost {
       'metrora:harnessApprove': safe((id: string) => this.approveApproval(id)),
       'metrora:harnessDeny': safe((id: string) => this.denyApproval(id)),
       'metrora:harnessCheckConformance': safe((input: HarnessConversationInput) => this.checkConformance(input)),
+      'metrora:harnessMcpGet': safe(() => this.getMcpStatuses()),
+      'metrora:harnessMcpReload': safe((serverId: string) => this.reloadMcpServer(serverId)),
     }
+  }
+
+  private mcpToolNames(serverName: string): string[] {
+    const prefix = `mcp__${serverName}__`
+    return this.requireContext().tools.schemas().filter(schema => schema.name.startsWith(prefix)).map(schema => schema.name).slice(0, 256)
+  }
+
+  private async mountMcpServer(server: import('./harness-runtime-types.js').HarnessMcpServerConfig): Promise<void> {
+    if (!server.enabled) {
+      this.mcpStatuses.set(server.id, statusForMcpServer(server, 'disabled', [], 'Disabled in Harness settings.'))
+      return
+    }
+    this.mcpStatuses.set(server.id, statusForMcpServer(server, 'connecting', [], 'Connecting and discovering MCP Tools.'))
+    let fiber: (PluginFiber & PromiseLike<unknown>) | undefined
+    try {
+      const fallbackCwd = this.options.getWorkspaceRoot?.() ?? this.options.sessionRoot
+      const config = await resolveDshMcpConfig(server, this.options.readMcpSecret ?? (async () => null), fallbackCwd)
+      fiber = mountWithFiber(this.requireContext(), DshMcpClient, config)
+      await fiber
+      this.mcpFibers.set(server.id, { fiber, config })
+      const names = this.mcpToolNames(server.serverName)
+      this.mcpStatuses.set(server.id, statusForMcpServer(server, names.length ? 'connected' : 'unavailable', names, names.length ? 'Connected; discovered MCP Tools.' : 'Connected, but this server advertised no usable Tools.'))
+    } catch (error) {
+      if (fiber) {
+        try { await fiber.dispose() } catch { /* best effort */ }
+      }
+      const detail = error instanceof Error ? error.message : String(error)
+      this.mcpStatuses.set(server.id, statusForMcpServer(server, 'failed', [], detail))
+    }
+  }
+
+  private async unmountMcpServers(): Promise<void> {
+    const fibers = [...this.mcpFibers.values()]
+    this.mcpFibers.clear()
+    this.mcpStatuses.clear()
+    await Promise.allSettled(fibers.map(entry => entry.fiber.dispose()))
   }
 
   private async start(): Promise<void> {
@@ -783,9 +868,13 @@ export class MetroraHarnessHost {
 
     this.toolBridge = new MetroraToolBridge(this.options.toolSource, this.options.toolRegistry)
     this.toolBridge.register(ctx)
+    this.ctx = ctx
+    this.mcpServers = parseHarnessMcpServers(this.options.mcpServers ?? [])
+    for (const server of this.mcpServers) await this.mountMcpServer(server)
+    const configuredMcpTools = [...this.mcpStatuses.values()].flatMap(status => status.toolNames)
     await mount(ctx, ToolSubagent, {
       provider: 'spawn', enableRunInBackground: false, maxDepth: 1,
-      toolFilter: { allow: ['subagent', 'read', 'read_image', 'glob', 'grep', 'write', 'edit', 'bash', 'terminal_open', 'terminal_send', 'terminal_read', 'terminal_signal', 'terminal_close', 'terminal_list', 'web_fetch', ...this.options.toolRegistry.definitions.map(definition => definition.function.name)] },
+      toolFilter: { allow: ['subagent', 'read', 'read_image', 'glob', 'grep', 'write', 'edit', 'bash', 'terminal_open', 'terminal_send', 'terminal_read', 'terminal_signal', 'terminal_close', 'terminal_list', 'web_fetch', ...configuredMcpTools, ...this.options.toolRegistry.definitions.map(definition => definition.function.name)] },
     })
     await mount(ctx, AgentLoop, { maxParallelToolCalls: 4, agents: [] })
 
@@ -949,7 +1038,8 @@ export class MetroraHarnessHost {
       const args = safeJson(record.data.arguments)
       const summary = summarizeToolInput(String(record.data.name), args, live.workspaceRoot)
       const pendingDetails = toolCallDetails(String(record.data.name), args, live.workspaceRoot)
-      const item: HarnessToolProjection = { callId: String(record.data.callId), ...(typeof record.data.rootCallId === 'string' ? { rootCallId: record.data.rootCallId } : {}), ...(typeof record.data.parentCallId === 'string' ? { parentCallId: record.data.parentCallId } : {}), name: String(record.data.name), kind: toolKind(String(record.data.name), args), status: 'running', inputSummary: summary.inputSummary, risk: this.authority.classify(String(record.data.name), args), ...(summary.path ? { path: summary.path } : {}), ...(summary.command ? { command: summary.command } : {}), ...(pendingDetails ? { details: pendingDetails } : {}), agentId: String(session.id) }
+      const source = mcpSourceForTool(String(record.data.name))
+      const item: HarnessToolProjection = { callId: String(record.data.callId), ...(typeof record.data.rootCallId === 'string' ? { rootCallId: record.data.rootCallId } : {}), ...(typeof record.data.parentCallId === 'string' ? { parentCallId: record.data.parentCallId } : {}), name: String(record.data.name), kind: toolKind(String(record.data.name), args), ...(source ? { source } : {}), status: 'running', inputSummary: summary.inputSummary, risk: this.authority.classify(String(record.data.name), args), ...(summary.path ? { path: summary.path } : {}), ...(summary.command ? { command: summary.command } : {}), ...(pendingDetails ? { details: pendingDetails } : {}), agentId: String(session.id) }
       this.emit(live, lifecycleForTool(item), { kind: 'tool', process: { kind: 'tool', item } })
     } else if (record.type === 'tool/result') {
       const callId = record.data?.message?.source?.kind === 'tool' ? String(record.data.message.source.callId) : 'unknown'
@@ -962,7 +1052,8 @@ export class MetroraHarnessHost {
       const terminalDetails = details?.kind === 'terminal' ? details : undefined
       const startedAt = call ? dateText(call.time, Date.now()) : undefined
       const finishedAt = dateText(record.time, Date.now())
-      const item: HarnessToolProjection = { callId, name, kind: toolKind(name, args), status: failed ? 'failed' : 'completed', inputSummary: summary.inputSummary, resultSummary: resultSummary(name, failed, record.data), risk: this.authority.classify(name, args), ...(summary.path ? { path: summary.path } : {}), ...(summary.command ? { command: summary.command } : {}), ...(terminalDetails?.exitCode !== undefined ? { exitCode: terminalDetails.exitCode } : {}), ...(details ? { details } : {}), ...(startedAt ? { startedAt } : {}), finishedAt, ...(startedAt ? { durationMs: Math.max(0, Date.parse(finishedAt) - Date.parse(startedAt)) } : {}), agentId: String(session.id) }
+      const source = mcpSourceForTool(name)
+      const item: HarnessToolProjection = { callId, name, kind: toolKind(name, args), ...(source ? { source } : {}), status: failed ? 'failed' : 'completed', inputSummary: summary.inputSummary, resultSummary: resultSummary(name, failed, record.data), risk: this.authority.classify(name, args), ...(summary.path ? { path: summary.path } : {}), ...(summary.command ? { command: summary.command } : {}), ...(terminalDetails?.exitCode !== undefined ? { exitCode: terminalDetails.exitCode } : {}), ...(details ? { details } : {}), ...(startedAt ? { startedAt } : {}), finishedAt, ...(startedAt ? { durationMs: Math.max(0, Date.parse(finishedAt) - Date.parse(startedAt)) } : {}), agentId: String(session.id) }
       this.emit(live, failed ? 'failed' : 'preparing', { kind: 'tool', process: { kind: 'tool', item } })
     } else if (record.type === 'approval/decided') {
       const approvalId = record.data?.id ? String(record.data.id) : ''

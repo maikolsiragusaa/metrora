@@ -46,6 +46,7 @@ function lexicallyContained(root: string | null | undefined, value: unknown): bo
 export function createMetroraHarnessAuthority(): HarnessAuthority {
   return {
     classify(name, args) {
+      if (name.startsWith('mcp__')) return 'external'
       if (FACTUAL_TOOLS.has(name) || READ_TOOLS.has(name) || SAFE_TERMINAL_READS.has(name)) return name === 'web_fetch' ? 'network' : 'read-only'
       if (FILE_MUTATIONS.has(name)) return name.startsWith('git') ? 'git-local' : 'workspace-mutation'
       if (name === 'subagent') return 'read-only'
@@ -62,6 +63,7 @@ export function createMetroraHarnessAuthority(): HarnessAuthority {
     decide(execution, context = {}) {
       const name = execution.name
       const mode = context.mode ?? 'build'
+      if (name.startsWith('mcp__')) return { kind: 'ask', reason: 'External MCP Tools always require explicit Metrora Shield approval.' }
       if (!lexicallyContained(context.workspaceRoot, pathFromArgs(execution.arguments))) {
         return { kind: 'deny', reason: 'The requested path is outside the selected Workspace.' }
       }

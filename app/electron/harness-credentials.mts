@@ -3,9 +3,11 @@ import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 
 import type { HarnessHostedProvider } from './harness-runtime-types.js'
+import { isHarnessProtectedSecretReference } from './harness-mcp.mjs'
 
 export type HarnessCredentialState = 'not-configured' | 'ready' | 'locked-unavailable' | 'invalid' | 'needs-reentry'
 export type HarnessCredentialStatus = { provider: HarnessHostedProvider; state: HarnessCredentialState }
+export type HarnessSecretReferenceStatus = { reference: string; state: HarnessCredentialState }
 export type HarnessSafeStorage = {
   isAsyncEncryptionAvailable(): Promise<boolean>
   encryptStringAsync(plaintext: string): Promise<Buffer>
@@ -21,7 +23,7 @@ export type HarnessCredentialFileSystem = {
 const PROVIDERS: readonly HarnessHostedProvider[] = ['openai', 'anthropic', 'gemini', 'openrouter', 'opencode-zen']
 const FILE_VERSION = 1
 
-type CredentialFile = { version: 1; values: Partial<Record<HarnessHostedProvider, string>> }
+type CredentialFile = { version: 1; values: Record<string, string> }
 
 function isProvider(value: unknown): value is HarnessHostedProvider { return typeof value === 'string' && PROVIDERS.includes(value as HarnessHostedProvider) }
 function byteLength(value: string): number { return new TextEncoder().encode(value).byteLength }
@@ -49,42 +51,49 @@ export class HarnessCredentialStore {
 
   async status(provider: HarnessHostedProvider): Promise<HarnessCredentialStatus> {
     if (!isProvider(provider)) throw new Error('Harness credential provider is invalid.')
-    const available = await this.safeStorage.isAsyncEncryptionAvailable().catch(() => false)
-    if (!available) return { provider, state: 'locked-unavailable' }
-    const value = await this.readSecret(provider)
-    return { provider, state: value ? 'ready' : 'not-configured' }
+    return { provider, state: await this.statusKey(provider) }
   }
 
   async set(provider: HarnessHostedProvider, secret: string): Promise<HarnessCredentialStatus> {
     if (!isProvider(provider)) throw new Error('Harness credential provider is invalid.')
     if (typeof secret !== 'string' || !secret.trim() || byteLength(secret) > 16 * 1024) return { provider, state: 'invalid' }
-    if (!(await this.safeStorage.isAsyncEncryptionAvailable().catch(() => false))) return { provider, state: 'locked-unavailable' }
-    try {
-      const ciphertext = (await this.safeStorage.encryptStringAsync(secret.trim())).toString('base64')
-      await this.mutate(async () => {
-        const current = await this.loadFile()
-        current.values[provider] = ciphertext
-        await this.saveFile(current)
-      })
-      return { provider, state: 'ready' }
-    } catch { return { provider, state: 'needs-reentry' } }
+    return { provider, state: await this.setKey(provider, secret) }
   }
 
   async clear(provider: HarnessHostedProvider): Promise<HarnessCredentialStatus> {
     if (!isProvider(provider)) throw new Error('Harness credential provider is invalid.')
-    try {
-      await this.mutate(async () => {
-        const current = await this.loadFile()
-        delete current.values[provider]
-        await this.saveFile(current)
-      })
-      return { provider, state: 'not-configured' }
-    } catch { return { provider, state: 'needs-reentry' } }
+    return { provider, state: await this.clearKey(provider) }
   }
 
   async readSecret(provider: HarnessHostedProvider): Promise<string | null> {
-    if (!isProvider(provider) || !(await this.safeStorage.isAsyncEncryptionAvailable().catch(() => false))) return null
-    const ciphertext = (await this.loadFile()).values[provider]
+    if (!isProvider(provider)) return null
+    return this.readSecretKey(provider)
+  }
+
+  async statusReference(reference: string): Promise<HarnessSecretReferenceStatus> {
+    if (!isHarnessProtectedSecretReference(reference)) throw new Error('Harness protected secret reference is invalid.')
+    return { reference, state: await this.statusKey(reference) }
+  }
+
+  async setReference(reference: string, secret: string): Promise<HarnessSecretReferenceStatus> {
+    if (!isHarnessProtectedSecretReference(reference)) throw new Error('Harness protected secret reference is invalid.')
+    if (typeof secret !== 'string' || !secret.trim() || byteLength(secret) > 16 * 1024) return { reference, state: 'invalid' }
+    return { reference, state: await this.setKey(reference, secret) }
+  }
+
+  async clearReference(reference: string): Promise<HarnessSecretReferenceStatus> {
+    if (!isHarnessProtectedSecretReference(reference)) throw new Error('Harness protected secret reference is invalid.')
+    return { reference, state: await this.clearKey(reference) }
+  }
+
+  async readReference(reference: string): Promise<string | null> {
+    if (!isHarnessProtectedSecretReference(reference)) return null
+    return this.readSecretKey(reference)
+  }
+
+  private async readSecretKey(key: string): Promise<string | null> {
+    if (!(await this.safeStorage.isAsyncEncryptionAvailable().catch(() => false))) return null
+    const ciphertext = (await this.loadFile()).values[key]
     if (!validCiphertext(ciphertext)) return null
     try {
       const decrypted = await this.safeStorage.decryptStringAsync(Buffer.from(ciphertext, 'base64'))
@@ -94,12 +103,43 @@ export class HarnessCredentialStore {
         const refreshed = (await this.safeStorage.encryptStringAsync(value)).toString('base64')
         await this.mutate(async () => {
           const current = await this.loadFile()
-          current.values[provider] = refreshed
+          current.values[key] = refreshed
           await this.saveFile(current)
         })
       }
       return value
     } catch { return null }
+  }
+
+  private async statusKey(key: string): Promise<HarnessCredentialState> {
+    const available = await this.safeStorage.isAsyncEncryptionAvailable().catch(() => false)
+    if (!available) return 'locked-unavailable'
+    const value = await this.readSecretKey(key)
+    return value ? 'ready' : 'not-configured'
+  }
+
+  private async setKey(key: string, secret: string): Promise<HarnessCredentialState> {
+    if (!(await this.safeStorage.isAsyncEncryptionAvailable().catch(() => false))) return 'locked-unavailable'
+    try {
+      const ciphertext = (await this.safeStorage.encryptStringAsync(secret.trim())).toString('base64')
+      await this.mutate(async () => {
+        const current = await this.loadFile()
+        current.values[key] = ciphertext
+        await this.saveFile(current)
+      })
+      return 'ready'
+    } catch { return 'needs-reentry' }
+  }
+
+  private async clearKey(key: string): Promise<HarnessCredentialState> {
+    try {
+      await this.mutate(async () => {
+        const current = await this.loadFile()
+        delete current.values[key]
+        await this.saveFile(current)
+      })
+      return 'not-configured'
+    } catch { return 'needs-reentry' }
   }
 
   private async loadFile(): Promise<CredentialFile> {
@@ -109,7 +149,10 @@ export class HarnessCredentialStore {
       const row = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
       const values: CredentialFile['values'] = {}
       const encrypted = row.values && typeof row.values === 'object' && !Array.isArray(row.values) ? row.values as Record<string, unknown> : {}
-      for (const provider of PROVIDERS) if (validCiphertext(encrypted[provider])) values[provider] = encrypted[provider]
+      for (const [key, value] of Object.entries(encrypted).slice(0, 128)) {
+        if ((!isProvider(key) && !isHarnessProtectedSecretReference(key)) || !validCiphertext(value)) continue
+        values[key] = value
+      }
       this.loaded = { version: FILE_VERSION, values }
     } catch { this.loaded = { version: FILE_VERSION, values: {} } }
     return structuredClone(this.loaded)

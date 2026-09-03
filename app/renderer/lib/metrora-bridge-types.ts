@@ -38,6 +38,8 @@ import type {
   HarnessHostedProbe,
   HarnessHostedProvider,
   HarnessLocalProbe,
+  HarnessMcpServerConfig,
+  HarnessMcpServerStatus,
   HarnessRuntimeProfileV1,
   HarnessSendMessageInput,
   HarnessSendMessageResult,
@@ -140,6 +142,12 @@ export interface MetroraBridge extends ProjectBridge {
   harnessProfileSetHostedModel(provider: HarnessHostedProvider, model: string): Promise<HarnessRuntimeProfileV1>
   harnessProfileSetReasoning(runtime: 'ollama' | 'lmstudio' | 'llama-server' | 'hosted', provider: HarnessHostedProvider | null, model: string, effort: 'min' | 'low' | 'medium' | 'high' | 'max'): Promise<HarnessRuntimeProfileV1>
   harnessProfileSetConsent(provider: HarnessHostedProvider, state: 'unknown' | 'accepted' | 'declined'): Promise<HarnessRuntimeProfileV1>
+  harnessMcpGet(): Promise<HarnessMcpServerStatus[]>
+  harnessMcpSetServers(servers: HarnessMcpServerConfig[]): Promise<{ profile: HarnessRuntimeProfileV1; statuses: HarnessMcpServerStatus[] }>
+  harnessMcpReload(serverId: string): Promise<HarnessMcpServerStatus[]>
+  harnessMcpCredentialStatus(reference: string): Promise<{ reference: string; state: string }>
+  harnessMcpCredentialSet(reference: string, secret: string): Promise<{ reference: string; state: string }>
+  harnessMcpCredentialClear(reference: string): Promise<{ reference: string; state: string }>
   harnessWorkspaceGet(): Promise<HarnessWorkspace | null>
   harnessWorkspaceOpen(root: string): Promise<HarnessWorkspace>
   harnessWorkspaceClear(): Promise<null>

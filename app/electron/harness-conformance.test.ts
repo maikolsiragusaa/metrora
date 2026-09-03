@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { LlmAdapter, ReasoningEffortId, type GenerateOptions, type LlmModelInfo, type LlmProviderInfo, type LlmResolvedModelInfo, type ResolvedRetryPolicy, type StreamChunk, type ToolCallId } from '@deepseek-ai/dsh-llm'
 
-import { verifyToolCapableModel } from './harness-conformance.mjs'
+import { verifyToolCapableModel, verifyToolCapableModelWithToolFailure } from './harness-conformance.mjs'
 
 function finalAnswer(text: string): StreamChunk[] {
   return [
@@ -30,7 +30,7 @@ class ConformanceAdapter extends LlmAdapter {
   providerInfo(provider: string): LlmProviderInfo { return { id: provider, name: 'Conformance test adapter' } }
   providerRetryPolicy(): ResolvedRetryPolicy { return { mode: 'normal', maxRetries: 0, retryableCodes: [], initialDelayMs: 1, maxDelayMs: 1, jitterRatio: 0 } }
   async listModels(_provider: string): Promise<readonly LlmModelInfo[]> { return [] }
-  async resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> { return { provider, id: model, name: model, inputModalities: ['text'], context: { contextWindow: 16_384 } } }
+  async resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> { return { provider, id: model, name: model, inputModalities: ['text'], context: { contextWindow: 16_384 }, reasoning: { efforts: [{ id: ReasoningEffortId('high'), name: 'High' }] } } }
   async *stream(request: GenerateOptions): AsyncIterable<StreamChunk> {
     this.requests.push(request)
     yield* this.scripted(request, this.requests.length)
@@ -44,6 +44,7 @@ function returnedNonce(request: GenerateOptions): string | undefined {
     .find(block => block.type === 'tool-result')
   const text = result?.type === 'tool-result'
     ? result.content.find(block => block.type === 'text')
+      ?? result.content.flatMap(block => block.type === 'tool-result' ? block.content : []).find(block => block.type === 'text')
     : undefined
   return text?.type === 'text'
     ? text.text.match(/nonce verified: (metrora-[A-Za-z0-9-]+)/u)?.[1]
@@ -80,6 +81,16 @@ describe('exact model conformance', () => {
       { type: 'finish', reason: { kind: 'tool-calls' } },
     ])
     await expect(verifyToolCapableModel({ adapter: invalid, provider: 'metrora-local-lmstudio', model: 'bad-tool-model' })).resolves.toMatchObject({ state: 'failed-conformance', toolCalling: 'unsupported' })
-    expect(invalid.requests).toHaveLength(1)
+    expect(invalid.requests).toHaveLength(2)
+  })
+
+  it('never verifies when the native call reaches a failing DSH ToolRuntime body', async () => {
+    const adapter = new ConformanceAdapter((request, index) => index === 1
+      ? nonceCall((request.messages.find(message => message.source.kind === 'user')?.content.find(block => block.type === 'text')?.text.match(/nonce (metrora-[A-Za-z0-9-]+)/u)?.[1]) ?? 'missing')
+      : finalAnswer('The Tool failed.'))
+    const result = await verifyToolCapableModelWithToolFailure({ adapter, provider: 'metrora-local-ollama', model: 'runtime-failure' })
+    expect(result.state).toBe('failed-conformance')
+    expect(result.toolCalling).toBe('unsupported')
+    expect(adapter.requests).toHaveLength(2)
   })
 })

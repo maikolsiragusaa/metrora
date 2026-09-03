@@ -44,6 +44,7 @@
     "@deepseek-ai/dsh-jobs-local": "0.1.2-alpha.5",
     "@deepseek-ai/dsh-llm": "0.1.2-alpha.5",
     "@deepseek-ai/dsh-llm-retry": "0.1.2-alpha.5",
+    "@deepseek-ai/dsh-mcp-client": "0.1.2-alpha.5",
     "@deepseek-ai/dsh-output-retention": "0.1.2-alpha.5",
     "@deepseek-ai/dsh-sandbox": "0.1.2-alpha.5",
     "@deepseek-ai/dsh-sandbox-local": "0.1.2-alpha.5",

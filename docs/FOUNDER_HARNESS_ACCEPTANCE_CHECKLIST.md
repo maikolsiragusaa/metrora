@@ -66,8 +66,10 @@ Founder observed the behavior in the packaged application.
 - [ ] Confirm the current Workspace rejects `..`, outside-root absolute paths
   and symlink escapes where the platform can inspect them.
 - [ ] Confirm `web_fetch` appears as a normal Tool event and no fake web search
-  is offered without a configured search provider. Confirm unavailable MCP
-  mounting is reported honestly rather than emulated.
+  is offered without a configured search provider. Configure a bounded MCP
+  stdio or Streamable HTTP server, verify discovery and stable
+  `mcp__server__tool` identity, then confirm its external Tool call is visible
+  and cannot bypass Shield approval.
 
 Automated checks and packaging gates must pass before this physical retest is
 attempted. This checklist intentionally does not declare PASS in source.

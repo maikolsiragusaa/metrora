@@ -60,11 +60,12 @@ use the shell/process substrate with Git-aware classification; remote and
 destructive history operations remain explicit approval actions.
 
 `web_fetch` is available through the bounded HTTP adapter. `web_search` is not
-advertised without a configured real search provider. The pinned DSH release
-does not provide a complete in-process MCP client surface used by this product,
-so configured MCP mounting remains unavailable until a compatible pinned
-composition is reviewed; first-party Metrora factual Tools are direct registry
-entries and do not use MCP as an internal round trip.
+advertised without a configured real search provider. The pinned DSH MCP client
+is mounted in-process for bounded configured stdio and Streamable HTTP servers;
+their Tools enter the same registry, Agent turn and Session lifecycle. MCP
+Tools remain external/unknown capability and therefore require explicit Shield
+approval. First-party Metrora factual Tools are direct registry entries and do
+not use MCP as an internal round trip.
 
 ## Metrora authority
 

@@ -124,6 +124,244 @@
 .harness-consent { border-color: color-mix(in srgb, var(--metrora-accent) 38%, var(--metrora-border)); background: color-mix(in srgb, var(--metrora-accent) 7%, var(--metrora-surface-raised)); }
 @media (prefers-reduced-motion: reduce) { .harness-tool-details > summary::before { transition: none; } }
 
+/* MCP extension panel: compact configuration surface with clear trust cues. */
+.harness-mcp-panel {
+  display: grid;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--metrora-border-subtle);
+}
+.harness-mcp-heading,
+.harness-mcp-server-copy > div,
+.harness-mcp-form-title,
+.harness-mcp-credential > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.harness-mcp-heading h3 {
+  margin: 4px 0 0;
+  color: var(--metrora-text-primary);
+  font-size: 13px;
+  letter-spacing: -.025em;
+}
+.harness-mcp-count {
+  padding: 3px 7px;
+  border: 1px solid color-mix(in srgb, var(--metrora-accent) 28%, var(--metrora-border));
+  border-radius: 999px;
+  color: var(--metrora-accent-text);
+  font: 10px var(--metrora-font-mono);
+}
+.harness-mcp-intro,
+.harness-mcp-form-title small,
+.harness-mcp-credential small {
+  margin: 0;
+  color: var(--metrora-text-subtle);
+  font-size: 9.5px;
+  line-height: 1.45;
+}
+.harness-mcp-list {
+  display: grid;
+  gap: 6px;
+}
+.harness-mcp-server {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid var(--metrora-border-subtle);
+  border-radius: var(--metrora-radius-sm);
+  background: color-mix(in srgb, var(--metrora-surface-inset) 42%, transparent);
+  transition: border-color var(--metrora-motion-fast) ease, background var(--metrora-motion-fast) ease, transform var(--metrora-motion-fast) ease;
+}
+.harness-mcp-server:hover {
+  border-color: color-mix(in srgb, var(--metrora-accent) 35%, var(--metrora-border));
+  background: var(--metrora-surface-panel);
+  transform: translateX(1px);
+}
+.harness-mcp-server-icon {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--metrora-accent) 24%, var(--metrora-border));
+  border-radius: 7px;
+  background: var(--metrora-accent-soft);
+  color: var(--metrora-accent-text);
+  font-family: var(--metrora-font-mono);
+}
+.harness-mcp-server-copy {
+  min-width: 0;
+}
+.harness-mcp-server-copy > div {
+  min-width: 0;
+}
+.harness-mcp-server-copy strong {
+  overflow: hidden;
+  color: var(--metrora-text-primary);
+  font-size: 10.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.harness-mcp-server-copy > small,
+.harness-mcp-server-copy > em {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--metrora-text-subtle);
+  font: 9px/1.35 var(--metrora-font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.harness-mcp-server-copy > em {
+  margin-top: 3px;
+  color: var(--metrora-status-danger);
+  font-family: inherit;
+  font-style: normal;
+  white-space: normal;
+}
+.harness-mcp-status {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  color: var(--metrora-text-subtle);
+  font-size: 8.5px;
+  text-transform: capitalize;
+}
+.harness-mcp-status i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.harness-mcp-status.connected { color: var(--metrora-status-success); }
+.harness-mcp-status.connecting { color: var(--metrora-status-warning); }
+.harness-mcp-status.failed,
+.harness-mcp-status.unavailable { color: var(--metrora-status-danger); }
+.harness-mcp-status.connecting i { animation: harness-status-breathe 1.2s ease-in-out infinite; }
+.harness-mcp-server-actions {
+  display: flex;
+  grid-column: 2;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.harness-mcp-server-actions .danger { color: var(--metrora-status-danger); }
+.harness-mcp-form,
+.harness-mcp-credential {
+  display: grid;
+  gap: 9px;
+  padding: 11px;
+  border: 1px solid var(--metrora-border);
+  border-radius: var(--metrora-radius-sm);
+  background: color-mix(in srgb, var(--metrora-surface-panel) 88%, var(--metrora-accent) 12%);
+}
+.harness-mcp-form-title {
+  align-items: flex-start;
+  flex-direction: column;
+}
+.harness-mcp-form-title strong,
+.harness-mcp-credential strong {
+  color: var(--metrora-text-primary);
+  font-size: 10.5px;
+}
+.harness-mcp-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.harness-mcp-form-grid label {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+.harness-mcp-form-grid label.wide { grid-column: 1 / -1; }
+.harness-mcp-form-grid label > span {
+  color: var(--metrora-text-muted);
+  font-size: 8.5px;
+  font-weight: var(--metrora-weight-semibold);
+  text-transform: uppercase;
+}
+.harness-mcp-form input,
+.harness-mcp-form textarea,
+.harness-mcp-form select,
+.harness-mcp-credential input {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 7px;
+  border: 1px solid var(--metrora-border);
+  border-radius: 6px;
+  outline: 0;
+  background: var(--metrora-surface-inset);
+  color: var(--metrora-text-primary);
+  font: 10px/1.35 var(--metrora-font-mono);
+}
+.harness-mcp-form textarea { resize: vertical; }
+.harness-mcp-form input:focus,
+.harness-mcp-form textarea:focus,
+.harness-mcp-form select:focus,
+.harness-mcp-credential input:focus {
+  border-color: var(--metrora-focus);
+  box-shadow: var(--metrora-focus-ring);
+}
+.harness-mcp-add {
+  min-height: 29px;
+  border: 1px solid var(--metrora-accent);
+  border-radius: 7px;
+  background: linear-gradient(135deg, var(--metrora-accent), var(--metrora-accent-bright));
+  color: var(--metrora-text-on-accent);
+  font-family: var(--metrora-font-sans);
+  font-size: 10px;
+  font-weight: var(--metrora-weight-semibold);
+  cursor: pointer;
+}
+.harness-mcp-add:hover { filter: brightness(1.06); }
+.harness-mcp-add:disabled { cursor: not-allowed; opacity: .55; }
+.harness-mcp-add span { margin-left: 4px; font-size: 13px; }
+.harness-mcp-credential {
+  border-color: color-mix(in srgb, var(--metrora-accent) 27%, var(--metrora-border));
+  background: color-mix(in srgb, var(--metrora-accent-soft) 36%, var(--metrora-surface-panel));
+}
+.harness-mcp-credential > div:first-child { align-items: flex-start; flex-direction: column; }
+.harness-mcp-credential-state { color: var(--metrora-accent-text) !important; }
+.harness-mcp-notice {
+  padding: 7px 8px;
+  border: 1px solid color-mix(in srgb, var(--metrora-status-danger) 42%, var(--metrora-border));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--metrora-status-danger) 7%, transparent);
+  color: var(--metrora-status-danger);
+  font-size: 9.5px;
+  line-height: 1.35;
+}
+.harness-tool-name {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.harness-tool-name > small {
+  overflow: hidden;
+  color: var(--metrora-accent-text);
+  font: 8.5px var(--metrora-font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.harness-tool-card[data-kind='mcp'] .harness-tool-icon {
+  background: color-mix(in srgb, var(--metrora-accent) 13%, var(--metrora-surface-inset));
+  color: var(--metrora-accent-text);
+}
+.harness-tool-card[data-kind='mcp'] .harness-tool-status {
+  color: var(--metrora-accent-text);
+}
+@media (max-width: 390px) {
+  .harness-mcp-form-grid { grid-template-columns: 1fr; }
+  .harness-mcp-form-grid label.wide { grid-column: auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .harness-mcp-server,
+  .harness-mcp-status.connecting i { transition: none; animation: none; }
+}
+
 /* -------------------------------------------------------------------------
    Active cockpit polish
    ------------------------------------------------------------------------- */

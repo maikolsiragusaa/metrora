@@ -6,6 +6,7 @@ import { metrora } from '../lib/ipc'
 import { readStorage, writeStorage } from '../lib/storage'
 import type { DateRange, MenubarPayload, Period } from '../lib/types'
 import { reasoningProfileKey } from '../../electron/harness-runtime-types'
+import { HarnessSettings } from './HarnessSettings'
 import type {
   HarnessApprovalProjection,
   HarnessConversation,
@@ -15,6 +16,8 @@ import type {
   HarnessHostedModel,
   HarnessHostedProvider,
   HarnessLocalProbe,
+  HarnessMcpServerConfig,
+  HarnessMcpServerStatus,
   HarnessMode,
   HarnessProcessItem,
   HarnessReasoningEffort,
@@ -56,6 +59,7 @@ const FALLBACK_PROFILE: HarnessRuntimeProfileV1 = {
   reasoningByModel: {},
   hostedConsentByProvider: {},
   lastUsable: null,
+  mcpServers: [],
   ui: { showReasoning: true, compactProcess: true, density: 'comfortable' },
 }
 
@@ -104,7 +108,7 @@ function statusLabel(status: HarnessToolProjection['status']): string {
 }
 
 function toolIcon(kind: HarnessToolProjection['kind']): string {
-  return kind === 'filesystem' ? '▧' : kind === 'search' ? '⌕' : kind === 'terminal' ? '›_' : kind === 'git' ? '⑂' : kind === 'web' ? '↗' : kind === 'metrora' ? '◈' : kind === 'subagent' ? '◎' : '·'
+  return kind === 'filesystem' ? '▧' : kind === 'search' ? '⌕' : kind === 'terminal' ? '›_' : kind === 'git' ? '⑂' : kind === 'web' ? '↗' : kind === 'metrora' ? '◈' : kind === 'mcp' ? '⌘' : kind === 'subagent' ? '◎' : '·'
 }
 
 export function Harness({
@@ -134,6 +138,7 @@ export function Harness({
   const [reasoningEffort, setReasoningEffort] = useState<HarnessReasoningEffort | null>(null)
   const [localProbe, setLocalProbe] = useState<HarnessLocalProbe | null>(null)
   const [hostedProbe, setHostedProbe] = useState<{ provider: HarnessHostedProvider; available: boolean; models: HarnessHostedModel[]; detail: string; credentialState: string } | null>(null)
+  const [mcpStatuses, setMcpStatuses] = useState<HarnessMcpServerStatus[]>([])
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [historyQuery, setHistoryQuery] = useState('')
   const [conversations, setConversations] = useState<HarnessConversationSummary[]>([])
@@ -196,8 +201,10 @@ export function Harness({
   const loadProfile = useCallback(async () => {
     const workspaceRevision = workspaceRevisionRef.current
     try {
-      const [nextProfile, nextWorkspace] = await Promise.all([metrora.harnessProfileGet(), metrora.harnessWorkspaceGet()])
+      const mcpStatusPromise = typeof metrora.harnessMcpGet === 'function' ? metrora.harnessMcpGet().catch(() => []) : Promise.resolve([])
+      const [nextProfile, nextWorkspace, nextMcpStatuses] = await Promise.all([metrora.harnessProfileGet(), metrora.harnessWorkspaceGet(), mcpStatusPromise])
       setProfile(nextProfile)
+      setMcpStatuses(nextMcpStatuses)
       if (workspaceRevisionRef.current === workspaceRevision) setWorkspace(nextWorkspace)
       const nextRuntime = nextProfile.runtime
       const nextProvider = nextProfile.lastUsable?.provider ?? 'openai'
@@ -403,6 +410,21 @@ export function Harness({
     await metrora.harnessProfileSetConsent(hostedProvider, state).then(setProfile).catch(() => {})
   }, [hostedProvider])
 
+  const saveMcpServers = useCallback(async (servers: HarnessMcpServerConfig[]) => {
+    if (typeof metrora.harnessMcpSetServers !== 'function') throw new Error('MCP settings are unavailable in this Desktop build.')
+    const result = await metrora.harnessMcpSetServers(servers)
+    setProfile(result.profile)
+    setMcpStatuses(result.statuses)
+    return result
+  }, [])
+
+  const reloadMcpServer = useCallback(async (serverId: string) => {
+    if (typeof metrora.harnessMcpReload !== 'function') throw new Error('MCP settings are unavailable in this Desktop build.')
+    const result = await metrora.harnessMcpReload(serverId)
+    setMcpStatuses(result)
+    return result
+  }, [])
+
   const checkConformance = useCallback(async () => {
     if (!activeId || !model) return
     setNotice('Checking exact model conformance with a real bounded Tool round trip…')
@@ -464,7 +486,7 @@ export function Harness({
             {error && <div className="harness-error" role="alert"><div><strong>Harness request failed</strong><p>{error}</p></div>{failedTurn && <button type="button" onClick={() => void send(true)} disabled={busy}>Retry</button>}</div>}
             {notice && !error && <div className="harness-notice" role="status">{notice}</div>}
           </main>
-          {settingsOpen && <HarnessSettings profile={profile} runtime={runtime} hostedProvider={hostedProvider} hostedConsent={hostedConsent} localProbe={localProbe} hostedProbe={hostedProbe} workspace={workspace} onPortChange={async port => { const next = await metrora.harnessProfileSetPort(port); setProfile(next); if (runtime === 'llama-server') void probeLocal('llama-server', port) }} onCredentialChange={async secret => { await metrora.harnessCredentialSet(hostedProvider, secret); void probeHosted(hostedProvider) }} onConsentChange={changeHostedConsent} onCheckConformance={() => void checkConformance()} conformance={selectedConformance} />}
+          {settingsOpen && <HarnessSettings profile={profile} runtime={runtime} hostedProvider={hostedProvider} hostedConsent={hostedConsent} localProbe={localProbe} hostedProbe={hostedProbe} workspace={workspace} mcpStatuses={mcpStatuses} onPortChange={async port => { const next = await metrora.harnessProfileSetPort(port); setProfile(next); if (runtime === 'llama-server') void probeLocal('llama-server', port) }} onCredentialChange={async secret => { await metrora.harnessCredentialSet(hostedProvider, secret); void probeHosted(hostedProvider) }} onConsentChange={changeHostedConsent} onMcpSave={saveMcpServers} onMcpReload={reloadMcpServer} onCheckConformance={() => void checkConformance()} conformance={selectedConformance} />}
         </div>
 
         <footer className="harness-composer-area">
@@ -509,7 +531,7 @@ function ProcessFold({ items, active, onApprovalResolved }: { items: HarnessProc
 
 function ToolCard({ item }: { item: HarnessToolProjection }) {
   const details = item.details
-  return <div className={`harness-tool-card ${item.status}`} data-kind={item.kind} data-status={item.status}><div className="harness-tool-icon">{toolIcon(item.kind)}</div><div className="harness-tool-body"><div className="harness-tool-head"><strong>{item.name}</strong><span className={`harness-tool-status ${item.status}`}><i aria-hidden="true" />{statusLabel(item.status)}</span></div><p>{item.inputSummary}</p>{item.path && <code>{item.path}</code>}{item.command && <code>{item.command}</code>}{item.resultSummary && <small>{item.resultSummary}{item.exitCode !== undefined && item.exitCode !== null ? ` · exit ${item.exitCode}` : ''}</small>}{details && <details className="harness-tool-details"><summary>Show details</summary><ToolDetails details={details} /></details>}</div></div>
+  return <div className={`harness-tool-card ${item.status}`} data-kind={item.kind} data-status={item.status}><div className="harness-tool-icon">{toolIcon(item.kind)}</div><div className="harness-tool-body"><div className="harness-tool-head"><div className="harness-tool-name"><strong>{item.name}</strong>{item.source && <small>MCP · {item.source.serverName} · {item.source.toolName}</small>}</div><span className={`harness-tool-status ${item.status}`}><i aria-hidden="true" />{statusLabel(item.status)}</span></div><p>{item.inputSummary}</p>{item.path && <code>{item.path}</code>}{item.command && <code>{item.command}</code>}{item.resultSummary && <small>{item.resultSummary}{item.exitCode !== undefined && item.exitCode !== null ? ` · exit ${item.exitCode}` : ''}</small>}{details && <details className="harness-tool-details"><summary>Show details</summary><ToolDetails details={details} /></details>}</div></div>
 }
 
 function ToolDetails({ details }: { details: NonNullable<HarnessToolProjection['details']> }) {
@@ -528,10 +550,4 @@ function ApprovalCard({ item, onResolved }: { item: HarnessApprovalProjection; o
     finally { setBusy(false) }
   }
   return <div className={`harness-approval-card ${item.state}`}><div><strong>Shield · {item.toolName}</strong><span>{item.risk.replaceAll('-', ' ')}</span></div><p>{item.action}</p>{item.workspacePath && <code>{item.workspacePath}</code>}{item.command && <code>{item.command}</code>}{item.state === 'proposed' ? <div className="harness-approval-actions"><button type="button" onClick={() => void resolve(true)} disabled={busy}>Approve</button><button type="button" className="quiet" onClick={() => void resolve(false)} disabled={busy}>Deny</button></div> : <small>{item.state}</small>}</div>
-}
-
-function HarnessSettings({ profile, runtime, hostedProvider, hostedConsent, localProbe, hostedProbe, workspace, onPortChange, onCredentialChange, onConsentChange, onCheckConformance, conformance }: { profile: HarnessRuntimeProfileV1; runtime: HarnessRuntimeChoice; hostedProvider: HarnessHostedProvider; hostedConsent: 'unknown' | 'accepted' | 'declined'; localProbe: HarnessLocalProbe | null; hostedProbe: { detail: string; credentialState: string } | null; workspace: HarnessWorkspace | null; onPortChange: (port: number) => Promise<void>; onCredentialChange: (secret: string) => Promise<void>; onConsentChange: (state: 'unknown' | 'accepted' | 'declined') => Promise<void>; onCheckConformance: () => void; conformance?: HarnessConversation['conformance'] }) {
-  const [port, setPort] = useState(String(profile.llamaServerPort))
-  const [secret, setSecret] = useState('')
-  return <aside className="harness-settings" aria-label="Harness settings"><div className="harness-settings-head"><div><span className="harness-eyebrow">RUNTIME SETTINGS</span><h2>Provider & Workspace</h2></div><span className="harness-settings-state">{runtime === 'hosted' ? hostedProbe?.credentialState ?? 'not checked' : localProbe?.discoveryState ?? 'not checked'}</span></div><div className="harness-settings-grid">{runtime === 'llama-server' && <label><span>llama.cpp loopback port</span><div className="harness-inline-input"><input aria-label="llama.cpp port" inputMode="numeric" value={port} onChange={event => setPort(event.target.value)} /><button type="button" onClick={() => void onPortChange(Number(port))}>Apply</button></div><small>Default 8080 · loopback only</small></label>}{runtime === 'hosted' && <><label><span>{hostedProvider} credential</span><div className="harness-inline-input"><input aria-label="Hosted provider credential" type="password" autoComplete="off" value={secret} onChange={event => setSecret(event.target.value)} placeholder="Stored in the OS vault" /><button type="button" onClick={() => { void onCredentialChange(secret); setSecret('') }}>Save</button></div><small>{hostedProbe?.detail ?? 'Credentials never enter the Session or profile.'}</small></label><label className="harness-consent"><span>Hosted provider consent</span><select aria-label="Hosted provider consent" value={hostedConsent} onChange={event => void onConsentChange(event.target.value as 'unknown' | 'accepted' | 'declined')}><option value="unknown">Ask before sending</option><option value="accepted">Allow hosted requests</option><option value="declined">Decline hosted requests</option></select><small>Requests go directly to {hostedProvider}; credentials stay in the OS vault and never enter the Session.</small></label></> }<div className="harness-settings-fact"><span>Workspace</span><strong>{workspace?.displayName ?? 'Not selected'}</strong><small>{workspace ? 'Coding Tools are fenced to this folder.' : 'Choose a local folder from the header.'}</small></div><div className="harness-settings-fact"><span>Exact model conformance</span><strong>{conformance?.state ?? 'Not checked'}</strong><small>Verified requires a native Tool round trip and final synthesis.</small><button type="button" className="harness-link-button" onClick={onCheckConformance}>Run conformance again</button></div></div></aside>
 }

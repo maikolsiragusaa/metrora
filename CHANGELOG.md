@@ -13,12 +13,12 @@ This file records Metrora-originated public changes. Required third-party notice
 - Extended durable Project history with model/category detail while retaining fail-closed coverage and `Other models` reconciliation where identity is incomplete.
 - Added bounded Electron progress watchdog behavior and strengthened provider discovery publication so failed, partial, unavailable or cancelled scans cannot be mistaken for factual empty state.
 
-### Advisor
+### Harness
 
-- Added one read-only conversational Advisor grounded in canonical Metrora evidence, with local Ollama and LM Studio runtimes plus direct-provider BYOK options that keep Metrora out of the inference traffic path.
+- Added one read-only conversational Harness grounded in canonical Metrora evidence, with local Ollama and LM Studio runtimes plus direct-provider BYOK options that keep Metrora out of the inference traffic path.
 - Added bounded planning, factual evidence atoms, streaming/cancellation and explicit hosted evidence-sharing consent while keeping deterministic Metrora surfaces authoritative for measurements and calculations.
 - Added contextual launches from factual Desktop surfaces so the selected period/provider/Project scope is carried only where that originating surface actually owns it.
-- Advisor does not execute changes, autonomously route requests or create a second measurement authority.
+- Harness does not execute changes, autonomously route requests or create a second measurement authority.
 
 ### Capacity
 
@@ -46,7 +46,7 @@ This file records Metrora-originated public changes. Required third-party notice
 
 - Simplified the Overview/Home measurement hierarchy around Cost, activity and mainstream Usage, with specialist token/pricing detail available through progressive disclosure.
 - Clarified provider Capacity presentation around factual freshness, remaining/used percentages, reset boundaries and unavailable states.
-- Added dedicated Advisor and Bench product surfaces and preserved factual-surface → Ask Advisor → contextual investigation as the conversational interaction model.
+- Added dedicated Harness and Bench product surfaces and preserved factual-surface → Ask Harness → contextual investigation as the conversational interaction model.
 
 ### Provider and discovery work
 

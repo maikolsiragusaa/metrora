@@ -13,16 +13,14 @@ import { createBridgeHandlers, NO_UPDATE_STATUS } from './bridge-handlers'
 import { harnessProviderRoute, hostedProviderRoute } from './harness-runtime-types.js'
 import type { HarnessHostedProvider, HarnessReasoningEffort, HarnessRuntimeId, MetroraHarnessRuntimeEvent } from './harness-runtime-types.js'
 import { createHarnessActHandlers, type HarnessActionEvent } from './act-bridge'
-
+import { createHarnessMcpHandlers } from './harness-mcp-handlers'
 export { createApplicationMenuTemplate } from './menu'
 export { createBridgeHandlers, makeProgressReader } from './bridge-handlers'
 export type { Envelope, TelemetryBridge } from './bridge-handlers'
-
 // Initialized in bootstrap() once Electron paths exist; stays null under tests.
 let telemetryInstance: Telemetry | null = null
 // The once-per-launch + 24h update-availability checker. Null under tests.
 let updateChecker: UpdateChecker | null = null
-
 type QuitTelemetry = Pick<Telemetry, 'trackClose' | 'flush'>
 type BeforeQuitEvent = { preventDefault: () => void }
 type BeforeQuitDeps = {
@@ -128,6 +126,9 @@ export function shouldInstallApplicationMenu(_isDev: boolean, platform = process
 
 type HarnessRuntimeHost = {
   shutdown(): Promise<void>
+  getMcpStatuses(): Promise<import('./harness-runtime-types.js').HarnessMcpServerStatus[]>
+  configureMcpServers(servers: unknown): Promise<import('./harness-runtime-types.js').HarnessMcpServerStatus[]>
+  reloadMcpServer(serverId: string): Promise<import('./harness-runtime-types.js').HarnessMcpServerStatus[]>
   handlers(): Record<string, (...args: any[]) => Promise<{ ok: true; value: unknown } | { ok: false; error: { kind: string; message: string } }>>
 }
 let harnessHostInstance: HarnessRuntimeHost | null = null
@@ -317,6 +318,8 @@ async function registerHandlers(): Promise<void> {
     profile: harnessProfile,
     hostedAdapter: harnessHostedAdapter,
     getWorkspaceRoot: () => harnessWorkspace.rootPath(),
+    mcpServers: harnessProfile.read().mcpServers,
+    readMcpSecret: reference => harnessCredentials.readReference(reference),
     getReasoningEfforts: (route, model) => reasoningByRouteModel.get(reasoningKey(route, model)),
     toolSource: {
       getOverview: async (scope, signal) => {
@@ -347,6 +350,7 @@ async function registerHandlers(): Promise<void> {
     toolRegistry,
     onEvent: broadcastHarnessRuntimeEvent,
   })
+  const harnessMcpHandlers = createHarnessMcpHandlers({ host: harnessHostInstance, profile: harnessProfile, credentials: harnessCredentials })
   const handlers = createBridgeHandlers({
     spawnCli,
     spawnCliAction,
@@ -360,6 +364,7 @@ async function registerHandlers(): Promise<void> {
     harnessProviderHandlers,
     harnessProfileHandlers,
     harnessWorkspaceHandlers,
+    harnessMcpHandlers,
     harnessActHandlers,
     harnessHandlers: harnessHostInstance.handlers(),
   })
@@ -377,6 +382,12 @@ async function registerHandlers(): Promise<void> {
     'metrora:harnessProfileSetHostedModel',
     'metrora:harnessProfileSetReasoning',
     'metrora:harnessProfileSetConsent',
+    'metrora:harnessMcpGet',
+    'metrora:harnessMcpSetServers',
+    'metrora:harnessMcpReload',
+    'metrora:harnessMcpCredentialStatus',
+    'metrora:harnessMcpCredentialSet',
+    'metrora:harnessMcpCredentialClear',
     'metrora:harnessWorkspaceGet',
     'metrora:harnessWorkspaceOpen',
     'metrora:harnessWorkspaceClear',

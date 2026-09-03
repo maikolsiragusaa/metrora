@@ -30,10 +30,11 @@ type Deps = {
   /** Cached update-availability status; absent under tests unless injected. */
   getUpdateStatus?: () => Promise<UpdateStatus>
   share?: DesktopShareRuntime | null
-  harnessCredentials?: Pick<HarnessCredentialStore, 'status' | 'set' | 'clear'>
+  harnessCredentials?: Pick<HarnessCredentialStore, 'status' | 'set' | 'clear' | 'statusReference' | 'setReference' | 'clearReference'>
   harnessProviderHandlers?: Record<string, Handler>
   harnessProfileHandlers?: Record<string, Handler>
   harnessWorkspaceHandlers?: Record<string, Handler>
+  harnessMcpHandlers?: Record<string, Handler>
   /** Trusted host handlers for the one accepted Harness action kind. */
   harnessActHandlers?: Record<string, Handler>
   /** Metrora-owned durable Harness runtime handlers. */
@@ -374,6 +375,7 @@ export function createBridgeHandlers(deps: Deps): Record<string, Handler> {
     ...(deps.harnessProviderHandlers ?? {}),
     ...(deps.harnessProfileHandlers ?? {}),
     ...(deps.harnessWorkspaceHandlers ?? {}),
+    ...(deps.harnessMcpHandlers ?? {}),
     ...(deps.harnessActHandlers ?? {}),
     ...(deps.harnessHandlers ?? {}),
     ...(deps.harnessCredentials ? {
