@@ -69,7 +69,10 @@ export function advisorTurnCanUseReadTools(plan: AdvisorQuestionPlan, question: 
   if (plan.intent !== 'unknown') return true
   if (CLEARLY_NON_FACTUAL_UNKNOWN.test(question)) return false
   const recentTask = taskContext && taskContext.availableToolNames.length > 0
-  return Boolean(recentTask || INVESTIGATION_MARKERS.test(question))
+  // The domain list is the structural signal for multilingual requests. The
+  // marker fallback only preserves the existing unknown-question router; it
+  // does not grant permission or detect assistant confirmation language.
+  return Boolean(recentTask || plan.plan.requestedEvidenceDomains.length > 0 || (plan.needsEvidence && INVESTIGATION_MARKERS.test(question)))
 }
 
 export function advisorReadToolNamesForPlan(plan: AdvisorQuestionPlan, question: string, taskContext?: AdvisorHarnessTaskContextV1): AdvisorToolName[] {

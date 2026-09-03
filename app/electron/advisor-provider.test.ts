@@ -208,6 +208,49 @@ describe('Advisor hosted provider authority', () => {
     expect(JSON.stringify(events)).not.toContain('synthetic-secret')
   })
 
+  it.each(providers)('validates and lowers the provider-neutral required Tool choice for %s', async provider => {
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    const fetchImpl = (async (url: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(url), init })
+      return jsonResponse(textPayload(provider))
+    }) as typeof fetch
+    const tool = { type: 'function' as const, function: { name: 'get_spend_snapshot', description: 'Measured spend', parameters: { type: 'object' } } }
+    const result = await readyHandlers(fetchImpl)['metrora:advisorHostedChat']!('tool-choice-' + provider, {
+      ...request(provider),
+      tools: [tool],
+      toolChoice: 'required',
+    }) as { ok: boolean; value?: unknown }
+    expect(result.ok).toBe(true)
+    const body = JSON.parse(String(calls[0]?.init?.body)) as Record<string, any>
+    if (provider === 'anthropic') expect(body.tool_choice).toEqual({ type: 'any' })
+    else if (provider === 'gemini') expect(body.toolConfig).toEqual({ functionCallingConfig: { mode: 'ANY' } })
+    else expect(body.tool_choice).toBe('required')
+  })
+
+  it('rejects arbitrary hosted Tool-choice values at the Electron boundary', async () => {
+    const result = await readyHandlers((async () => jsonResponse(textPayload('openai'))) as typeof fetch)['metrora:advisorHostedChat']!('tool-choice-invalid', {
+      ...request('openai'),
+      toolChoice: 'ask-first',
+    }) as { ok: boolean; error?: { kind: string } }
+    expect(result).toMatchObject({ ok: false, error: { kind: 'request-malformed' } })
+  })
+
+  it.each(providers)('does not send a provider tool-choice object for a no-tool %s request', async provider => {
+    const calls: Array<{ init?: RequestInit }> = []
+    const fetchImpl = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ init })
+      return jsonResponse(textPayload(provider))
+    }) as typeof fetch
+    const result = await readyHandlers(fetchImpl)['metrora:advisorHostedChat']!('tool-choice-none-' + provider, {
+      ...request(provider),
+      toolChoice: 'none',
+    }) as { ok: boolean }
+    expect(result.ok).toBe(true)
+    const body = JSON.parse(String(calls[0]?.init?.body)) as Record<string, unknown>
+    expect(body).not.toHaveProperty('tool_choice')
+    expect(body).not.toHaveProperty('toolConfig')
+  })
+
   it.each([
     ['openai', 'openai-test-model'],
     ['anthropic', 'anthropic-test-model'],

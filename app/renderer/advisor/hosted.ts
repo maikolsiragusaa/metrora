@@ -141,6 +141,7 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
         messages: buildAdvisorGroundedRepairMessages(request),
         tools: [],
         stream: false,
+        toolChoice: 'none',
         messageMode: this.capabilities.toolCall === 'supported' ? 'native' : 'flattened',
         consent: true,
         harnessConformance: true,
@@ -172,6 +173,7 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
         messages: buildAdvisorSwarmSynthesisMessages(input),
         tools: [],
         stream: false,
+        toolChoice: 'none',
         consent: true,
         harnessConformance: true,
       }, turnSignal), turnSignal)
@@ -206,6 +208,7 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
             messages: payload.messages,
             tools: payload.tools,
             stream: false,
+            toolChoice: payload.toolChoice,
             messageMode: payload.messageMode as 'native' | 'flattened' | undefined,
             continuation: payload.continuation as MetroraAgentContinuation | undefined,
             consent: true,
@@ -215,10 +218,11 @@ export class HostedAdvisorRuntime implements AdvisorModelRuntime {
           return response
         },
         cancel: request => this.transport.cancel(request),
-        buildPayload: ({ messages, tools, continuation }) => ({
+        buildPayload: ({ messages, tools, toolChoice, continuation }) => ({
           messages: serializeMetroraAgentMessages(messages as readonly MetroraAgentMessage[]),
           tools: [...tools],
           stream: false,
+          toolChoice,
           messageMode: this.capabilities.toolCall === 'supported' ? 'native' : 'flattened',
           ...(continuation ? { continuation } : {}),
         }),

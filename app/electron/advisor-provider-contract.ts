@@ -77,6 +77,7 @@ export type AdvisorHostedChatMessage =
   | { role: 'assistant'; content: string; toolCalls?: AdvisorHostedToolCall[] }
   | { role: 'tool'; content: string; toolCallId: string; toolName?: string }
 export type AdvisorHostedMessageMode = 'native' | 'flattened'
+export type AdvisorHostedToolChoice = 'auto' | 'required' | 'none'
 /**
  * Opaque continuation reference that is safe to cross the Electron IPC
  * boundary. The actual provider-native response messages live only in the
@@ -89,7 +90,7 @@ export type AdvisorHostedContinuationReference = {
   readonly protocol: 'openai-chat' | 'openai-responses'
   readonly adapter: 'ai-sdk-openai-compatible-v1' | 'ai-sdk-openai-responses-v1'
 }
-export type AdvisorHostedChatRequest = { provider: AdvisorHostedProviderId; model: string; messages: AdvisorHostedChatMessage[]; tools?: AdvisorHostedToolDefinition[]; stream?: boolean; consent: true; reasoningEffort?: AdvisorReasoningEffort; messageMode?: AdvisorHostedMessageMode; continuation?: AdvisorHostedContinuationReference; /** Set only for bounded Harness evidence/conformance calls. */ harnessConformance?: true }
+export type AdvisorHostedChatRequest = { provider: AdvisorHostedProviderId; model: string; messages: AdvisorHostedChatMessage[]; tools?: AdvisorHostedToolDefinition[]; stream?: boolean; consent: true; reasoningEffort?: AdvisorReasoningEffort; messageMode?: AdvisorHostedMessageMode; toolChoice?: AdvisorHostedToolChoice; continuation?: AdvisorHostedContinuationReference; /** Set only for bounded Harness evidence/conformance calls. */ harnessConformance?: true }
 export type AdvisorHostedChatResult = { provider: AdvisorHostedProviderId; model: string; message: { content: string; tool_calls: AdvisorHostedToolCall[] }; usage: AdvisorHostedUsage | null; streamed: boolean; continuation?: AdvisorHostedContinuationReference }
 export type AdvisorHostedEnvelope = { ok: true; value: unknown } | { ok: false; error: { kind: string; message: string } }
 

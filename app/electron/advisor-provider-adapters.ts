@@ -170,7 +170,7 @@ function providerMessages(request: AdvisorHostedChatRequest, native: (messages: 
 function openAiBody(request: AdvisorHostedChatRequest, reasoningParameter?: AdvisorHostedReasoningParameter): Record<string, unknown> {
   const system = request.messages.filter(message => message.role === 'system').map(message => message.content).join('\n')
   const input = providerMessages({ ...request, messages: request.messages.filter(message => message.role !== 'system') }, openAiResponsesMessages)
-  return { model: request.model, ...(system ? { instructions: system } : {}), input, ...(request.tools?.length ? { tools: openAiTools(request.tools) } : {}), ...reasoningBody(request, reasoningParameter), stream: request.stream === true, store: false }
+  return { model: request.model, ...(system ? { instructions: system } : {}), input, ...(request.tools?.length ? { tools: openAiTools(request.tools) } : {}), ...(request.tools?.length && request.toolChoice ? { tool_choice: request.toolChoice } : {}), ...reasoningBody(request, reasoningParameter), stream: request.stream === true, store: false }
 }
 function openAiChatBody(request: AdvisorHostedChatRequest, includeUsage: boolean, reasoningParameter?: AdvisorHostedReasoningParameter): Record<string, unknown> {
   const messages = providerMessages(request, openAiChatMessages)
@@ -178,6 +178,7 @@ function openAiChatBody(request: AdvisorHostedChatRequest, includeUsage: boolean
     model: request.model,
     messages,
     ...(request.tools?.length ? { tools: openAiChatTools(request.tools) } : {}),
+    ...(request.tools?.length && request.toolChoice ? { tool_choice: request.toolChoice } : {}),
     ...reasoningBody(request, reasoningParameter),
     stream: request.stream === true,
     ...(request.stream === true && includeUsage ? { stream_options: { include_usage: true } } : {}),
@@ -186,12 +187,21 @@ function openAiChatBody(request: AdvisorHostedChatRequest, includeUsage: boolean
 function anthropicBody(request: AdvisorHostedChatRequest): Record<string, unknown> {
   const system = request.messages.filter(message => message.role === 'system').map(message => message.content).join('\n')
   const messages = providerMessages({ ...request, messages: request.messages.filter(message => message.role !== 'system') }, anthropicMessages)
-  return { model: request.model, max_tokens: 2048, ...(system ? { system } : {}), messages, ...(request.tools?.length ? { tools: anthropicTools(request.tools) } : {}), stream: request.stream === true }
+  // Anthropic has no `none` tool_choice variant; omitting the field is the
+  // provider-native no-tool form. The Harness loop still owns the semantic
+  // `none` choice for a turn with no supplied tools.
+  const toolChoice = request.tools?.length
+    ? request.toolChoice === 'required' ? { type: 'any' } : request.toolChoice === 'auto' ? { type: 'auto' } : undefined
+    : undefined
+  return { model: request.model, max_tokens: 2048, ...(system ? { system } : {}), messages, ...(request.tools?.length ? { tools: anthropicTools(request.tools) } : {}), ...(toolChoice ? { tool_choice: toolChoice } : {}), stream: request.stream === true }
 }
 function geminiBody(request: AdvisorHostedChatRequest): Record<string, unknown> {
   const system = request.messages.filter(message => message.role === 'system').map(message => message.content).join('\n')
   const contents = providerMessages({ ...request, messages: request.messages.filter(message => message.role !== 'system') }, geminiMessages)
-  return { ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}), contents, ...(request.tools?.length ? { tools: geminiTools(request.tools) } : {}) }
+  const mode = request.tools?.length
+    ? request.toolChoice === 'required' ? 'ANY' : request.toolChoice === 'none' ? 'NONE' : request.toolChoice === 'auto' ? 'AUTO' : undefined
+    : undefined
+  return { ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}), contents, ...(request.tools?.length ? { tools: geminiTools(request.tools) } : {}), ...(mode ? { toolConfig: { functionCallingConfig: { mode } } } : {}) }
 }
 
 function appendText(state: StreamState, requestId: string, provider: AdvisorHostedProviderId, model: string, value: unknown, emit: EventEmitter): void {

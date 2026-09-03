@@ -2,7 +2,7 @@ import type { MetroraBridge } from '../lib/metrora-bridge-types'
 import type { DateRange, MenubarPayload, ModelReportRow, Period, QuotaProvider } from '../lib/types'
 import type { PerformanceComparisonV1 } from '../../../src/bench/performance-compare-v1'
 import type { PerformanceRunV1 } from '../../../src/bench/performance-contract-v1'
-import type { MetroraAgentLoopBounds, MetroraAgentLoopEvent } from '../agent-loop/contracts'
+import type { MetroraAgentLoopBounds, MetroraAgentLoopEvent, MetroraAgentToolChoice } from '../agent-loop/contracts'
 
 export type AdvisorIntent =
   | 'social'
@@ -122,6 +122,7 @@ export type AdvisorJsonObject = { [key: string]: AdvisorJsonValue }
 export type AdvisorDomainCoverageState = 'available' | 'partial' | 'unavailable' | 'not-authorized'
 export type AdvisorDomainCoverageV1 = { domain: AdvisorEvidenceDomain; state: AdvisorDomainCoverageState; detail: string; evidenceRefs: AdvisorEvidenceRef[] }
 export type AdvisorToolName = 'get_spend_snapshot' | 'get_model_efficiency' | 'get_quota_snapshot' | 'get_overview_snapshot' | 'get_project_drivers' | 'get_session_highlights' | 'get_coverage_report' | 'get_bench_evidence'
+export type AdvisorToolChoice = MetroraAgentToolChoice
 export type AdvisorActionKindV1 = 'run-bench' | 'launch-agents' | 'change-routing' | 'apply-policy' | 'run-core-compatibility'
 export type AdvisorActionProposalV1 = {
   contractVersion: 'advisor-action-proposal-v1'
@@ -310,6 +311,8 @@ export type AdvisorUiContextV1 = {
 export type AdvisorRuntimeInput = {
   question: string
   evidence: AdvisorEvidence
+  /** Trusted controller signal that one real read must precede a model answer. */
+  requiresReadBeforeAnswer?: boolean
   /** Controller-authorized minimum read requests for this bounded loop. */
   requiredEvidence?: readonly AdvisorEvidence[]
   /** Exact bounded requests represented by requiredEvidence; used to avoid a duplicate read. */

@@ -282,6 +282,7 @@ describe('Ollama Advisor renderer state machine', () => {
 
     expect(payloads).toHaveLength(3)
     expect(payloads.every(payload => Array.isArray(payload.tools) && (payload.tools as unknown[]).length === 0)).toBe(true)
+    expect(payloads.every(payload => payload.toolChoice === 'none')).toBe(true)
     expect(executed).toBe(2)
     expect(answer.runtimeFailure).toBe(true)
     expect(answer.conclusion).toContain('could not finish')

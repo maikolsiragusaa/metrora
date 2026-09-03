@@ -125,6 +125,18 @@ describe('Electron Advisor local runtime', () => {
     expect(result.streamed).toBe(true)
     expect(result.message.content).toBe('Measured evidence.')
   })
+
+  it('validates and lowers the provider-neutral Tool choice for Ollama', async () => {
+    let body: Record<string, unknown> | undefined
+    const fetchImpl = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return textOnlyResponse(JSON.stringify({ message: { content: 'bounded' } }) + '\n')
+    }) as typeof fetch
+    await expect(chatOllamaMain(fetchImpl, { ...payload, toolChoice: 'required' })).resolves.toMatchObject({ message: { content: 'bounded' } })
+    expect(body?.tool_choice).toBe('required')
+    expect(body).not.toHaveProperty('toolChoice')
+    await expect(chatOllamaMain(fetchImpl, { ...payload, toolChoice: 'invalid' as never })).rejects.toThrow('tool choice is invalid')
+  })
   it('fails closed when one valid reader-backed NDJSON record exceeds the content cap', async () => {
     const response = streamedResponse([JSON.stringify({ message: { content: 'x'.repeat(32_001) } }) + '\n'])
 

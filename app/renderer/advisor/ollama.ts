@@ -106,6 +106,7 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
         messages: serializeMetroraAgentMessages(buildAdvisorGroundedRepairMessages(request) as readonly MetroraAgentMessage[]),
         tools: [],
         stream: false,
+        toolChoice: 'none',
         messageMode: this.nativeToolCalls ? 'native' : 'flattened',
       }, deadline.signal), deadline.signal)
       throwIfAborted(deadline.signal)
@@ -131,6 +132,7 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
         messages: buildAdvisorSwarmSynthesisMessages(input),
         tools: [],
         stream: false,
+        toolChoice: 'none',
       }, signal), signal)
       throwIfAborted(signal)
       const answer = boundedModelText(response.message?.content)
@@ -168,11 +170,12 @@ export class LocalAdvisorRuntime implements AdvisorModelRuntime {
             }
           },
           cancel: request => this.transport.cancel(request),
-          buildPayload: ({ model, messages, tools, stream }) => ({
+          buildPayload: ({ model, messages, tools, stream, toolChoice }) => ({
             model,
             messages: serializeMetroraAgentMessages(messages as readonly MetroraAgentMessage[]),
             tools: [...tools],
             stream,
+            toolChoice,
             messageMode: this.nativeToolCalls ? 'native' : 'flattened',
           }),
           repair: (request, requestSignal) => this.generateGroundedRepair(request, requestSignal),

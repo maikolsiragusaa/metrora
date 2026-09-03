@@ -9,6 +9,7 @@ import type {
   AdvisorHostedProbe,
   AdvisorHostedProviderId,
   AdvisorHostedContinuationReference,
+  AdvisorHostedToolChoice,
   AdvisorReasoningEffort,
   AdvisorHostedUsage,
   AdvisorHostedDiagnostic,
@@ -56,6 +57,7 @@ export type {
   AdvisorHostedProviderId,
   AdvisorHostedReasoningCapability,
   AdvisorHostedContinuationReference,
+  AdvisorHostedToolChoice,
   AdvisorReasoningEffort,
   AdvisorHostedToolCall,
   AdvisorHostedToolDefinition,
@@ -141,6 +143,8 @@ function parseChatRequest(requestId: unknown, value: unknown): { requestId: stri
   if (reasoningEffort !== undefined && !validReasoningEffort(reasoningEffort)) throw new HostedAdapterError('request-malformed', 'Advisor reasoning effort is invalid.')
   const messageMode = value.messageMode === undefined ? 'native' : value.messageMode
   if (messageMode !== 'native' && messageMode !== 'flattened') throw new HostedAdapterError('request-malformed', 'Advisor message mode is invalid.')
+  const toolChoice = value.toolChoice
+  if (toolChoice !== undefined && toolChoice !== 'auto' && toolChoice !== 'required' && toolChoice !== 'none') throw new HostedAdapterError('request-malformed', 'Advisor tool choice is invalid.')
   const continuation = value.continuation === undefined ? undefined : normalizeHostedContinuationReference(value.continuation)
   if (value.continuation !== undefined && !continuation) throw new HostedAdapterError('request-malformed', 'Advisor provider continuation is malformed.')
   return {
@@ -153,6 +157,7 @@ function parseChatRequest(requestId: unknown, value: unknown): { requestId: stri
       stream: value.stream === undefined ? true : value.stream === true,
       consent: true,
       messageMode,
+      ...(toolChoice !== undefined ? { toolChoice: toolChoice as AdvisorHostedToolChoice } : {}),
       ...(reasoningEffort !== undefined ? { reasoningEffort: reasoningEffort as AdvisorReasoningEffort } : {}),
       ...(continuation ? { continuation } : {}),
       ...(value.harnessConformance === true ? { harnessConformance: true as const } : {}),

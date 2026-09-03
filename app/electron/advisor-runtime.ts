@@ -16,6 +16,7 @@ export type AdvisorRuntimeChatPayload = {
   tools: Array<Record<string, unknown>>
   stream: boolean
   messageMode?: 'native' | 'flattened'
+  toolChoice?: 'auto' | 'required' | 'none'
 }
 export type AdvisorRuntimeChatResult = { message: { content: string; tool_calls?: Array<Record<string, unknown>> }; streamed: boolean }
 type FetchLike = typeof fetch
@@ -234,6 +235,7 @@ function validateChatPayload(value: unknown): asserts value is AdvisorRuntimeCha
   }
   if (typeof value.stream !== 'boolean') throw new Error('Local runtime stream flag is invalid.')
   if (value.messageMode !== undefined && value.messageMode !== 'native' && value.messageMode !== 'flattened') throw new Error('Local runtime message mode is invalid.')
+  if (value.toolChoice !== undefined && value.toolChoice !== 'auto' && value.toolChoice !== 'required' && value.toolChoice !== 'none') throw new Error('Local runtime tool choice is invalid.')
   for (const message of value.messages) {
     if (!isRecord(message) || typeof message.role !== 'string' || !ADVISOR_MESSAGE_ROLES.has(message.role)) throw new Error('Local runtime request contains a malformed message.')
     if (typeof message.content !== 'string') throw new Error('Local runtime request contains malformed message content.')
@@ -257,8 +259,9 @@ async function chatOnce(fetchImpl: FetchLike, payload: AdvisorRuntimeChatPayload
   const timed = timeoutSignal(parent, CHAT_TIMEOUT_MS)
   try {
     throwIfAborted(timed.signal)
-    const body = { ...payload, messages: ollamaMessages(payload.messages, payload.messageMode ?? 'native') }
+    const body = { ...payload, messages: ollamaMessages(payload.messages, payload.messageMode ?? 'native'), ...(payload.toolChoice ? { tool_choice: payload.toolChoice } : {}) }
     delete (body as { messageMode?: unknown }).messageMode
+    delete (body as { toolChoice?: unknown }).toolChoice
     const response = await fetchImpl(LOOPBACK_ENDPOINT + '/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

@@ -85,6 +85,20 @@ describe('MetroraAgentLoop', () => {
     expect(output.ledger.at(-1)).toMatchObject({ role: 'assistant', content: 'A bounded direct answer.' })
   })
 
+  it('uses none for a social/no-Tool step and auto when evidence is already ready', async () => {
+    const choices: string[] = []
+    await run({
+      tools: [],
+      complete: async context => { choices.push(context.toolChoice); return step('A direct conversational answer.') },
+    })
+    await run({
+      requiresReadBeforeAnswer: true,
+      requiredEvidenceReady: true,
+      complete: async context => { choices.push(context.toolChoice); return step('A grounded follow-up answer.') },
+    })
+    expect(choices).toEqual(['none', 'auto'])
+  })
+
   it('executes one Tool, appends its result, and continues naturally', async () => {
     const ledgers: string[][] = []
     let count = 0
@@ -224,11 +238,11 @@ describe('MetroraAgentLoop', () => {
   })
 
   it('reserves the final model step for no-Tool synthesis without changing the bounds', async () => {
-    const contexts: Array<{ step: number; phase: string; tools: readonly unknown[] }> = []
+    const contexts: Array<{ step: number; phase: string; tools: readonly unknown[]; toolChoice: string }> = []
     const output = await run({
       bounds: { ...bounds, maxSteps: 3, maxToolRounds: 2, maxCallsPerTurn: 4 },
       complete: async context => {
-        contexts.push({ step: context.step, phase: context.phase, tools: context.tools })
+        contexts.push({ step: context.step, phase: context.phase, tools: context.tools, toolChoice: context.toolChoice })
         return context.step === 1
           ? toolStep(call('round-one'))
           : context.step === 2
@@ -243,8 +257,11 @@ describe('MetroraAgentLoop', () => {
     expect(output.toolRounds).toBe(2)
     expect(contexts.map(context => [context.step, context.phase])).toEqual([[1, 'investigate'], [2, 'investigate'], [3, 'synthesize']])
     expect(contexts[0]?.tools).toEqual([spendTool])
+    expect(contexts[0]?.toolChoice).toBe('auto')
     expect(contexts[1]?.tools).toEqual([spendTool])
+    expect(contexts[1]?.toolChoice).toBe('auto')
     expect(contexts[2]?.tools).toEqual([])
+    expect(contexts[2]?.toolChoice).toBe('none')
     expect(output.finalText).toContain('terminal answer')
   })
 
@@ -274,11 +291,11 @@ describe('MetroraAgentLoop', () => {
 
   it('fails closed when the provider requests a Tool on the synthesis step', async () => {
     const execute = vi.fn(async () => result())
-    const contexts: Array<{ step: number; phase: string; tools: readonly unknown[] }> = []
+    const contexts: Array<{ step: number; phase: string; tools: readonly unknown[]; toolChoice: string }> = []
     const output = await run({
       bounds: { ...bounds, maxSteps: 3, maxToolRounds: 2, maxCallsPerTurn: 4 },
       complete: async context => {
-        contexts.push({ step: context.step, phase: context.phase, tools: context.tools })
+        contexts.push({ step: context.step, phase: context.phase, tools: context.tools, toolChoice: context.toolChoice })
         return context.step < 3 ? toolStep(call('allowed-' + context.step)) : toolStep(call('forbidden-synthesis-read'))
       },
       executeTool: execute,
@@ -292,27 +309,47 @@ describe('MetroraAgentLoop', () => {
     expect(execute).toHaveBeenCalledTimes(2)
     expect(contexts[2]?.phase).toBe('synthesize')
     expect(contexts[2]?.tools).toEqual([])
+    expect(contexts[2]?.toolChoice).toBe('none')
   })
 
-  it('executes a required baseline read when the model answers prematurely', async () => {
-    const seen: string[][] = []
+  it('requires a real read, retries once structurally, and becomes auto after the result', async () => {
+    const choices: string[] = []
     const output = await run({
-      bounds: { ...bounds, maxCallsPerStep: 1, maxCallsPerTurn: 1 },
-      requiredToolCalls: [call('required-spend')],
-      requiredEvidenceReady: false,
+      requiresReadBeforeAnswer: true,
       complete: async context => {
-        seen.push(context.ledger.map(message => message.role + ':' + message.content))
-        return seen.length === 1 ? step('I can answer before reading.') : step('The canonical spend result supports the final answer.')
+        choices.push(context.toolChoice)
+        if (context.step === 1) return step('The model announced an intention instead of reading.')
+        if (context.step === 2) return toolStep(call('required-spend'))
+        return step('The canonical spend result supports the final answer.')
       },
     })
     expect(output.status).toBe('completed')
     expect(output.toolCalls).toBe(1)
-    expect(seen[1]?.some(value => value.includes('{"measured":true}'))).toBe(true)
+    expect(choices).toEqual(['required', 'required', 'auto'])
+    expect(output.ledger).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'assistant', content: 'The model announced an intention instead of reading.' }),
+    ]))
     expect(output.ledger).toEqual(expect.arrayContaining([
-      expect.objectContaining({ role: 'assistant', toolCalls: [expect.objectContaining({ id: 'required-spend' })] }),
       expect.objectContaining({ role: 'tool', toolCallId: 'required-spend' }),
     ]))
     expect(output.finalText).toContain('canonical spend')
+  })
+
+  it('fails safely after one required-tool correction retry remains text-only', async () => {
+    const choices: string[] = []
+    const output = await run({
+      requiresReadBeforeAnswer: true,
+      complete: async context => {
+        choices.push(context.toolChoice)
+        return step(context.step === 1 ? 'The model deferred the read.' : 'The model still did not perform the read.')
+      },
+    })
+    expect(output.status).toBe('failed')
+    expect(output.modelSteps).toBe(2)
+    expect(output.toolCalls).toBe(0)
+    expect(output.finalText).toBe('')
+    expect(output.diagnostics).toContain('required_tool_not_called')
+    expect(choices).toEqual(['required', 'required'])
   })
 
   it('never executes a Tool outside the allowlist', async () => {

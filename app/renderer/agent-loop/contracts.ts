@@ -12,6 +12,8 @@ export type MetroraAgentToolCall = {
   arguments: Record<string, unknown>
 }
 
+export type MetroraAgentToolChoice = 'auto' | 'required' | 'none'
+
 export type MetroraAgentMessage = {
   role: 'system' | 'user' | 'assistant' | 'tool'
   content: string
@@ -139,10 +141,26 @@ export type MetroraAgentModelContext = {
   readonly ledger: readonly MetroraAgentMessage[]
   /** Tools authorized for this exact model completion. */
   readonly tools: readonly unknown[]
+  /** Provider-neutral selection policy for this exact model completion. */
+  readonly toolChoice: MetroraAgentToolChoice
+  /** Structural controller signal; never inferred from assistant language. */
+  readonly requiresReadBeforeAnswer: boolean
   readonly step: number
   readonly phase: MetroraAgentModelPhase
   readonly signal: AbortSignal
   readonly continuation?: MetroraAgentContinuation
+}
+
+export function resolveMetroraAgentToolChoice(input: {
+  tools: readonly unknown[]
+  requiresReadBeforeAnswer: boolean
+  evidenceReady: boolean
+  toolResultObserved: boolean
+  terminal: boolean
+}): MetroraAgentToolChoice {
+  if (!input.tools.length || input.terminal) return 'none'
+  if (input.requiresReadBeforeAnswer && !input.evidenceReady && !input.toolResultObserved) return 'required'
+  return 'auto'
 }
 
 export type MetroraAgentToolValidation =
@@ -160,6 +178,8 @@ export type MetroraAgentLoopOptions = {
   requiredToolCalls?: readonly MetroraAgentToolCall[]
   /** True only when the initial ledger already contains usable canonical evidence. */
   requiredEvidenceReady?: boolean
+  /** Trusted structural signal from the controller for a factual first read. */
+  requiresReadBeforeAnswer?: boolean
   complete: (context: MetroraAgentModelContext) => Promise<MetroraAgentModelStep>
   validateToolCall?: (call: MetroraAgentToolCall, tools: readonly unknown[]) => MetroraAgentToolValidation
   executeTool: (call: MetroraAgentToolCall, signal: AbortSignal) => Promise<MetroraAgentToolResult>

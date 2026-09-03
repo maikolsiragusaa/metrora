@@ -36,6 +36,7 @@ export type AdvisorAgentTransport = {
     messages: readonly MetroraAgentMessage[]
     tools: readonly AdvisorToolDefinition[]
     stream: boolean
+    toolChoice: import('./contracts').MetroraAgentToolChoice
     continuation?: MetroraAgentContinuation
   }) => Record<string, unknown>
   /** One bounded no-Tool provider call for grounded finalization recovery. */
@@ -153,6 +154,7 @@ function isModelRuntimeFailure(diagnostics: readonly string[]): boolean {
     'step_limit',
     'tool_round_limit',
     'tool_limit',
+    'required_tool_not_called',
   ].includes(diagnostic))
   return modelFailure
 }
@@ -187,20 +189,23 @@ export async function runAdvisorRuntimeAgentLoop(options: AdvisorAgentLoopOption
   if (options.signal?.aborted) throw new DOMException('Advisor request cancelled', 'AbortError')
   const definitions = toolDefinitions(input)
   const nativeToolCalls = transport.nativeToolCalls
-  const requests = requiredRequests(input, definitions)
+  const { fallbackPlan: streamPlan, guard: streamGuard } = runtimeGuardPlan(input)
+  const isFactual = factualTurn(input)
+  const readOnlyTurn = isFactual && streamGuard.authorization === 'read-only'
+  const modelDefinitions = readOnlyTurn ? definitions : []
+  const requests = requiredRequests(input, modelDefinitions)
   const seededEvidence = [...(input.requiredEvidence ?? [])]
   // A controller-first baseline read is already complete (or truthfully
   // unavailable). Do not replay it as a fabricated provider-native tool call;
   // the model sees the bounded canonical evidence directly and may request
   // only an additional real Tool through the loop.
-  const required = seededEvidence.length ? [] : requiredCalls(requests)
+  const required = seededEvidence.length || !readOnlyTurn ? [] : requiredCalls(requests)
   const ledger = normalizedPromptLedger(input, nativeToolCalls, seededEvidence)
   const conformance = { reported: false }
   const active = { requestId: null as string | null }
   const seenRounds = new Set<number>()
   const inputRequiredReady = seededEvidence.length > 0 && evidenceUsable(seededEvidence)
-  const isFactual = factualTurn(input)
-  const { fallbackPlan: streamPlan, guard: streamGuard } = runtimeGuardPlan(input)
+  const requiresReadBeforeAnswer = Boolean(input.requiresReadBeforeAnswer && readOnlyTurn && modelDefinitions.length && !inputRequiredReady)
   const streamResolved = resolveAdvisorQuestion(input.question, input.evidence.scope, input.conversation, input.taskContext)
   const streamTurn = Boolean(input.onDelta)
     && !isFactual
@@ -214,9 +219,10 @@ export async function runAdvisorRuntimeAgentLoop(options: AdvisorAgentLoopOption
     // Keep the logical definitions available to the structured fallback. The
     // adapter still suppresses native wire Tools when the provider lacks
     // native Tool calling; the final loop step replaces this list with [].
-    tools: definitions,
+    tools: modelDefinitions,
     requiredToolCalls: required,
-    requiredEvidenceReady: required.length === 0 || inputRequiredReady,
+    requiredEvidenceReady: inputRequiredReady,
+    requiresReadBeforeAnswer,
     validateToolCall: (call, suppliedTools) => {
       const stepDefinitions = suppliedTools as readonly AdvisorToolDefinition[]
       try {
@@ -235,7 +241,12 @@ export async function runAdvisorRuntimeAgentLoop(options: AdvisorAgentLoopOption
       const messages = context.phase === 'synthesize'
         ? [{ role: 'system' as const, content: TERMINAL_SYNTHESIS_INSTRUCTION }, ...context.ledger]
         : context.ledger
-      const payload = transport.buildPayload({ model: options.model, messages, tools: nativeToolCalls ? stepDefinitions : [], stream: streamTurn, ...(context.continuation ? { continuation: context.continuation } : {}) })
+      // A structured-fallback route has no provider-native tool schema. Keep
+      // the semantic required state in the shared loop, but lower the wire
+      // request to `none` instead of claiming native required selection with
+      // an empty tool list.
+      const wireToolChoice = nativeToolCalls ? context.toolChoice : 'none'
+      const payload = transport.buildPayload({ model: options.model, messages, tools: nativeToolCalls ? stepDefinitions : [], stream: streamTurn, toolChoice: wireToolChoice, ...(context.continuation ? { continuation: context.continuation } : {}) })
       try {
         const response = await transport.complete(id, payload, context.signal)
         if (context.signal.aborted) throw new DOMException('Metrora model step cancelled', 'AbortError')

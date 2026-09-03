@@ -171,6 +171,17 @@ function appendText(current: string, value: unknown): string {
   return next
 }
 
+function textOnlyToolChoiceViolation(error: { content?: unknown }, provider: AdvisorHostedProviderId, model: string, streamed: boolean): AdvisorHostedAiSdkStep | null {
+  if (!Array.isArray(error.content)) return null
+  let text = ''
+  for (const part of error.content) {
+    if (isRecord(part) && part.type === 'text') text = appendText(text, part.text)
+  }
+  return text
+    ? { provider, model, message: { content: text, tool_calls: [] }, usage: null, streamed }
+    : null
+}
+
 function continuationPayloadFromResponse(
   provider: AdvisorHostedProviderId,
   model: string,
@@ -249,7 +260,7 @@ export async function runOpenAiCompatibleStep(options: {
   // The Electron main bundle is intentionally CommonJS. Load the ESM-only AI
   // SDK packages at the adapter boundary so the existing main/preload module
   // graph does not require a broad application-wide ESM migration.
-  const [{ generateText, jsonSchema, streamText }, { createOpenAICompatible }] = await Promise.all([
+  const [{ generateText, jsonSchema, streamText, ToolChoiceViolationError }, { createOpenAICompatible }] = await Promise.all([
     import('ai'),
     import('@ai-sdk/openai-compatible'),
   ])
@@ -260,6 +271,7 @@ export async function runOpenAiCompatibleStep(options: {
     model,
     messages,
     tools: aiTools(definitions, jsonSchema as (schema: AnyRecord) => unknown),
+    toolChoice: request.toolChoice ?? 'auto',
     allowSystemInMessages: true,
     maxRetries: 0,
     abortSignal: signal,
@@ -336,6 +348,10 @@ export async function runOpenAiCompatibleStep(options: {
     emit({ requestId, provider, model: request.model, kind: 'completed', streamed: request.stream === true, usage: resultUsage, toolCalls: calls })
     return value
   } catch (error) {
+    if (ToolChoiceViolationError.isInstance(error)) {
+      const recovered = textOnlyToolChoiceViolation(error, provider, request.model, request.stream === true)
+      if (recovered) return recovered
+    }
     mapError(error, signal)
   }
 }
@@ -368,7 +384,7 @@ export async function runOpenAiResponsesStep(options: {
   }
   // @ai-sdk/openai is ESM-only. Keep this import at the Electron adapter
   // boundary so the CommonJS main bundle does not require a broad migration.
-  const [{ generateText, jsonSchema, streamText }, { createOpenAI }] = await Promise.all([
+  const [{ generateText, jsonSchema, streamText, ToolChoiceViolationError }, { createOpenAI }] = await Promise.all([
     import('ai'),
     import('@ai-sdk/openai'),
   ])
@@ -379,6 +395,7 @@ export async function runOpenAiResponsesStep(options: {
     model,
     messages,
     tools: aiTools(definitions, jsonSchema as (schema: AnyRecord) => unknown),
+    toolChoice: request.toolChoice ?? 'auto',
     allowSystemInMessages: true,
     maxRetries: 0,
     abortSignal: signal,
@@ -455,6 +472,10 @@ export async function runOpenAiResponsesStep(options: {
     emit({ requestId, provider, model: request.model, kind: 'completed', streamed: request.stream === true, usage: resultUsage, toolCalls: calls })
     return value
   } catch (error) {
+    if (ToolChoiceViolationError.isInstance(error)) {
+      const recovered = textOnlyToolChoiceViolation(error, provider, request.model, request.stream === true)
+      if (recovered) return recovered
+    }
     mapError(error, signal)
   }
 }

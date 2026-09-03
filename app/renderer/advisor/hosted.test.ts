@@ -74,6 +74,7 @@ describe('Hosted Advisor renderer runtime', () => {
 
     expect(requests).toHaveLength(expectedCalls)
     expect(requests.map(request => request.tools)).toEqual(Array.from({ length: expectedCalls }, () => []))
+    expect(requests.map(request => request.toolChoice)).toEqual(Array.from({ length: expectedCalls }, () => 'none'))
     expect(fixture.reads.overviews).toHaveLength(0)
     expect(answer.plan?.turnKind).toBe(expectedTurnKind)
     expect(answer.evidence).toEqual([])
@@ -110,6 +111,7 @@ describe('Hosted Advisor renderer runtime', () => {
     const payload = requests[0]!
     const messages = (payload.messages as Array<{ role: string; content: string }>).slice(0, 2)
     expect(payload.tools).toHaveLength(1)
+    expect(payload.toolChoice).toBe('auto')
     expect(payload.model).toBe('gpt-test')
     expect(payload.stream).toBe(false)
     expect(payload.consent).toBe(true)
@@ -118,6 +120,7 @@ describe('Hosted Advisor renderer runtime', () => {
     expect(messages.some(message => message.content.includes('measuredCostUSD'))).toBe(false)
     const finalPayload = requests[1]!
     expect(finalPayload.tools).toHaveLength(1)
+    expect(finalPayload.toolChoice).toBe('auto')
     expect(finalPayload.model).toBe('gpt-test')
     expect(finalPayload.stream).toBe(false)
     expect(finalPayload.harnessConformance).toBe(true)
@@ -159,8 +162,8 @@ describe('Hosted Advisor renderer runtime', () => {
     const answer = await new HostedAdvisorRuntime({ provider, model: provider + '-model', consent: true, transport }).generate({
       question: 'What changed in spend?', evidence,
     })
-    expect(requests).toHaveLength(3)
-    expect(requests[2]?.tools).toEqual([])
+    expect(requests).toHaveLength(2)
+    expect(requests[1]?.tools).toEqual([])
     expect(answer.conclusion).toContain('could not be safely finalized')
     expect(answer.conclusion).not.toContain(narrative)
     expect(answer.conclusion).not.toContain('Metrora measured')
@@ -380,6 +383,7 @@ describe('Hosted Advisor renderer runtime', () => {
       executeTool: async () => ({ content: '{"bounded":true}', evidence }),
     })
     expect(requests[0]?.tools).toEqual([])
+    expect(requests[0]?.toolChoice).toBe('none')
     expect(requests[0]?.message).toBeUndefined()
     expect(answer.runtime).toMatchObject({ id: 'hosted-openrouter', mode: 'hosted-byok' })
   })

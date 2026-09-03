@@ -211,9 +211,14 @@ export function createAdvisorKernel(source: AdvisorDataSource, runtime: AdvisorM
         const evidenceForModel = modelEvidenceItems.length
           ? mergeEvidence(modelEvidenceItems, modelEvidenceItems[0]!)
           : modelEvidence
+        const requiresReadBeforeAnswer = plan.plan.turnKind === 'investigate'
+          && modelGuard.authorization === 'read-only'
+          && modelToolDefinitions.length > 0
+          && !hasUsableEvidence(modelEvidenceItems)
         const answer = await runtime.generate({
           question,
           evidence: attachPlan(evidenceForModel, plan),
+          requiresReadBeforeAnswer,
           ...(requiresCanonicalReads ? { requiredEvidence: modelEvidenceItems } : {}),
           requiredToolRequests,
           taskContext: turnTaskContext,

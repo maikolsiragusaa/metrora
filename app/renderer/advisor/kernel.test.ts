@@ -40,6 +40,7 @@ describe('Advisor model planning boundary', () => {
     expect(inputs[0]?.evidence).toMatchObject({ intent: 'spend-change', refs: [expect.objectContaining({ id: 'overview.current' })], coverage: { level: 'high' } })
     expect(inputs[0]?.requiredEvidence).toEqual([expect.objectContaining({ intent: 'spend-change', refs: [expect.objectContaining({ id: 'overview.current' })] })])
     expect(inputs[0]?.requiredToolRequests).toEqual([{ tool: 'get_spend_snapshot', arguments: {} }])
+    expect(inputs[0]?.requiresReadBeforeAnswer).toBe(false)
     expect(inputs[0]?.tools?.map(tool => tool.function.name)).toEqual(expect.arrayContaining(['get_spend_snapshot', 'get_project_drivers', 'get_session_highlights']))
     expect(inputs[0]?.guard?.intent).toBe('unknown')
     expect(inputs[0]?.plan?.questionFamily).toBe('spend')
@@ -178,6 +179,46 @@ describe('Advisor model planning boundary', () => {
     expect(inputs[0]?.tools?.map(tool => tool.function.name)).toEqual(expect.arrayContaining(['get_spend_snapshot', 'get_project_drivers']))
     expect(inputs[0]?.tools?.map(tool => tool.function.name)).not.toContain('get_coverage_report')
     expect(inputs[0]?.tools?.length).toBeLessThanOrEqual(7)
+    expect(inputs[0]?.requiresReadBeforeAnswer).toBe(true)
+  })
+
+  it('requires the physical model/project investigation to make a real first Tool call', async () => {
+    const fixture = createAdvisorConformanceFixture()
+    const payloads: Array<Record<string, unknown>> = []
+    let calls = 0
+    const runtime = new OllamaAdvisorRuntime({
+      model: 'physical-investigation-model',
+      transport: {
+        probe: async () => ({ available: true, models: ['physical-investigation-model'], detail: 'ready' }),
+        cancel: async () => true,
+        onDelta: () => () => {},
+        chat: async (_requestId, payload) => {
+          payloads.push(payload)
+          calls += 1
+          return calls === 1
+            ? { streamed: false, message: { content: '', tool_calls: [{ id: 'models-read', function: { name: 'get_model_efficiency', arguments: '{}' } }] } }
+            : { streamed: false, message: { content: 'I checked the bounded model and project evidence; the visible concentration merits attention.' } }
+        },
+      },
+    })
+    const answer = await createAdvisorKernel(fixture.source, runtime).investigate({
+      question: 'Approfondisci: quali modelli e progetti stanno contribuendo di più e cosa merita attenzione?',
+      scope: fixture.scope,
+    })
+
+    expect(payloads).toHaveLength(2)
+    expect(payloads[0]?.toolChoice).toBe('required')
+    expect(payloads[0]?.tools).toEqual(expect.arrayContaining([
+      expect.objectContaining({ function: expect.objectContaining({ name: 'get_model_efficiency' }) }),
+      expect.objectContaining({ function: expect.objectContaining({ name: 'get_project_drivers' }) }),
+    ]))
+    expect(payloads[0]?.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'system', content: expect.stringContaining('already authorized') }),
+      expect.objectContaining({ role: 'system', content: expect.stringContaining('do not ask the user for permission') }),
+    ]))
+    expect(payloads[1]?.toolChoice).toBe('auto')
+    expect((payloads[1]?.messages as Array<Record<string, unknown>>).some(message => message.role === 'tool')).toBe(true)
+    expect(answer.generatedByModel).toBe(true)
   })
 
   it('keeps the coverage Tool available for an explicit evidence question', async () => {
@@ -196,6 +237,7 @@ describe('Advisor model planning boundary', () => {
     expect(inputs[0]?.evidence).toMatchObject({ intent: 'social', coverage: { level: 'high', label: 'Conversation' }, refs: [] })
     expect(inputs[0]?.tools).toBeUndefined()
     expect(inputs[0]?.toolContract).toBeUndefined()
+    expect(inputs[0]?.requiresReadBeforeAnswer).toBe(false)
   })
 
   it('lets the model request one bounded follow-up Tool after the controller baseline read', async () => {

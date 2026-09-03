@@ -1,4 +1,5 @@
 import { emitMetroraAgentEvent, safeAgentEventText } from './events'
+import { resolveMetroraAgentToolChoice } from './contracts'
 import type {
   MetroraAgentLoopBounds,
   MetroraAgentLoopEvent,
@@ -14,6 +15,7 @@ import type {
 
 const DEFAULT_TURN_ID = 'metrora-turn'
 const CANCELLED_MESSAGE = 'Metrora agent turn cancelled.'
+const REQUIRED_TOOL_CORRECTION = 'A canonical read is required for this investigation. Use one of the supplied read-only Metrora Tools now; do not ask the user for permission.'
 
 function bytes(value: string): number {
   return new TextEncoder().encode(value).byteLength
@@ -146,8 +148,10 @@ export class MetroraAgentLoop {
     const evidence: unknown[] = []
     const required = (options.requiredToolCalls ?? []).map(cloneCall)
     const requiredState = new Map(required.map(call => [this.callKey(call), 'pending' as 'pending' | 'satisfied' | 'attempted']))
-    let requiredReady = options.requiredEvidenceReady ?? required.length === 0
-    let baselineAttempted = required.length === 0
+    const requiresReadBeforeAnswer = options.requiresReadBeforeAnswer ?? (required.length > 0 && options.requiredEvidenceReady !== true)
+    let requiredReady = options.requiredEvidenceReady ?? (!requiresReadBeforeAnswer && required.length === 0)
+    let toolResultObserved = false
+    let requiredCorrectionRetries = 0
     let modelSteps = 0
     let toolCalls = 0
     let toolRounds = 0
@@ -185,6 +189,7 @@ export class MetroraAgentLoop {
         diagnostics.push(validation.diagnostic)
         emit('tool-unavailable', { step, tool: safeName, callId: call.id, detail: validation.diagnostic })
         append({ role: 'tool', content: errorContent(), toolCallId: call.id, toolName: safeName })
+        toolResultObserved = true
         this.markRequired(call, requiredState, false)
         return
       }
@@ -198,6 +203,7 @@ export class MetroraAgentLoop {
         if (resultEvidenceUsable(raw)) this.markRequired(validCall, requiredState, true)
         else this.markRequired(validCall, requiredState, false)
         append({ role: 'tool', content: raw.content, toolCallId: validCall.id, toolName: safeName })
+        toolResultObserved = true
         emit(status === 'completed' ? 'tool-completed' : 'tool-unavailable', { step, tool: safeName, callId: validCall.id })
       } catch (error) {
         if (isAbortLike(error) || controller.signal.aborted) throw error
@@ -205,10 +211,11 @@ export class MetroraAgentLoop {
         diagnostics.push(diagnostic)
         this.markRequired(validCall, requiredState, false)
         append({ role: 'tool', content: errorContent(), toolCallId: validCall.id, toolName: safeName })
+        toolResultObserved = true
         emit('tool-failed', { step, tool: safeName, callId: validCall.id, detail: diagnostic })
       }
     }
-    const executeCalls = async (calls: readonly MetroraAgentToolCall[], step: number, validationTools: readonly unknown[], appendAssistantToolCall = false): Promise<boolean> => {
+    const executeCalls = async (calls: readonly MetroraAgentToolCall[], step: number, validationTools: readonly unknown[]): Promise<boolean> => {
       if (toolRounds >= bounds.maxToolRounds) {
         diagnostics.push('tool_round_limit')
         return false
@@ -219,14 +226,12 @@ export class MetroraAgentLoop {
         diagnostics.push('tool_limit')
         return false
       }
-      if (appendAssistantToolCall) append({ role: 'assistant', content: '', toolCalls: accepted })
       toolCalls += accepted.length
       toolRounds += 1
       for (const call of accepted) await executeOne(call, step, validationTools)
       if (accepted.length < calls.length) diagnostics.push('tool_limit')
       return accepted.length === calls.length
     }
-    const baselineCalls = () => required.filter(call => requiredState.get(this.callKey(call)) === 'pending')
     const finish = (status: MetroraAgentLoopResult['status']): MetroraAgentLoopResult => ({
       status,
       finalText,
@@ -248,13 +253,21 @@ export class MetroraAgentLoop {
           return finish('limit')
         }
         modelSteps += 1
-        const synthesisOnly = modelSteps === bounds.maxSteps
+        const readPending = requiresReadBeforeAnswer && !requiredReady && !toolResultObserved
+        const synthesisOnly = modelSteps === bounds.maxSteps && !readPending
         const stepTools = synthesisOnly ? [] : options.tools
         const phase = synthesisOnly ? 'synthesize' as const : 'investigate' as const
+        const toolChoice = resolveMetroraAgentToolChoice({
+          tools: stepTools,
+          requiresReadBeforeAnswer,
+          evidenceReady: requiredReady,
+          toolResultObserved,
+          terminal: synthesisOnly,
+        })
         emit('model-started', { step: modelSteps, detail: phase })
         let step: MetroraAgentModelStep
         try {
-          step = await raceAbort(Promise.resolve().then(() => options.complete({ ledger: ledger.map(cloneMessage), tools: stepTools, step: modelSteps, phase, signal: controller.signal, ...(continuation ? { continuation: cloneContinuation(continuation) } : {}) })), controller.signal)
+          step = await raceAbort(Promise.resolve().then(() => options.complete({ ledger: ledger.map(cloneMessage), tools: stepTools, toolChoice, requiresReadBeforeAnswer, step: modelSteps, phase, signal: controller.signal, ...(continuation ? { continuation: cloneContinuation(continuation) } : {}) })), controller.signal)
         } catch (error) {
           if (isAbortLike(error) || controller.signal.aborted) throw error
           const diagnostic = error && typeof error === 'object' && 'diagnostic' in error && typeof (error as { diagnostic?: unknown }).diagnostic === 'string'
@@ -272,6 +285,16 @@ export class MetroraAgentLoop {
         emit('model-completed', { step: modelSteps, detail: step.kind })
         streamed ||= step.streamed === true
         continuation = cloneContinuation(step.continuation)
+        if (step.kind === 'final-text' && readPending) {
+          if (requiredCorrectionRetries === 0 && modelSteps < bounds.maxSteps && ledger.length < bounds.maxLedgerMessages) {
+            requiredCorrectionRetries += 1
+            append({ role: 'system', content: REQUIRED_TOOL_CORRECTION })
+            continue
+          }
+          diagnostics.push('required_tool_not_called')
+          emit('turn-failed', { step: modelSteps, detail: 'required_tool_not_called' })
+          return finish('failed')
+        }
         append({ role: 'assistant', content: step.content, ...(step.calls.length ? { toolCalls: step.calls } : {}) })
         if (step.kind === 'tool-calls') {
           if (synthesisOnly) {
@@ -296,17 +319,6 @@ export class MetroraAgentLoop {
           continue
         }
         finalText = step.content
-        if (!requiredReady && !baselineAttempted && baselineCalls().length) {
-          const calls = baselineCalls()
-          baselineAttempted = true
-          const allAccepted = await executeCalls(calls, modelSteps, options.tools, true)
-          requiredReady = this.requiredReady(requiredState)
-          if (!allAccepted) {
-            emit('turn-failed', { step: modelSteps, detail: 'tool_limit' })
-            return finish('limit')
-          }
-          continue
-        }
         emit('turn-completed', { step: modelSteps })
         return finish('completed')
       }

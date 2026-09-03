@@ -122,7 +122,7 @@ describe('Advisor independent planning and synthesis phases', () => {
       tools: [tool, { type: 'function', function: { name: 'get_quota_snapshot', description: 'quota', parameters: { type: 'object' } } }],
       executeTool: async name => ({ content: JSON.stringify({ tool: name }), evidence: buildQuotaEvidence('What changed in spend?', scope, fixture.overview, fixture.quota) }),
     })
-    expect(payloads).toHaveLength(3)
+    expect(payloads).toHaveLength(2)
     expect(answer.conclusion).toContain('quota remaining')
   })
 

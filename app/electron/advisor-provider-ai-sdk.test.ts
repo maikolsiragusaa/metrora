@@ -96,7 +96,6 @@ describe('AI SDK provider substrate', () => {
       consent: true,
       harnessConformance: true,
     }) as { ok: boolean; value: any }
-
     expect(result).toMatchObject({ ok: true, value: { model: 'muse-spark-1.2-contributor-free', message: { content: 'Metrora measured the requested facts and I can explain them.' } } })
     expect(requests[0]).toMatchObject({ model: 'muse-spark-1.2-contributor-free' })
     expect(requests[0]).toHaveProperty('input')
@@ -123,9 +122,10 @@ describe('AI SDK provider substrate', () => {
     const hosted = handlers(fetchImpl)
     const first = await hosted['metrora:advisorHostedChat']!('muse-tool-first', {
       provider: 'opencode-zen', model: 'muse-spark-1.2-contributor-free',
-      messages: [{ role: 'user', content: 'Check usage.' }], tools: [tool], stream: false, consent: true, harnessConformance: true,
+      messages: [{ role: 'user', content: 'Check usage.' }], tools: [tool], toolChoice: 'required', stream: false, consent: true, harnessConformance: true,
     }) as { ok: boolean; value: any }
     expect(first).toMatchObject({ ok: true, value: { message: { tool_calls: [{ id: 'muse-call-1', name: 'get_spend_snapshot', arguments: '{}' }] }, continuation: { protocol: 'openai-responses', adapter: 'ai-sdk-openai-responses-v1' } } })
+    expect(requests[0]?.tool_choice).toBe('required')
     expect(JSON.stringify(first)).not.toContain('private reasoning')
     expect(JSON.stringify(first)).not.toContain('encrypted-reasoning')
 
@@ -171,6 +171,7 @@ describe('AI SDK provider substrate', () => {
       model: 'mimo-v2.5-free',
       messages: [{ role: 'user', content: 'Check usage.' }],
       tools: [tool],
+      toolChoice: 'required',
       stream: false,
       consent: true,
       harnessConformance: true,

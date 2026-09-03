@@ -133,6 +133,7 @@ function validatePayload(value: unknown): asserts value is ChatPayload {
   if (!Array.isArray(value.messages) || !Array.isArray(value.tools) || value.messages.length > 32 || value.tools.length > 12) throw new Error('Local runtime request exceeded the safety limit.')
   if (typeof value.stream !== 'boolean') throw new Error('Local runtime stream flag is invalid.')
   if (value.messageMode !== undefined && value.messageMode !== 'native' && value.messageMode !== 'flattened') throw new Error('Local runtime message mode is invalid.')
+  if (value.toolChoice !== undefined && value.toolChoice !== 'auto' && value.toolChoice !== 'required' && value.toolChoice !== 'none') throw new Error('Local runtime tool choice is invalid.')
   for (const message of value.messages) {
     if (!isRecord(message) || typeof message.role !== 'string' || !['system', 'user', 'assistant', 'tool'].includes(message.role)) throw new Error('Local runtime request contains a malformed message.')
     if (typeof message.content !== 'string') throw new Error('Local runtime request contains malformed message content.')
@@ -211,7 +212,7 @@ async function streamResponse(response: Response, onDelta?: (text: string) => vo
 export async function chatLMStudioMain(fetchImpl: FetchLike, payload: ChatPayload, parent?: AbortSignal, onDelta?: (text: string) => void): Promise<ChatResult> {
   if (!fetchImpl) throw new Error('Node fetch is unavailable.')
   validatePayload(payload)
-  const body = { model: payload.model, messages: openAIMessageList(payload.messages, payload.messageMode ?? 'native'), ...(payload.tools.length ? { tools: payload.tools } : {}), stream: payload.stream }
+  const body = { model: payload.model, messages: openAIMessageList(payload.messages, payload.messageMode ?? 'native'), ...(payload.tools.length ? { tools: payload.tools } : {}), ...(payload.toolChoice ? { tool_choice: payload.toolChoice } : {}), stream: payload.stream }
   const encoded = JSON.stringify(body)
   if (byteLength(encoded) > MAX_RESPONSE_BYTES) throw new Error('Local runtime request exceeded the safety limit.')
   const timed = timeoutSignal(parent, CHAT_TIMEOUT_MS)
