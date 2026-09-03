@@ -10,8 +10,8 @@ import { initializeDesktopShareRuntime, stopDesktopShareRuntime } from './share-
 import { Telemetry } from './telemetry'
 import { createUpdateChecker, type UpdateChecker, type UpdateStatus } from './updates'
 import { createBridgeHandlers, NO_UPDATE_STATUS } from './bridge-handlers'
-import { AdvisorCredentialStore } from './advisor-credentials'
-import { createAdvisorHostedHandlers, type AdvisorHostedEvent } from './advisor-provider'
+import { harnessProviderRoute, hostedProviderRoute } from './harness-runtime-types.js'
+import type { HarnessHostedProvider, HarnessReasoningEffort, HarnessRuntimeId, MetroraHarnessRuntimeEvent } from './harness-runtime-types.js'
 import { createHarnessActHandlers, type HarnessActionEvent } from './act-bridge'
 
 export { createApplicationMenuTemplate } from './menu'
@@ -85,9 +85,6 @@ export function createBeforeQuitHandler(deps: BeforeQuitDeps): (event: BeforeQui
 export const PROGRESS_CHANNEL = 'metrora:progress'
 // IPC channel pushing update-availability status to open windows (launch + 24h).
 export const UPDATE_CHANNEL = 'metrora:update'
-// Local conversational text only. Planning JSON, tool output, provider text,
-// and evidence payloads never use this channel.
-export const ADVISOR_DELTA_CHANNEL = 'metrora:advisorDelta'
 // Renderer-safe lifecycle projection for the single accepted Harness action.
 export const HARNESS_ACTION_EVENT_CHANNEL = 'metrora:harnessActionEvent'
 // Renderer-safe projection of DSH lifecycle state; raw event names, arguments,
@@ -100,25 +97,6 @@ function broadcastProgress(event: unknown): void {
     win.webContents.send(PROGRESS_CHANNEL, event)
   }
 }
-function projectAdvisorDelta(event: { requestId: string; text: string }): { requestId: string; text: string } {
-  const requestId = event.requestId.replace(/[^A-Za-z0-9._:-]/gu, '').slice(0, 128)
-  const text = event.text
-    .replace(/[\u0000-\u001f\u007f]/gu, ' ')
-    .replace(/(?:\b[A-Za-z]:[\\/][^\s"'<>|]+|\b(?:file|vscode-file):\/\/[^\s"'<>|]+)/giu, '[redacted]')
-    .replace(/\b(?:api[-_ ]?key|access[-_ ]?token|auth(?:entication)?[-_ ]?token|client[-_ ]?secret|private[-_ ]?key|password|credential|token)\b\s*(?:=|:)\s*[^\s,;]+/giu, '[redacted]')
-    .replace(/\bbearer\s+[^\s,;]+/giu, '[redacted]')
-    .replace(/(?<![\p{L}\p{N}])(?:raw[_ -]?(?:prompt|response|source)|source[_ -]?(?:code|snippet|content))(?![\p{L}\p{N}])/giu, '[redacted]')
-    .slice(0, 4_000)
-  return { requestId, text }
-}
-function broadcastAdvisorDelta(event: { requestId: string; text: string }): void {
-  const projected = projectAdvisorDelta(event)
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (win.isDestroyed()) continue
-    win.webContents.send(ADVISOR_DELTA_CHANNEL, projected)
-  }
-}
-
 function broadcastHarnessActionEvent(event: HarnessActionEvent): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue
@@ -126,13 +104,7 @@ function broadcastHarnessActionEvent(event: HarnessActionEvent): void {
   }
 }
 
-type HarnessRuntimeEvent = {
-  conversationId: string
-  state: 'thinking' | 'reading' | 'searching' | 'running-agent' | 'waiting-approval' | 'preparing' | 'done' | 'cancelled' | 'failed'
-  requestId?: string
-}
-
-function broadcastHarnessRuntimeEvent(event: HarnessRuntimeEvent): void {
+function broadcastHarnessRuntimeEvent(event: MetroraHarnessRuntimeEvent): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue
     win.webContents.send(HARNESS_RUNTIME_EVENT_CHANNEL, event)
@@ -143,26 +115,6 @@ function broadcastUpdateStatus(status: UpdateStatus): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue
     win.webContents.send(UPDATE_CHANNEL, status)
-  }
-}
-
-export const ADVISOR_HOSTED_EVENT_CHANNEL = 'metrora:advisorHostedEvent'
-type AdvisorHostedRendererEvent = Pick<AdvisorHostedEvent, 'requestId' | 'provider' | 'model' | 'kind' | 'usage' | 'streamed' | 'code'>
-export function projectAdvisorHostedEvent(event: AdvisorHostedEvent): AdvisorHostedRendererEvent {
-  return {
-    requestId: event.requestId.slice(0, 120),
-    provider: event.provider,
-    model: event.model.replace(/[^A-Za-z0-9._:/-]/gu, '').slice(0, 160),
-    kind: event.kind,
-    ...(event.usage ? { usage: { inputTokens: event.usage.inputTokens, outputTokens: event.usage.outputTokens, totalTokens: event.usage.totalTokens } } : {}),
-    ...(event.streamed !== undefined ? { streamed: event.streamed } : {}),
-    ...(event.code ? { code: event.code.replace(/[^A-Za-z0-9._:-]/gu, '').slice(0, 80) } : {}),
-  }
-}
-function broadcastAdvisorHostedEvent(event: AdvisorHostedEvent): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (win.isDestroyed()) continue
-    win.webContents.send(ADVISOR_HOSTED_EVENT_CHANNEL, projectAdvisorHostedEvent(event))
   }
 }
 
@@ -197,8 +149,22 @@ function harnessScopeArgs(scope: { period: string; range: { from: string; to: st
 }
 
 async function registerHandlers(): Promise<void> {
-  const { MetroraHarnessHost } = await import('./harness-runtime.mjs')
-  const { loadMetroraHarnessToolRegistry } = await import('./canonical-metrora-tools.mjs')
+  const [runtimeModule, toolsModule, credentialModule, profileModule, workspaceModule, localModule, hostedModule] = await Promise.all([
+    import('./harness-runtime.mjs'),
+    import('./canonical-metrora-tools.mjs'),
+    import('./harness-credentials.mjs'),
+    import('./harness-profile.mjs'),
+    import('./harness-workspace.mjs'),
+    import('./local-runtime.mjs'),
+    import('./harness-hosted-adapter.mjs'),
+  ])
+  const { MetroraHarnessHost } = runtimeModule
+  const { loadMetroraHarnessToolRegistry } = toolsModule
+  const { HarnessCredentialStore } = credentialModule
+  const { HarnessRuntimeProfileStore } = profileModule
+  const { canonicalizeWorkspaceRoot, HarnessWorkspaceAuthority, HarnessWorkspaceStateStore } = workspaceModule
+  const { llamaServerEndpointFromPort, probeLMStudioMain, probeLlamaServerMain, probeOllamaMain } = localModule
+  const { MetroraHostedLlmAdapter, probeHostedProvider } = hostedModule
   const canonicalToolsPath = app.isPackaged
     ? path.join(process.resourcesPath, 'cli.asar', 'dist', 'metrora-tools.js')
     : path.join(app.getAppPath(), '..', 'dist', 'metrora-tools.js')
@@ -213,21 +179,133 @@ async function registerHandlers(): Promise<void> {
     // invokes provider endpoints itself.
     getCapacity: () => getQuota(),
   })
-  const advisorCredentials = new AdvisorCredentialStore({
+  const harnessCredentials = new HarnessCredentialStore({
     userDataPath: app.getPath('userData'),
     platform: process.platform,
     safeStorage: {
       isAsyncEncryptionAvailable: async () => safeStorage.isEncryptionAvailable(),
       encryptStringAsync: plaintext => safeStorage.encryptStringAsync(plaintext),
       decryptStringAsync: ciphertext => safeStorage.decryptStringAsync(ciphertext),
-      getSelectedStorageBackend: () => safeStorage.getSelectedStorageBackend(),
     },
   })
-  const advisorHostedHandlers = createAdvisorHostedHandlers({
-    credentialStatus: provider => advisorCredentials.status(provider),
-    readCredential: provider => advisorCredentials.readSecret(provider),
-    emitEvent: broadcastAdvisorHostedEvent,
+  const harnessProfile = new HarnessRuntimeProfileStore(path.join(app.getPath('userData'), 'harness', 'profile'))
+  await harnessProfile.load()
+  const harnessWorkspace = new HarnessWorkspaceAuthority()
+  const harnessWorkspaceState = new HarnessWorkspaceStateStore(path.join(app.getPath('userData'), 'harness', 'workspace'))
+  await harnessWorkspaceState.recover(harnessWorkspace)
+  const harnessHostedAdapter = new MetroraHostedLlmAdapter({
+    readCredential: provider => harnessCredentials.readSecret(provider),
   })
+  const probeFlights = new Map<HarnessRuntimeId, AbortController>()
+  const hostedProbeFlights = new Map<HarnessHostedProvider, AbortController>()
+  const reasoningByRouteModel = new Map<string, readonly HarnessReasoningEffort[]>()
+  const reasoningKey = (route: string, model: string): string => `${route}\u0000${model}`
+  const clearReasoningRoute = (route: string): void => {
+    for (const key of reasoningByRouteModel.keys()) if (key.startsWith(`${route}\u0000`)) reasoningByRouteModel.delete(key)
+  }
+  const rememberReasoning = (route: string, rows: ReadonlyArray<{ modelId?: string; id?: string; reasoningEfforts?: HarnessReasoningEffort[] }>): void => {
+    clearReasoningRoute(route)
+    for (const row of rows) {
+      const model = row.modelId ?? row.id
+      if (model && row.reasoningEfforts?.length) reasoningByRouteModel.set(reasoningKey(route, model), Object.freeze([...row.reasoningEfforts]))
+    }
+  }
+  const harnessProviderHandlers: Record<string, (...args: any[]) => Promise<any>> = {
+    'metrora:harnessProbeLocal': async (runtime: unknown, requestedPort?: unknown) => {
+      if (runtime !== 'ollama' && runtime !== 'lmstudio' && runtime !== 'llama-server') return { ok: false, error: { kind: 'bad-args', message: 'Invalid local Harness runtime.' } }
+      const port = requestedPort === undefined ? harnessProfile.read().llamaServerPort : requestedPort
+      if (runtime === 'llama-server') {
+        if (typeof port !== 'number' || !Number.isSafeInteger(port) || port < 1 || port > 65_535) return { ok: false, error: { kind: 'bad-args', message: 'llama.cpp port must be between 1 and 65535.' } }
+        await harnessProfile.setPort(port)
+      }
+      const route = harnessProviderRoute(runtime as HarnessRuntimeId)
+      clearReasoningRoute(route)
+      probeFlights.get(runtime)?.abort()
+      const controller = new AbortController()
+      probeFlights.set(runtime, controller)
+      try {
+        const result = runtime === 'ollama'
+          ? await probeOllamaMain(fetch, controller.signal)
+          : runtime === 'lmstudio'
+            ? await probeLMStudioMain(fetch, controller.signal)
+            : await probeLlamaServerMain(fetch, controller.signal, llamaServerEndpointFromPort(port))
+        rememberReasoning(route, result.capabilities)
+        return { ok: true, value: result }
+      } catch (error) {
+        if (controller.signal.aborted) return { ok: false, error: { kind: 'cancelled', message: 'Local Harness discovery was cancelled.' } }
+        return { ok: false, error: { kind: 'unavailable', message: error instanceof Error ? error.message.slice(0, 240) : 'Local Harness discovery failed.' } }
+      } finally {
+        if (probeFlights.get(runtime) === controller) probeFlights.delete(runtime)
+      }
+    },
+    'metrora:harnessCancelProbeLocal': async (runtime: unknown) => {
+      if (runtime === 'ollama' || runtime === 'lmstudio' || runtime === 'llama-server') probeFlights.get(runtime)?.abort()
+      return { ok: true, value: true }
+    },
+    'metrora:harnessProbeHosted': async (provider: unknown) => {
+      if (provider !== 'openai' && provider !== 'anthropic' && provider !== 'gemini' && provider !== 'openrouter' && provider !== 'opencode-zen') return { ok: false, error: { kind: 'bad-args', message: 'Invalid hosted Harness provider.' } }
+      const selectedProvider = provider as HarnessHostedProvider
+      const route = hostedProviderRoute(selectedProvider)
+      hostedProbeFlights.get(selectedProvider)?.abort()
+      const controller = new AbortController()
+      hostedProbeFlights.set(selectedProvider, controller)
+      try {
+        const result = await probeHostedProvider(selectedProvider, value => harnessCredentials.readSecret(value), fetch, controller.signal)
+        rememberReasoning(route, result.models)
+        return { ok: true, value: result }
+      } catch (error) {
+        clearReasoningRoute(route)
+        if (controller.signal.aborted) return { ok: false, error: { kind: 'cancelled', message: 'Hosted Harness discovery was cancelled.' } }
+        throw error
+      } finally {
+        if (hostedProbeFlights.get(selectedProvider) === controller) hostedProbeFlights.delete(selectedProvider)
+      }
+    },
+  }
+  const harnessProfileHandlers: Record<string, (...args: any[]) => Promise<any>> = {
+    'metrora:harnessProfileGet': async () => ({ ok: true, value: harnessProfile.read() }),
+    'metrora:harnessProfileSetRuntime': async (runtime: unknown) => {
+      if (runtime !== 'hosted' && runtime !== 'ollama' && runtime !== 'lmstudio' && runtime !== 'llama-server') return { ok: false, error: { kind: 'bad-args', message: 'Invalid Harness runtime.' } }
+      return { ok: true, value: await harnessProfile.setRuntime(runtime) }
+    },
+    'metrora:harnessProfileSetPort': async (port: unknown) => {
+      if (typeof port !== 'number' || !Number.isSafeInteger(port) || port < 1 || port > 65_535) return { ok: false, error: { kind: 'bad-args', message: 'llama.cpp port must be between 1 and 65535.' } }
+      return { ok: true, value: await harnessProfile.setPort(port) }
+    },
+    'metrora:harnessProfileSetLocalModel': async (runtime: unknown, model: unknown) => {
+      if (runtime !== 'ollama' && runtime !== 'lmstudio' && runtime !== 'llama-server' || typeof model !== 'string') return { ok: false, error: { kind: 'bad-args', message: 'Invalid local Harness model selection.' } }
+      return { ok: true, value: await harnessProfile.setLocalModel(runtime as HarnessRuntimeId, model) }
+    },
+    'metrora:harnessProfileSetHostedModel': async (provider: unknown, model: unknown) => {
+      if (provider !== 'openai' && provider !== 'anthropic' && provider !== 'gemini' && provider !== 'openrouter' && provider !== 'opencode-zen' || typeof model !== 'string') return { ok: false, error: { kind: 'bad-args', message: 'Invalid hosted Harness model selection.' } }
+      return { ok: true, value: await harnessProfile.setHostedModel(provider as HarnessHostedProvider, model) }
+    },
+    'metrora:harnessProfileSetReasoning': async (runtime: unknown, provider: unknown, model: unknown, effort: unknown) => {
+      if (runtime !== 'hosted' && runtime !== 'ollama' && runtime !== 'lmstudio' && runtime !== 'llama-server' || provider !== null && provider !== undefined && provider !== 'openai' && provider !== 'anthropic' && provider !== 'gemini' && provider !== 'openrouter' && provider !== 'opencode-zen' || typeof model !== 'string' || effort !== 'min' && effort !== 'low' && effort !== 'medium' && effort !== 'high' && effort !== 'max') return { ok: false, error: { kind: 'bad-args', message: 'Invalid Harness reasoning selection.' } }
+      const exactProvider = runtime === 'hosted' ? provider as HarnessHostedProvider : null
+      return { ok: true, value: await harnessProfile.setReasoning(runtime as 'hosted' | HarnessRuntimeId, exactProvider, model, effort) }
+    },
+    'metrora:harnessProfileSetConsent': async (provider: unknown, state: unknown) => {
+      if (provider !== 'openai' && provider !== 'anthropic' && provider !== 'gemini' && provider !== 'openrouter' && provider !== 'opencode-zen' || state !== 'unknown' && state !== 'accepted' && state !== 'declined') return { ok: false, error: { kind: 'bad-args', message: 'Invalid hosted consent state.' } }
+      const current = harnessProfile.read()
+      return { ok: true, value: await harnessProfile.update({ hostedConsentByProvider: { ...current.hostedConsentByProvider, [provider as HarnessHostedProvider]: state } }) }
+    },
+  }
+  const harnessWorkspaceHandlers: Record<string, (...args: any[]) => Promise<any>> = {
+    'metrora:harnessWorkspaceGet': async () => ({ ok: true, value: harnessWorkspace.current() }),
+    'metrora:harnessWorkspaceOpen': async (root: unknown) => {
+      try {
+        const workspace = await harnessWorkspace.setRoot(root)
+        await harnessWorkspaceState.save(await canonicalizeWorkspaceRoot(root), workspace.displayName)
+        return { ok: true, value: workspace }
+      } catch (error) { return { ok: false, error: { kind: 'bad-args', message: error instanceof Error ? error.message : 'Workspace could not be opened.' } } }
+    },
+    'metrora:harnessWorkspaceClear': async () => {
+      harnessWorkspace.clear()
+      await harnessWorkspaceState.save(null)
+      return { ok: true, value: null }
+    },
+  }
   const harnessActHandlers = createHarnessActHandlers({
     isPackaged: app.isPackaged,
     resourcesPath: process.resourcesPath,
@@ -236,6 +314,10 @@ async function registerHandlers(): Promise<void> {
   })
   harnessHostInstance = new MetroraHarnessHost({
     sessionRoot: path.join(app.getPath('userData'), 'harness', 'sessions'),
+    profile: harnessProfile,
+    hostedAdapter: harnessHostedAdapter,
+    getWorkspaceRoot: () => harnessWorkspace.rootPath(),
+    getReasoningEfforts: (route, model) => reasoningByRouteModel.get(reasoningKey(route, model)),
     toolSource: {
       getOverview: async (scope, signal) => {
         throwIfHarnessAborted(signal)
@@ -271,22 +353,33 @@ async function registerHandlers(): Promise<void> {
     resolveMetroraPath,
     getQuota,
     emitProgress: broadcastProgress,
-    emitAdvisorDelta: broadcastAdvisorDelta,
     telemetry: telemetryInstance,
     getUpdateStatus: () => updateChecker ? updateChecker.getStatus() : Promise.resolve(NO_UPDATE_STATUS),
     share,
-    advisorCredentials,
-    advisorHostedHandlers,
+    harnessCredentials,
+    harnessProviderHandlers,
+    harnessProfileHandlers,
+    harnessWorkspaceHandlers,
     harnessActHandlers,
     harnessHandlers: harnessHostInstance.handlers(),
   })
   const trustedRendererIpcChannels = new Set([
-    'metrora:advisorHostedProbe',
-    'metrora:advisorHostedChat',
-    'metrora:advisorHostedCancel',
-    'metrora:advisorCredentialStatus',
-    'metrora:advisorCredentialSet',
-    'metrora:advisorCredentialClear',
+    'metrora:harnessProbeLocal',
+    'metrora:harnessCancelProbeLocal',
+    'metrora:harnessProbeHosted',
+    'metrora:harnessCredentialStatus',
+    'metrora:harnessCredentialSet',
+    'metrora:harnessCredentialClear',
+    'metrora:harnessProfileGet',
+    'metrora:harnessProfileSetRuntime',
+    'metrora:harnessProfileSetPort',
+    'metrora:harnessProfileSetLocalModel',
+    'metrora:harnessProfileSetHostedModel',
+    'metrora:harnessProfileSetReasoning',
+    'metrora:harnessProfileSetConsent',
+    'metrora:harnessWorkspaceGet',
+    'metrora:harnessWorkspaceOpen',
+    'metrora:harnessWorkspaceClear',
     'metrora:harnessProposeCoreCompatibility',
     'metrora:harnessApproveCoreCompatibility',
     'metrora:harnessCancelCoreCompatibility',
@@ -296,6 +389,9 @@ async function registerHandlers(): Promise<void> {
     'metrora:harnessCreateConversation',
     'metrora:harnessSendMessage',
     'metrora:harnessCancel',
+    'metrora:harnessApprove',
+    'metrora:harnessDeny',
+    'metrora:harnessCheckConformance',
     'metrora:runPerformanceBench',
     'metrora:cancelPerformanceBench',
     'metrora:chooseFile',

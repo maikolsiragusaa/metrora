@@ -225,7 +225,7 @@ export const PROVIDER_PARSE_VERSIONS: Record<string, string> = {
   // LOC deltas / interruptions / userModified / toolErrors, and session-level
   // title / prLinks / isSidechain. Forces one re-parse so cached sessions gain
   // the new optional fields.
-  claude: 'advisor-usage-v1-skills-rich-capture-v1-cross-provider-pr-v1-native-id-reconciliation-v1',
+  claude: 'external-escalation-usage-v2-skills-rich-capture-v1-cross-provider-pr-v1-native-id-reconciliation-v1',
   cline: 'worktree-project-grouping-v1-vscode-variants-v2-provider-zero-cost',
   codewhale: 'aggregate-session-v2-provider-provenance-pricing-evidence-v1',
   // Bump when the Codex parser changes attribution so unchanged, already-cached
@@ -592,7 +592,7 @@ export async function cleanupOrphanedTempFiles(): Promise<void> {
 
 // ── Hydration Lock ─────────────────────────────────────────────────────
 //
-// Advisory, cross-process coordination for the expensive cold hydration. When
+// Informational, cross-process coordination for the expensive cold hydration. When
 // two live processes (e.g. an old launchd menubar and the desktop app) both
 // cold-start against the same cache dir, without this they each parse full
 // history and race their writes. The first to arrive creates the lock and

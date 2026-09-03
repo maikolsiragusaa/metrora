@@ -22,9 +22,10 @@ import type {
   MetroraToolResultEnvelope,
 } from './types.js'
 
-// This is the stable wire identifier already used by the Advisor foundation.
-// The public product name can move to Harness without breaking old transports.
-export const METRORA_TOOL_CONTRACT_VERSION = 'advisor-tool-v1' as const
+// The canonical first-party factual Tool contract belongs to Metrora. Legacy
+// clients are translated only by the bounded migration reader in
+// src/compat/legacy-migration-identifiers.ts.
+export const METRORA_TOOL_CONTRACT_VERSION = 'metrora-factual-tool-v1' as const
 export const METRORA_TOOL_SCHEMA_VERSION = 1 as const
 export const METRORA_TOOL_ARGUMENT_MAX_BYTES = 8 * 1024
 export const METRORA_TOOL_OUTPUT_MAX_BYTES = 32 * 1024

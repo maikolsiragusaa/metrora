@@ -16,6 +16,7 @@ import {
 } from '../src/claude-native-reconciliation.js'
 import { computeEnvFingerprint, PROVIDER_PARSE_VERSIONS, type CachedCall } from '../src/session-cache.js'
 import type { JournalEntry } from '../src/types.js'
+import { legacyExternalEscalationDeduplicationKey } from '../src/compat/legacy-migration-identifiers.js'
 
 function makeCall(overrides: Partial<CachedCall> = {}): CachedCall {
   const timestamp = overrides.timestamp ?? '2026-04-03T13:30:36.680Z'
@@ -207,14 +208,14 @@ describe('R2 Claude native message identity reconciliation', () => {
     }))).toBe('native-authority')
   })
 
-  it('keeps the pre-migration deduplication fallback and excludes advisor calls', () => {
+  it('keeps the pre-migration deduplication fallback and excludes external escalation calls', () => {
     expect(getClaudeNativeIdentity(makeCall({
       nativeMessageId: undefined,
       deduplicationKey: 'legacy-native-key',
     }))).toBe('legacy-native-key')
     expect(getClaudeNativeIdentity(makeCall({
       nativeMessageId: undefined,
-      deduplicationKey: 'legacy:advisor:call',
+      deduplicationKey: legacyExternalEscalationDeduplicationKey('legacy', 0),
     }))).toBeUndefined()
   })
 

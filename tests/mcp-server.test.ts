@@ -158,7 +158,7 @@ describe('MCP V1 interoperability contract', () => {
       }
 
       const spendWire = JSON.stringify(calls.get('get_spend_snapshot'))
-      expect(spendWire).toContain('advisor-tool-v1')
+      expect(spendWire).toContain('metrora-factual-tool-v1')
       expect(spendWire).toContain('privacy')
       expect(spendWire).toContain('unavailable')
       expect(stderr()).not.toContain('C:\\Users\\')

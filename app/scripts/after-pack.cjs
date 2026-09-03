@@ -8,8 +8,43 @@
 // from resources/cli.asar; no loose node_modules tree is shipped.
 
 const { createPackage } = require('@electron/asar')
-const { existsSync, mkdirSync, rmSync, writeFileSync } = require('node:fs')
+const { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } = require('node:fs')
 const { join } = require('node:path')
+
+function pruneUnusedWindowsArchitectures(context) {
+  // The x64 node-pty build still carries the arm64 ConPTY payload in its npm
+  // package. electron-builder correctly omits that payload from the NSIS
+  // extraction, so remove it from the canonical unpacked payload first. This
+  // keeps the unpacked and installed inventories identical and avoids shipping
+  // an architecture that the selected Windows target cannot execute.
+  if (context.electronPlatformName !== 'win32' || context.arch !== 1) return
+
+  const nodePty = join(context.appOutDir, 'resources', 'app.asar.unpacked', 'node_modules', 'node-pty')
+  rmSync(join(nodePty, 'prebuilds', 'win32-arm64'), { recursive: true, force: true })
+
+  // Native rebuilds can leave compiler .tlog directories beside the runtime
+  // addon. They are not executable inputs and the NSIS target omits them, so
+  // keep them out of the canonical unpacked inventory as well.
+  const removeTlogDirectories = root => {
+    if (!existsSync(root)) return
+    for (const entry of readdirSync(root, { withFileTypes: true })) {
+      const path = join(root, entry.name)
+      if (entry.isDirectory() && entry.name.endsWith('.tlog')) {
+        rmSync(path, { recursive: true, force: true })
+      } else if (entry.isDirectory()) {
+        removeTlogDirectories(path)
+      }
+    }
+  }
+  removeTlogDirectories(nodePty)
+
+  const conptyRoot = join(nodePty, 'third_party', 'conpty')
+  if (!existsSync(conptyRoot)) return
+  for (const entry of readdirSync(conptyRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    rmSync(join(conptyRoot, entry.name, 'win10-arm64'), { recursive: true, force: true })
+  }
+}
 
 exports.default = async function afterPack(context) {
   const { appOutDir, electronPlatformName, packager } = context
@@ -17,6 +52,8 @@ exports.default = async function afterPack(context) {
   if (!existsSync(join(src, 'dist', 'launch.js')) || !existsSync(join(src, 'dist', 'main.js')) || !existsSync(join(src, 'node_modules'))) {
     throw new Error(`after-pack: ${src} runtime is incomplete — run "npm run stage-cli" first`)
   }
+
+  pruneUnusedWindowsArchitectures(context)
 
   const resources =
     electronPlatformName === 'darwin'

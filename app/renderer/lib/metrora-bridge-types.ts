@@ -26,7 +26,6 @@ import type {
   YieldJsonReport,
 } from './types'
 import type { ProjectBridge } from './project-bridge-types'
-import type { AdvisorLocalRuntimeId, AdvisorRuntimeProbe } from '../advisor/types'
 import type { HarnessActionEvent } from '../../electron/act-bridge'
 import type { PerformanceRunV1 } from '../../../src/bench/performance-contract-v1'
 import type { PerformanceComparisonV1 } from '../../../src/bench/performance-compare-v1'
@@ -35,27 +34,18 @@ import type {
   HarnessConversation,
   HarnessConversationInput,
   HarnessConversationSummary,
+  HarnessCredentialStatus,
+  HarnessHostedProbe,
+  HarnessHostedProvider,
+  HarnessLocalProbe,
+  HarnessRuntimeProfileV1,
   HarnessSendMessageInput,
   HarnessSendMessageResult,
+  HarnessWorkspace,
   MetroraHarnessRuntimeEvent,
 } from '../../electron/harness-runtime-types'
 
-export type AdvisorCredentialProvider = 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'opencode-zen'
-export type AdvisorCredentialState = 'not-configured' | 'ready' | 'locked-unavailable' | 'invalid' | 'needs-reentry'
-export type AdvisorCredentialStatus = { provider: AdvisorCredentialProvider; state: AdvisorCredentialState }
-export type AdvisorHostedModelState = 'discovered' | 'unverified' | 'verified' | 'limited' | 'unsupported' | 'failed-conformance'
-export type AdvisorHostedCapabilityState = 'supported' | 'unsupported' | 'unknown' | 'failed-conformance'
-export type AdvisorHostedModelCapabilities = { conversational: 'available' | 'unavailable' | 'unknown'; streaming: 'supported' | 'unsupported' | 'unknown'; toolCall: AdvisorHostedCapabilityState }
-export type AdvisorHostedModel = { id: string; label: string; state: AdvisorHostedModelState; limitation: string | null; capabilities?: AdvisorHostedModelCapabilities }
-export type AdvisorHostedProbe = { provider: AdvisorCredentialProvider; available: boolean; models: AdvisorHostedModel[]; detail: string; credentialState: AdvisorCredentialState }
-export type AdvisorHostedUsage = { inputTokens: number | null; outputTokens: number | null; totalTokens: number | null }
-export type AdvisorHostedToolCall = { id: string; name: string; arguments: string }
-export type AdvisorHostedEventKind = 'started' | 'text-delta' | 'tool-call-start' | 'tool-call-delta' | 'tool-call-complete' | 'usage' | 'completed' | 'failed' | 'cancelled'
-export type AdvisorHostedEvent = { requestId: string; provider: AdvisorCredentialProvider; model: string; kind: AdvisorHostedEventKind; text?: string; callId?: string; name?: string; delta?: string; arguments?: string; usage?: AdvisorHostedUsage | null; streamed?: boolean; toolCalls?: AdvisorHostedToolCall[]; code?: string; message?: string }
-/** Renderer-safe lifecycle projection; provider text and tool arguments never cross into renderer event listeners. */
-export type AdvisorHostedRendererEvent = { requestId: string; provider: AdvisorCredentialProvider; model: string; kind: AdvisorHostedEventKind; usage?: AdvisorHostedUsage | null; streamed?: boolean; code?: string }
 export type MetroraHarnessActionEvent = HarnessActionEvent
-export type AdvisorHostedChatResult = { provider: AdvisorCredentialProvider; model: string; message: { content: string; tool_calls: AdvisorHostedToolCall[] }; usage: AdvisorHostedUsage | null; streamed: boolean }
 export type BenchTaskResult = {
   taskId: string
   attempted: boolean
@@ -137,15 +127,22 @@ export interface MetroraBridge extends ProjectBridge {
   /** Subscribe to pushed update-availability status; returns an unsubscribe fn. */
   onUpdateStatus(cb: (status: UpdateStatus) => void): () => void
   getQuota(force?: boolean): Promise<QuotaProvider[]>
-  advisorProbe(runtime?: AdvisorLocalRuntimeId): Promise<AdvisorRuntimeProbe>
-  advisorChat(requestId: string, payload: Record<string, unknown>, runtime?: AdvisorLocalRuntimeId): Promise<{ message: { content: string; tool_calls?: Array<Record<string, unknown>> }; streamed: boolean }>
-  advisorCancel(requestId: string): Promise<boolean>
-  advisorHostedProbe(provider: AdvisorCredentialProvider, requestId?: string): Promise<AdvisorHostedProbe>
-  advisorHostedChat(requestId: string, payload: Record<string, unknown>): Promise<AdvisorHostedChatResult>
-  advisorHostedCancel(requestId: string): Promise<boolean>
-  advisorCredentialStatus(provider: AdvisorCredentialProvider): Promise<AdvisorCredentialStatus>
-  advisorCredentialSet(provider: AdvisorCredentialProvider, secret: string): Promise<AdvisorCredentialStatus>
-  advisorCredentialClear(provider: AdvisorCredentialProvider): Promise<AdvisorCredentialStatus>
+  harnessProbeLocal(runtime: 'ollama' | 'lmstudio' | 'llama-server', port?: number): Promise<HarnessLocalProbe>
+  harnessCancelProbeLocal(runtime: 'ollama' | 'lmstudio' | 'llama-server'): Promise<boolean>
+  harnessProbeHosted(provider: HarnessHostedProvider): Promise<HarnessHostedProbe>
+  harnessCredentialStatus(provider: HarnessHostedProvider): Promise<HarnessCredentialStatus>
+  harnessCredentialSet(provider: HarnessHostedProvider, secret: string): Promise<HarnessCredentialStatus>
+  harnessCredentialClear(provider: HarnessHostedProvider): Promise<HarnessCredentialStatus>
+  harnessProfileGet(): Promise<HarnessRuntimeProfileV1>
+  harnessProfileSetRuntime(runtime: 'ollama' | 'lmstudio' | 'llama-server' | 'hosted'): Promise<HarnessRuntimeProfileV1>
+  harnessProfileSetPort(port: number): Promise<HarnessRuntimeProfileV1>
+  harnessProfileSetLocalModel(runtime: 'ollama' | 'lmstudio' | 'llama-server', model: string): Promise<HarnessRuntimeProfileV1>
+  harnessProfileSetHostedModel(provider: HarnessHostedProvider, model: string): Promise<HarnessRuntimeProfileV1>
+  harnessProfileSetReasoning(runtime: 'ollama' | 'lmstudio' | 'llama-server' | 'hosted', provider: HarnessHostedProvider | null, model: string, effort: 'min' | 'low' | 'medium' | 'high' | 'max'): Promise<HarnessRuntimeProfileV1>
+  harnessProfileSetConsent(provider: HarnessHostedProvider, state: 'unknown' | 'accepted' | 'declined'): Promise<HarnessRuntimeProfileV1>
+  harnessWorkspaceGet(): Promise<HarnessWorkspace | null>
+  harnessWorkspaceOpen(root: string): Promise<HarnessWorkspace>
+  harnessWorkspaceClear(): Promise<null>
   getBenchHistory(): Promise<BenchHistoryReport>
   getBenchModelDiscovery(): Promise<BenchModelDiscovery>
   getBenchComparison(leftRunId: string, rightRunId: string): Promise<BenchComparison>
@@ -155,19 +152,21 @@ export interface MetroraBridge extends ProjectBridge {
   getPerformanceBenchComparison(leftRunId: string, rightRunId: string): Promise<PerformanceComparisonV1>
   runPerformanceBench(requestId: string, request: PerformanceBenchRequest): Promise<PerformanceRunV1>
   cancelPerformanceBench(requestId: string): Promise<boolean>
-  onAdvisorDelta(cb: (event: { requestId: string; text: string }) => void): () => void
   harnessProposeCoreCompatibility(model: string): Promise<MetroraHarnessActionEvent>
   harnessApproveCoreCompatibility(actionId: string, proposalDigest: string): Promise<MetroraHarnessActionEvent>
   harnessCancelCoreCompatibility(actionId: string): Promise<MetroraHarnessActionEvent | null>
   harnessReadCoreCompatibility(actionId: string): Promise<MetroraHarnessActionEvent | null>
   onHarnessActionEvent(cb: (event: MetroraHarnessActionEvent) => void): () => void
-  /** Durable DSH-backed Harness surface; optional for older renderer test/mocks. */
-  harnessListConversations?: () => Promise<HarnessConversationSummary[]>
-  harnessGetConversation?: (conversationId: string) => Promise<HarnessConversation | null>
-  harnessCreateConversation?: (input: HarnessConversationInput) => Promise<HarnessConversation>
-  harnessSendMessage?: (input: HarnessSendMessageInput) => Promise<HarnessSendMessageResult>
-  harnessCancel?: (conversationId: string) => Promise<boolean>
-  onHarnessRuntimeEvent?: (cb: (event: MetroraHarnessRuntimeEvent) => void) => () => void
+  /** Durable DSH-backed Harness surface. */
+  harnessListConversations(): Promise<HarnessConversationSummary[]>
+  harnessGetConversation(conversationId: string): Promise<HarnessConversation | null>
+  harnessCreateConversation(input: HarnessConversationInput): Promise<HarnessConversation>
+  harnessSendMessage(input: HarnessSendMessageInput): Promise<HarnessSendMessageResult>
+  harnessCancel(conversationId: string): Promise<boolean>
+  onHarnessRuntimeEvent(cb: (event: MetroraHarnessRuntimeEvent) => void): () => void
+  harnessApprove(approvalId: string): Promise<boolean>
+  harnessDeny(approvalId: string): Promise<boolean>
+  harnessCheckConformance(input: HarnessConversationInput): Promise<unknown>
   // `fresh` is reserved for explicit Refresh; navigation reads the snapshot.
   getOverview(period: Period, provider: string, range?: DateRange, configSource?: string | null, background?: boolean, fresh?: boolean, projectScopeId?: string | null): Promise<MenubarPayload>
   getPlans(period: Period): Promise<StatusJson>
@@ -210,6 +209,5 @@ export interface MetroraBridge extends ProjectBridge {
   setTelemetryEnabled(enabled: boolean): Promise<TelemetryStatus | null>
   completeOnboarding(enabled: boolean): Promise<TelemetryStatus | null>
   telemetryTrack(name: string, props?: Record<string, unknown>): Promise<boolean>
-  onAdvisorHostedEvent(cb: (event: AdvisorHostedRendererEvent) => void): () => void
   openExternal(url: string): Promise<void>
 }

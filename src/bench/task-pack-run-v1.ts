@@ -97,7 +97,7 @@ export async function runBenchTaskPackV1(options: BenchTaskPackRunOptions): Prom
   const tasks: BenchTaskResultV1[] = []
   const reportProgress = async (): Promise<void> => {
     try { await options.onProgress?.({ planned: pack.tasks.length, completed: tasks.length }) } catch {
-      // Progress is advisory and must never change the canonical result.
+      // Progress is informational and must never change the canonical result.
     }
   }
   let reportedModel: string | null = null

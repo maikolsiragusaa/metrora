@@ -31,13 +31,13 @@ Security reports are welcome for:
 - Revocable and scoped device pairing.
 - Explicit provenance for analytical values.
 
-## Advisor-specific boundaries
+## Harness-specific boundaries
 
-- Advisor V1 exposes only the versioned, content-minimal `advisor-tool-v1` read contract. Its immutable scope is owned by Metrora; Bench execution, agent launch, routing changes, and policy changes are not Advisor tools.
-- Local Ollama/LM Studio calls use fixed loopback origins from Electron main. Hosted BYOK calls use fixed official provider origins from Electron main after explicit consent; arbitrary endpoints and gateway routing are not accepted.
-- Hosted lifecycle events projected to the renderer contain status/usage metadata only. Provider text, streaming deltas, tool-call arguments, and raw tool-call payloads stay out of renderer event listeners.
+- Metrora first-party factual Tools use the versioned, content-minimal `metrora-factual-tool-v1` read contract. Their immutable scope and evidence semantics are owned by Metrora; Bench execution, agent launch, routing changes, and policy changes are not factual Tools.
+- The Harness runs one DSH Agent/Session path for local and hosted models. Local Ollama/LM Studio/llama.cpp calls use fixed loopback origins from Electron main. Hosted BYOK calls use fixed official provider origins from Electron main after explicit consent; arbitrary endpoints and gateway routing are not accepted.
+- Runtime lifecycle events projected to the renderer are safe DTOs containing bounded status, timing and redacted summaries. Raw provider payloads, hidden prompts, tool arguments, and unbounded tool results stay out of renderer event listeners.
 - Provider credentials are accepted through a transient password field, sent to main-process custody, cleared from renderer state, and never returned through the status API. Durable storage uses Electron `safeStorage` when available.
-- Tool-result JSON is bounded and strictly checked for content-minimal privacy before it is sent to a model. Raw prompts, responses, source, unrestricted paths, secrets, and hidden reasoning are not part of the Advisor contract.
+- Tool-result JSON is bounded and strictly checked for content-minimal privacy before it is sent to a model. Raw prompts, responses, source, unrestricted paths, secrets, and hidden reasoning are not part of the Harness projection.
 
 ## Release integrity
 

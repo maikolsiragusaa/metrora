@@ -95,7 +95,9 @@ Implementation uses Node's bounded HTTP `fetch` and follows official Ollama `/ap
 
 ## Harness relationship
 
-The current public implementation exposes Bench evidence through the existing read-only `AdvisorToolV1` tool contract. Product-facing direction is Metrora Harness; current `Advisor*` names remain compatibility identifiers.
+The current public implementation exposes Bench evidence through the canonical
+read-only Metrora factual Tool registry mounted by Harness. Product-facing
+direction and runtime identity are Metrora Harness.
 
 Harness may explain what the Compatibility result proves and compare compatible runs. It may not turn Core Compatibility into coding quality or universal model ranking.
 

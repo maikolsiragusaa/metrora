@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 
 import {
   aggregateMcpCoverage,
-  detectMcpProfileAdvisor,
+  detectMcpProfileRecommendation,
   detectMcpToolCoverage,
   estimateMcpSchemaCost,
 } from '../src/optimize.js'
@@ -455,10 +455,10 @@ describe('detectMcpToolCoverage', () => {
 })
 
 // ---------------------------------------------------------------------------
-// detectMcpProfileAdvisor — project-scoping recommendations
+// detectMcpProfileRecommendation — project-scoping recommendations
 // ---------------------------------------------------------------------------
 
-describe('detectMcpProfileAdvisor', () => {
+describe('detectMcpProfileRecommendation', () => {
   const smallInventory = Array.from({ length: 4 }, (_, i) => `mcp__github__t${i}`)
 
   it('flags a server loaded across projects but invoked only in one hot project', () => {
@@ -479,7 +479,7 @@ describe('detectMcpProfileAdvisor', () => {
       ]),
     ]
 
-    const finding = detectMcpProfileAdvisor(projects)
+    const finding = detectMcpProfileRecommendation(projects)
     expect(finding).not.toBeNull()
     expect(finding!.title).toContain('project-scoped')
     expect(finding!.explanation).toContain('github')
@@ -505,7 +505,7 @@ describe('detectMcpProfileAdvisor', () => {
       }),
     ]))
 
-    expect(detectMcpProfileAdvisor(projects)).toBeNull()
+    expect(detectMcpProfileRecommendation(projects)).toBeNull()
   })
 
   it('allows a hot profile shared by two projects', () => {
@@ -546,7 +546,7 @@ describe('detectMcpProfileAdvisor', () => {
       ]),
     ]
 
-    const finding = detectMcpProfileAdvisor(projects)
+    const finding = detectMcpProfileRecommendation(projects)
     expect(finding).not.toBeNull()
     expect(finding!.explanation).toContain('/tmp/api')
     expect(finding!.explanation).toContain('/tmp/web')
@@ -587,7 +587,7 @@ describe('detectMcpProfileAdvisor', () => {
       ]),
     ]
 
-    const finding = detectMcpProfileAdvisor(projects)
+    const finding = detectMcpProfileRecommendation(projects)
     expect(finding).not.toBeNull()
     expect(finding!.title).toContain('2 MCP servers')
     expect(finding!.explanation).toContain('github')
@@ -613,7 +613,7 @@ describe('detectMcpProfileAdvisor', () => {
       ]),
     ]
 
-    expect(detectMcpProfileAdvisor(projects)).toBeNull()
+    expect(detectMcpProfileRecommendation(projects)).toBeNull()
   })
 
   it('does not duplicate low tool coverage findings for the same server', () => {
@@ -651,6 +651,6 @@ describe('detectMcpProfileAdvisor', () => {
       coverageRatio: 1 / 12,
     }]
 
-    expect(detectMcpProfileAdvisor(projects, coverage)).toBeNull()
+    expect(detectMcpProfileRecommendation(projects, coverage)).toBeNull()
   })
 })

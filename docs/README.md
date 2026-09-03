@@ -2,7 +2,7 @@
 
 Metrora is the local-first control center for AI-assisted development. Start with the product surfaces that let you observe Usage, Cost, Models, Projects and Activity; compare evidence; investigate through the current conversational surface; and manage provider Capacity and explicit local controls without requiring a mandatory Metrora account or AI-traffic gateway.
 
-The product-facing conversational/operational surface is **Metrora Harness**. Stable `Advisor` / `Advisor*` identifiers remain only where they are technical compatibility contracts or adapters.
+The product-facing conversational/operational surface is **Metrora Harness**. It is the single public coding/agent conversation surface in Desktop.
 
 This index separates user guidance, current product guarantees, public contracts and contributor-facing technical references.
 
@@ -28,11 +28,9 @@ This index separates user guidance, current product guarantees, public contracts
 
 - [Product principles](PRODUCT_PRINCIPLES.md) — stable local-first, privacy, evidence and portability commitments.
 - [Architecture](architecture.md) — current responsibility and authority map for the public codebase.
-- [Metrora Harness public foundation](HARNESS_PUBLIC_FOUNDATION.md) — product-facing chat/tools/ACT/Swarm direction grounded in the current read-only public foundation, with explicit shipped/planned boundaries.
-- [Advisor implementation compatibility](ADVISOR_PUBLIC_FOUNDATION.md) — exact stable `Advisor*` conversational/tool/runtime/privacy contracts behind Harness, plus license provenance.
-- [ACT contract preparation 001](ACT_CONTRACT_PREP_001.md) — trusted-action design, the current-main-native Core Compatibility first action, and its bounded implementation limits.
-- [Harness contextual integration v1](ADVISOR_CONTEXT_INTEGRATION_V1.md) — current factual-surface → Ask Harness → contextual investigation scope handoff across supported Desktop surfaces.
-- [Founder Harness acceptance checklist](FOUNDER_HARNESS_ACCEPTANCE_CHECKLIST.md) — manual acceptance path for chat, Tools, privacy, bounded loops and the proposal-only Core Compatibility bridge.
+- [Metrora Harness public foundation](HARNESS_PUBLIC_FOUNDATION.md) — current single Agent/Session path, coding Tools, Workspace, modes, factual authority and Shield/ACT boundaries.
+- [ACT contract preparation 001](ACT_CONTRACT_PREP_001.md) — trusted-action design and bounded ACT execution contracts.
+- [Founder Harness acceptance checklist](FOUNDER_HARNESS_ACCEPTANCE_CHECKLIST.md) — manual acceptance path for the packaged coding Harness.
 - [Provider quota authority](provider-quota-authority.md) — canonical provider-reported Capacity semantics, freshness and separation from measured local usage or budgets.
 - [Canonical history read projection v1](CANONICAL_HISTORY_READ_PROJECTION_V1.md) — shadow observation/activity identity and trusted daily-history boundary.
 - [Canonical history shadow store v1](CANONICAL_HISTORY_SHADOW_STORE_V1.md) — removable content-addressed persistence and cross-refresh reconciliation.
@@ -48,11 +46,10 @@ This index separates user guidance, current product guarantees, public contracts
 
 ## Harness naming and current implementation
 
-The public product direction uses **Metrora Harness** for the conversational/operational surface.
-
-The current implementation uses stable technical names such as `AdvisorKernel`, `AdvisorToolV1`, `AdvisorActionProposalV1`, existing route/file names and compatibility schemas. The user-facing Desktop surface is `Ask Harness`; the technical names remain for compatibility and are not a second product.
-
-Do not treat the documentation name as proof that a runtime/UI rename or Swarm mode already ships. The separately documented llama.cpp adapter is existing-binary-only and does not imply a bundled distribution.
+The public product and runtime surface is **Metrora Harness**. One DSH
+Agent/Session engine serves local and hosted models. The separately documented
+llama.cpp adapter remains loopback-only and existing-binary-only; it does not
+imply a bundled model distribution.
 
 ## Bench status
 

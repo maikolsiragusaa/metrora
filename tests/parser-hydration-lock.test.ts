@@ -1,4 +1,4 @@
-// Advisory hydration-lock coordination in parseAllSessions. When the on-disk
+// Informational hydration-lock coordination in parseAllSessions. When the on-disk
 // cache is cold and another LIVE process already holds a fresh lock, a second
 // process waits for release then reads the now-warm cache instead of re-parsing.
 // Stale / dead-pid locks are ignored and replaced. The lock is an optimization,

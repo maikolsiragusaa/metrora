@@ -1,9 +1,9 @@
 // @vitest-environment node
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { LlmAdapter, LlmError, type GenerateOptions, type LlmModelInfo, type LlmProviderInfo, type LlmResolvedModelInfo, type ResolvedRetryPolicy, type StreamChunk, type ToolCallId } from '@deepseek-ai/dsh-llm'
 
@@ -278,13 +278,13 @@ describe('Metrora DSH Harness runtime', () => {
 
   it('keeps Shield/ACT as the only mutation authority while allowing bounded read delegation', () => {
     const authority = createMetroraHarnessAuthority()
-    expect(authority.decide({ name: 'get_overview_snapshot' })).toEqual({ kind: 'allow' })
-    expect(authority.decide({ name: 'subagent' })).toEqual({ kind: 'allow' })
-    expect(authority.decide({ name: 'read' }).kind).toBe('deny')
-    expect(authority.decide({ name: 'write' }).kind).toBe('deny')
-    expect(authority.decide({ name: 'str_replace_editor' }).kind).toBe('deny')
-    expect(authority.decide({ name: 'pwsh' }).kind).toBe('deny')
-    expect(authority.decide({ name: 'unknown-capability' }).kind).toBe('deny')
+    expect(authority.decide({ name: 'get_overview_snapshot', arguments: {} })).toEqual({ kind: 'allow' })
+    expect(authority.decide({ name: 'subagent', arguments: {} })).toEqual({ kind: 'allow' })
+    expect(authority.decide({ name: 'read', arguments: {} }).kind).toBe('deny')
+    expect(authority.decide({ name: 'write', arguments: {} }).kind).toBe('deny')
+    expect(authority.decide({ name: 'str_replace_editor', arguments: {} }).kind).toBe('deny')
+    expect(authority.decide({ name: 'pwsh', arguments: {} }).kind).toBe('deny')
+    expect(authority.decide({ name: 'unknown-capability', arguments: {} }).kind).toBe('deny')
   })
 
   it('keeps native DSH tool registrations aligned with the canonical Metrora contract', () => {
@@ -433,5 +433,96 @@ describe('Metrora DSH Harness runtime', () => {
     expect(text).toContain('[redacted]')
     expect(projectHarnessText('x'.repeat(40_000))).toHaveLength(32_000)
     expect(projectHarnessRuntimeEvent({ conversationId: 'conversation/unsafe', state: 'done', requestId: 'req unsafe' })).toEqual({ conversationId: 'conversationunsafe', state: 'done', requestId: 'requnsafe' })
+  })
+
+  it('runs the pinned DSH filesystem read/search path inside the selected Workspace', async () => {
+    const root = await tempRoot()
+    await mkdir(path.join(root, 'src'))
+    await writeFile(path.join(root, 'src', 'answer.ts'), 'export const answer = 42\n')
+    const fixture = sourceFixture()
+    const adapter = new ScriptedAdapter((_options, call) => {
+      if (call === 1) return toolResponse([{ id: 'read-native-1', name: 'read', arguments: JSON.stringify({ file_path: 'src/answer.ts' }) }])
+      if (call === 2) return toolResponse([{ id: 'grep-native-1', name: 'grep', arguments: JSON.stringify({ pattern: 'answer', path: '.' }) }])
+      return textResponse('The Workspace contains the expected answer export.')
+    })
+    const events: any[] = []
+    const host = new MetroraHarnessHost({ sessionRoot: root, toolRegistry: canonicalToolRegistry, llmAdapter: adapter, toolSource: fixture.source, onEvent: event => events.push(event) })
+
+    try {
+      const result = await host.sendMessage({ conversationId: 'workspace-read', runtime: 'ollama', model: 'local', question: 'Inspect the answer file and search for it.', scope, workspaceRoot: root, mode: 'ask' })
+      expect(result.message.text).toContain('expected answer export')
+      expect(adapter.calls).toHaveLength(3)
+      const toolEvents = events.filter(event => event.process?.kind === 'tool')
+      expect(toolEvents.map(event => event.process.item.callId)).toEqual(expect.arrayContaining(['read-native-1', 'grep-native-1']))
+      expect(toolEvents.map(event => event.process.item.kind)).toEqual(expect.arrayContaining(['filesystem', 'search']))
+      expect(JSON.stringify(await host.getConversation('workspace-read'))).not.toContain(path.resolve(root))
+    } finally {
+      await host.shutdown()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('routes a filesystem edit through inline Shield approval and resumes the same Agent turn', async () => {
+    const root = await tempRoot()
+    const file = path.join(root, 'notes.txt')
+    await writeFile(file, 'before\n')
+    const fixture = sourceFixture()
+    const adapter = new ScriptedAdapter((_options, call) => {
+      if (call === 1) return toolResponse([{ id: 'read-before-edit', name: 'read', arguments: JSON.stringify({ file_path: 'notes.txt' }) }])
+      if (call === 2) return toolResponse([{ id: 'edit-native-1', name: 'edit', arguments: JSON.stringify({ file_path: 'notes.txt', old_string: 'before', new_string: 'after' }) }])
+      return textResponse('The approved edit is complete.')
+    })
+    const events: any[] = []
+    const host = new MetroraHarnessHost({ sessionRoot: root, toolRegistry: canonicalToolRegistry, llmAdapter: adapter, toolSource: fixture.source, onEvent: event => events.push(event) })
+
+    try {
+      const pending = host.sendMessage({ conversationId: 'workspace-edit', runtime: 'ollama', model: 'local', question: 'Change before to after.', scope, workspaceRoot: root, mode: 'edit' })
+      await vi.waitFor(() => expect(events.some(event => event.state === 'waiting-approval')).toBe(true))
+      const approvalEvent = events.find(event => event.state === 'waiting-approval')
+      const approvalId = approvalEvent?.process?.item?.approvalId
+      expect(approvalId).toBeTruthy()
+      expect(approvalEvent.process.item.workspacePath).toBe('notes.txt')
+      expect(approvalEvent.process.item.state).toBe('proposed')
+      expect(await host.approveApproval(approvalId)).toBe(true)
+      await expect(pending).resolves.toMatchObject({ message: { text: 'The approved edit is complete.' } })
+      expect(await readFile(file, 'utf8')).toBe('after\n')
+      expect(adapter.calls).toHaveLength(3)
+      expect(events.some(event => event.process?.kind === 'approval' && event.process.item.state === 'approved')).toBe(true)
+      expect(JSON.stringify(await host.getConversation('workspace-edit'))).toContain('edit-native-1')
+    } finally {
+      await host.shutdown()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('executes a bounded Workspace shell command only after Shield approval and projects terminal output', async () => {
+    const root = await tempRoot()
+    const fixture = sourceFixture()
+    const approvals: string[] = []
+    const events: any[] = []
+    const adapter = new ScriptedAdapter((_options, call) => {
+      if (call === 1) return toolResponse([{ id: 'bash-native-1', name: 'bash', arguments: JSON.stringify({ command: 'Write-Output metrora-shell-ok', description: 'Run the shell smoke check' }) }])
+      return textResponse('The command completed successfully.')
+    })
+    const host = new MetroraHarnessHost({
+      sessionRoot: root,
+      toolRegistry: canonicalToolRegistry,
+      llmAdapter: adapter,
+      toolSource: fixture.source,
+      onApproval: async approval => { approvals.push(approval.approvalId); return 'allowed-once' },
+      onEvent: event => events.push(event),
+    })
+
+    try {
+      const result = await host.sendMessage({ conversationId: 'workspace-shell', runtime: 'ollama', model: 'local', question: 'Run the bounded shell check.', scope, workspaceRoot: root, mode: 'build' })
+      expect(result.message.text).toContain('completed successfully')
+      expect(approvals).toHaveLength(1)
+      const terminal = [...events].reverse().find(event => event.process?.kind === 'tool' && event.process.item.name === 'bash' && event.process.item.status === 'completed')
+      expect(terminal?.process.item.kind).toBe('terminal')
+      expect(terminal?.process.item.details?.kind).toBe('terminal')
+    } finally {
+      await host.shutdown()
+      await rm(root, { recursive: true, force: true })
+    }
   })
 })

@@ -13,7 +13,7 @@ const full: DesktopSectionCapabilities = {
   globalRefresh: true,
 }
 
-function renderTopBar(capabilities: DesktopSectionCapabilities, onAskAdvisor?: () => void, onRefresh?: () => void) {
+function renderTopBar(capabilities: DesktopSectionCapabilities, onAskHarness?: () => void, onRefresh?: () => void) {
   render(
     <TopBar
       title="Workspace"
@@ -33,7 +33,7 @@ function renderTopBar(capabilities: DesktopSectionCapabilities, onAskAdvisor?: (
       configSource={null}
       onConfigSelect={vi.fn()}
       capabilities={capabilities}
-      onAskAdvisor={onAskAdvisor}
+      onAskHarness={onAskHarness}
       onRefresh={onRefresh}
     />,
   )
@@ -72,12 +72,12 @@ describe('TopBar scope capabilities', () => {
   })
 
   it('renders one page-level Ask Harness action without adding card-level advice controls', () => {
-    const onAskAdvisor = vi.fn()
-    renderTopBar(full, onAskAdvisor)
+    const onAskHarness = vi.fn()
+    renderTopBar(full, onAskHarness)
 
     fireEvent.click(screen.getByRole('button', { name: 'Ask Harness' }))
 
-    expect(onAskAdvisor).toHaveBeenCalledTimes(1)
+    expect(onAskHarness).toHaveBeenCalledTimes(1)
     expect(screen.getAllByRole('button', { name: 'Ask Harness' })).toHaveLength(1)
   })
 })

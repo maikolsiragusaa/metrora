@@ -56,7 +56,7 @@ MCP adapter
 → canonical evidence source
 ~~~
 
-Results use the advisor-tool-v1 contract, JSON-safe content-minimal output,
+Results use the metrora-factual-tool-v1 contract, JSON-safe content-minimal output,
 explicit coverage/freshness/unavailable semantics and a 32 KiB output bound.
 Arguments are bounded to 8 KiB. Canonical provider-reported Capacity exists in
 the Desktop authority, but Local MCP V1's CLI/core runtime does not yet bind

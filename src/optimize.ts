@@ -1273,7 +1273,7 @@ function collectMcpProjectProfiles(
   return candidates
 }
 
-export function detectMcpProfileAdvisor(
+export function detectMcpProfileRecommendation(
   projects: ProjectSummary[],
   coverage = aggregateMcpCoverage(projects),
 ): WasteFinding | null {
@@ -3001,7 +3001,7 @@ export async function scanAndDetect(
     claudeOnlyDetector(provider, () => detectDuplicateReads(toolCalls, dateRange)),
     claudeOnlyDetector(provider, () => detectUnusedMcp(toolCalls, projects, projectCwds, mcpCoverage)),
     () => detectMcpToolCoverage(projects, mcpCoverage),
-    () => detectMcpProfileAdvisor(projects, mcpCoverage),
+    () => detectMcpProfileRecommendation(projects, mcpCoverage),
     // mcp-deferral-gaps family (#614): detection only, no apply plans yet.
     claudeOnlyDetector(provider, () => detectMcpDeferralOff(toolCalls, projects, projectCwds, apiCalls)),
     claudeOnlyDetector(provider, () => detectMcpAlwaysLoadHygiene(projects, projectCwds, apiCalls, mcpCoverage)),

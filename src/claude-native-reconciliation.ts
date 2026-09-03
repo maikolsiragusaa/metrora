@@ -1,4 +1,5 @@
 import type { CachedCall, SessionCache } from './session-cache.js'
+import { isLegacyExternalEscalationDeduplicationKey } from './compat/legacy-migration-identifiers.js'
 
 /**
  * A Claude JSONL message id is a native accounting identity, not a file-local
@@ -50,9 +51,9 @@ export function getClaudeNativeIdentity(call: Pick<CachedCall, 'provider' | 'ded
       ? call.nativeMessageId
       : undefined
   }
-  // Support a one-run projection of a pre-migration cache. Advisor calls use a
-  // derived `:advisor:` key and are deliberately excluded from this fallback.
-  if (call.deduplicationKey.startsWith('claude:') || call.deduplicationKey.includes(':advisor:')) return undefined
+  // Support a one-run projection of a pre-migration cache. Separately metered
+  // escalation calls use a derived key and are deliberately excluded here.
+  if (call.deduplicationKey.startsWith('claude:') || isLegacyExternalEscalationDeduplicationKey(call.deduplicationKey)) return undefined
   return call.deduplicationKey || undefined
 }
 

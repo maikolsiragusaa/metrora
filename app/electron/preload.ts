@@ -6,16 +6,20 @@ import type {
   HarnessConversation,
   HarnessConversationInput,
   HarnessConversationSummary,
+  HarnessCredentialStatus,
+  HarnessHostedProbe,
+  HarnessHostedProvider,
+  HarnessLocalProbe,
+  HarnessRuntimeProfileV1,
   HarnessSendMessageInput,
   HarnessSendMessageResult,
+  HarnessWorkspace,
   MetroraHarnessRuntimeEvent,
 } from './harness-runtime-types'
 
 type DateRange = { from: string; to: string }
 type PriceRates = { input?: number; output?: number; cacheRead?: number; cacheCreation?: number }
 type CreateWorkspaceInput = { displayName: string; slug?: string; endpointDisplayName: string }
-type AdvisorHostedProvider = 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'opencode-zen'
-type AdvisorHostedRendererEvent = { requestId: string; provider: AdvisorHostedProvider; model: string; kind: string; usage?: { inputTokens: number | null; outputTokens: number | null; totalTokens: number | null } | null; streamed?: boolean; code?: string }
 type PerformanceBenchRequest = {
   executablePath: string
   modelPath: string
@@ -39,20 +43,24 @@ async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
   return Promise.reject(res.error)
 }
 
-// The legacy IPC channel names remain behind this adapter until main-process
-// aliases are installed. Renderer code receives Metrora as the canonical bridge
-// immediately, while old windows/integrations can keep using window.metrora.
 const bridge = {
   getQuota: (force?: boolean) => invoke('metrora:getQuota', force),
-  advisorProbe: (runtime: 'ollama' | 'lmstudio' | 'llama-server' = 'ollama') => invoke('metrora:advisorProbe', runtime),
-  advisorChat: (requestId: string, payload: Record<string, unknown>, runtime: 'ollama' | 'lmstudio' | 'llama-server' = 'ollama') => invoke('metrora:advisorChat', requestId, payload, runtime),
-  advisorCancel: (requestId: string) => invoke('metrora:advisorCancel', requestId),
-  advisorCredentialStatus: (provider: AdvisorHostedProvider) => invoke('metrora:advisorCredentialStatus', provider),
-  advisorCredentialSet: (provider: AdvisorHostedProvider, secret: string) => invoke('metrora:advisorCredentialSet', provider, secret),
-  advisorCredentialClear: (provider: AdvisorHostedProvider) => invoke('metrora:advisorCredentialClear', provider),
-  advisorHostedProbe: (provider: AdvisorHostedProvider, requestId?: string) => invoke('metrora:advisorHostedProbe', provider, requestId),
-  advisorHostedChat: (requestId: string, payload: Record<string, unknown>) => invoke('metrora:advisorHostedChat', requestId, payload),
-  advisorHostedCancel: (requestId: string) => invoke('metrora:advisorHostedCancel', requestId),
+  harnessProbeLocal: (runtime: 'ollama' | 'lmstudio' | 'llama-server', port?: number) => invoke<HarnessLocalProbe>('metrora:harnessProbeLocal', runtime, port),
+  harnessCancelProbeLocal: (runtime: 'ollama' | 'lmstudio' | 'llama-server') => invoke<boolean>('metrora:harnessCancelProbeLocal', runtime),
+  harnessProbeHosted: (provider: HarnessHostedProvider) => invoke<HarnessHostedProbe>('metrora:harnessProbeHosted', provider),
+  harnessCredentialStatus: (provider: HarnessHostedProvider) => invoke<HarnessCredentialStatus>('metrora:harnessCredentialStatus', provider),
+  harnessCredentialSet: (provider: HarnessHostedProvider, secret: string) => invoke<HarnessCredentialStatus>('metrora:harnessCredentialSet', provider, secret),
+  harnessCredentialClear: (provider: HarnessHostedProvider) => invoke<HarnessCredentialStatus>('metrora:harnessCredentialClear', provider),
+  harnessProfileGet: () => invoke<HarnessRuntimeProfileV1>('metrora:harnessProfileGet'),
+  harnessProfileSetRuntime: (runtime: 'ollama' | 'lmstudio' | 'llama-server' | 'hosted') => invoke<HarnessRuntimeProfileV1>('metrora:harnessProfileSetRuntime', runtime),
+  harnessProfileSetPort: (port: number) => invoke<HarnessRuntimeProfileV1>('metrora:harnessProfileSetPort', port),
+  harnessProfileSetLocalModel: (runtime: 'ollama' | 'lmstudio' | 'llama-server', model: string) => invoke<HarnessRuntimeProfileV1>('metrora:harnessProfileSetLocalModel', runtime, model),
+  harnessProfileSetHostedModel: (provider: HarnessHostedProvider, model: string) => invoke<HarnessRuntimeProfileV1>('metrora:harnessProfileSetHostedModel', provider, model),
+  harnessProfileSetReasoning: (runtime: 'ollama' | 'lmstudio' | 'llama-server' | 'hosted', provider: HarnessHostedProvider | null, model: string, effort: 'min' | 'low' | 'medium' | 'high' | 'max') => invoke<HarnessRuntimeProfileV1>('metrora:harnessProfileSetReasoning', runtime, provider, model, effort),
+  harnessProfileSetConsent: (provider: HarnessHostedProvider, state: 'unknown' | 'accepted' | 'declined') => invoke<HarnessRuntimeProfileV1>('metrora:harnessProfileSetConsent', provider, state),
+  harnessWorkspaceGet: () => invoke<HarnessWorkspace | null>('metrora:harnessWorkspaceGet'),
+  harnessWorkspaceOpen: (root: string) => invoke<HarnessWorkspace>('metrora:harnessWorkspaceOpen', root),
+  harnessWorkspaceClear: () => invoke<null>('metrora:harnessWorkspaceClear'),
   getBenchHistory: () => invoke('metrora:getBenchHistory'),
   getBenchModelDiscovery: () => invoke('metrora:getBenchModelDiscovery'),
   getBenchComparison: (leftRunId: string, rightRunId: string) => invoke('metrora:getBenchComparison', leftRunId, rightRunId),
@@ -133,16 +141,6 @@ const bridge = {
     ipcRenderer.on('metrora:update', listener)
     return () => { ipcRenderer.removeListener('metrora:update', listener) }
   },
-  onAdvisorDelta: (cb: (event: { requestId: string; text: string }) => void) => {
-    const listener = (_event: unknown, event: { requestId: string; text: string }) => cb(event)
-    ipcRenderer.on('metrora:advisorDelta', listener)
-    return () => { ipcRenderer.removeListener('metrora:advisorDelta', listener) }
-  },
-  onAdvisorHostedEvent: (cb: (event: AdvisorHostedRendererEvent) => void) => {
-    const listener = (_event: unknown, event: AdvisorHostedRendererEvent) => cb(event)
-    ipcRenderer.on('metrora:advisorHostedEvent', listener)
-    return () => { ipcRenderer.removeListener('metrora:advisorHostedEvent', listener) }
-  },
   harnessProposeCoreCompatibility: (model: string) => invoke('metrora:harnessProposeCoreCompatibility', model) as Promise<HarnessActionEvent>,
   harnessApproveCoreCompatibility: (actionId: string, proposalDigest: string) => invoke('metrora:harnessApproveCoreCompatibility', actionId, proposalDigest) as Promise<HarnessActionEvent>,
   harnessCancelCoreCompatibility: (actionId: string) => invoke('metrora:harnessCancelCoreCompatibility', actionId) as Promise<HarnessActionEvent | null>,
@@ -157,6 +155,9 @@ const bridge = {
   harnessCreateConversation: (input: HarnessConversationInput) => invoke<HarnessConversation>('metrora:harnessCreateConversation', input),
   harnessSendMessage: (input: HarnessSendMessageInput) => invoke<HarnessSendMessageResult>('metrora:harnessSendMessage', input),
   harnessCancel: (conversationId: string) => invoke<boolean>('metrora:harnessCancel', conversationId),
+  harnessApprove: (approvalId: string) => invoke<boolean>('metrora:harnessApprove', approvalId),
+  harnessDeny: (approvalId: string) => invoke<boolean>('metrora:harnessDeny', approvalId),
+  harnessCheckConformance: (input: HarnessConversationInput) => invoke<unknown>('metrora:harnessCheckConformance', input),
   onHarnessRuntimeEvent: (cb: (event: MetroraHarnessRuntimeEvent) => void) => {
     const listener = (_event: unknown, event: MetroraHarnessRuntimeEvent) => cb(event)
     ipcRenderer.on('metrora:harnessRuntimeEvent', listener)

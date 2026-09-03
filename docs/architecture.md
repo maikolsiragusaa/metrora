@@ -62,15 +62,27 @@ The Electron main process owns privileged work:
 - validation of external URLs and export destinations.
 
 The preload bridge exposes a narrow typed API. The renderer runs with context isolation and no Node integration, consumes public DTOs and must not implement its own parser, pricing engine or evidence authority.
-### Advisor — app/renderer/advisor/
 
-Advisor is a read-only conversational layer over canonical desktop records. Its
-public flow is deterministic evidence tools → Advisor Kernel →
-AdvisorModelRuntime → a local loopback runtime → a session-local UI. Electron
-main owns the local model HTTP boundary; the renderer receives only the typed
-preload bridge. See [ADVISOR_PUBLIC_FOUNDATION.md](ADVISOR_PUBLIC_FOUNDATION.md)
-for the public contract, privacy boundary, runtime capability caveats and
-provenance.
+### Harness — `app/renderer/sections/Harness.tsx`
+
+Harness is the single public coding/agent conversation surface. Product UX,
+mode policy, Workspace association, Metrora factual Tools, provenance and
+Shield/ACT remain Metrora-owned. The pinned OSS Harness substrate owns
+the Agent loop, durable Session/event log, Tool dispatch lifecycle, reasoning
+blocks, compaction, terminal/filesystem mechanics and in-process Subagent
+mechanics where mounted.
+
+Both local and hosted routes use the same path:
+
+```text
+Harness UX/policy → DSH Agent → DSH Session/Tools → Metrora LLM adapter → selected route
+```
+
+Electron main owns credentials, local endpoint access, Workspace containment,
+provider requests and approval execution. The renderer receives only bounded
+DTOs and never becomes a transcript, Tool runner or authorization authority.
+See [Metrora Harness public foundation](HARNESS_PUBLIC_FOUNDATION.md) for the
+runtime, privacy, conformance and public/private boundaries.
 
 State orchestration, domain formatting and presentation are extracted into focused modules before a component or main-process module becomes oversized.
 

@@ -92,7 +92,7 @@ describe('canonical Metrora Tools foundation', () => {
     const result = await registry.execute('get_spend_snapshot', {})
     expect(result.evidence.spend?.measuredCostUSD).toBe(12.5)
     expect(result.envelope).toMatchObject({
-      contractVersion: 'advisor-tool-v1',
+      contractVersion: 'metrora-factual-tool-v1',
       schemaVersion: 1,
       tool: 'get_spend_snapshot',
       unavailable: false,

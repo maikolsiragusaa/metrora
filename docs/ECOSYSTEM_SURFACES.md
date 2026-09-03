@@ -45,8 +45,8 @@ ACT is not a chat mode and an MCP client is not trusted execution authority simp
 | --- | --- | --- |
 | **Usage / Activity / Models / Capacity** | Factual local evidence, history, economics and provider-reported capacity | **Available** |
 | **Projects** | User-controlled context and scope across relevant evidence | **Available** |
-| **Tools** | Typed factual access to Metrora evidence | **Available** — canonical registry/contract/evidence/privacy layer with `Advisor*` compatibility adapter |
-| **Harness** | Chat-first investigation, reasoning and Metrora-aware tool use | **Available in this slice** — product-facing Desktop surface, bounded Tool activity and one proposal-only Core Compatibility path |
+| **Tools** | Typed factual access to Metrora evidence | **Available** — canonical registry/contract/evidence/privacy layer mounted directly in the Harness Tool registry |
+| **Harness** | Coding-agent work, reasoning and Metrora-aware Tool use | **Available** — product-facing Desktop surface with one DSH Agent/Session path, Workspace, modes, approvals and bounded Tool activity |
 | **Bench** | Performance-first testing plus separate Compatibility / Runtime Health evidence | **Available** — native llama.cpp/`llama-bench` Performance and Core Compatibility are separate bounded paths |
 | **ACT** | Trusted authorization/lifecycle for bounded state-changing operations | **Available** — `metrora.action.v1`, `run-core-compatibility`, and the trusted Desktop bridge; not a user-facing mode |
 | **MCP** | Standard external access to canonical Metrora Tools | **Available** — local read-only MCP Server V1 |
@@ -69,7 +69,8 @@ Metrora already has typed read-only capabilities for questions such as:
 - coverage information;
 - Bench evidence.
 
-The reusable implementation now lives in `src/tools`. The renderer's `Advisor*` files retain only compatibility adapters and stable contract names; the factual registry is not owned by one UI.
+The reusable implementation lives in `src/tools`. Harness mounts the canonical
+registry directly; the factual registry is not owned by one UI.
 
 This matters because the same factual capability is reused by Harness, the Local MCP Server V1 and other bounded Metrora integrations without implementing parallel evidence paths.
 
@@ -92,7 +93,9 @@ conversation
 → ACT
 ```
 
-The older `Advisor` product name is being retired. Existing `Advisor*` implementation identifiers may survive temporarily while responsibilities are migrated to the correct Harness, Tools, provider/runtime or evidence modules.
+The former conversational implementation has been retired. Product/runtime
+responsibilities now live in Harness, the canonical Tools registry, provider
+adapters, Workspace authority and evidence modules.
 
 ## MCP
 

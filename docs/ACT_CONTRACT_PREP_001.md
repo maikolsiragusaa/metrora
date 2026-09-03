@@ -6,7 +6,9 @@
 
 ACT is the explicit trusted boundary for operations that run a controlled workload or change state.
 
-The current conversational implementation remains read-only/proposal-only. Product-facing direction calls that surface **Metrora Harness**; current code/contracts still use `Advisor*` identifiers.
+Metrora Harness is the public coding/agent surface. ACT remains the separate
+Metrora authority for bounded state-changing product actions; a coding Tool
+approval is not an ACT action proposal unless it crosses that action boundary.
 
 Harness may understand a state-changing request and prepare a proposal. It does **not** authorize itself.
 
@@ -167,7 +169,8 @@ No dependency is added by this document.
 
 This branch contains the concrete `metrora.action.v1` implementation around Core Compatibility for review against current `main`. Harness remains proposal-only at the product/model boundary: the renderer cannot authorize, construct or execute the action. A trusted Electron host re-reads the persisted proposal, canonicalizes the sole `ActionContractV1`, requires explicit confirmation, and delegates to ACT. The implementation does not add a second runner, change mobile execution, or introduce MCP.
 
-Any acceptance pass must ensure there is one ACT authority rather than separate `AdvisorActionProposal` and ACT execution systems that can diverge.
+Any acceptance pass must ensure there is one ACT authority rather than separate
+action proposal and execution systems that can diverge.
 
 ## Ratified public principles
 

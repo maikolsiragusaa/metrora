@@ -8,6 +8,7 @@ import { runGuardHook, runGuardStatusline } from '../src/guard/hooks.js'
 import { writeGuardConfig, DEFAULT_GUARD_CONFIG } from '../src/guard/store.js'
 import { buildFlags, matchFlag, writeFlags, type GuardFlags } from '../src/guard/flags.js'
 import type { ProjectSummary } from '../src/types.js'
+import { legacyExternalEscalationMessageType } from '../src/compat/legacy-migration-identifiers.js'
 
 const roots: string[] = []
 async function tmp(): Promise<string> {
@@ -88,29 +89,29 @@ describe('incremental session cache', () => {
     expect(r2.cache.costUSD).toBeGreaterThan(r1.cache.costUSD)
   })
 
-  it('folds advisor (/advisor) iteration cost into the session total', async () => {
+  it('folds external escalation iteration cost into the session total', async () => {
     const plain = await transcript([assistantLine('a')])
     const plainCost = (await computeSessionUsage(emptyCache(SID), plain)).cache.costUSD
 
-    // Same line plus an advisor_message iteration: the advisor's tokens live
+    // Same line plus an external escalation iteration: its tokens live
     // outside the top-level usage, so the guard total must exceed the plain
-    // line by the advisor call's own cost.
+    // line by the escalation call's own cost.
     const line = JSON.parse(assistantLine('a')) as { message: { usage: Record<string, unknown> } }
     line.message.usage['iterations'] = [
       { type: 'message', input_tokens: 1_000_000, output_tokens: 200_000 },
-      { type: 'advisor_message', model: 'claude-opus-4-20250514', input_tokens: 500_000, output_tokens: 50_000 },
+      { type: legacyExternalEscalationMessageType(), model: 'claude-opus-4-20250514', input_tokens: 500_000, output_tokens: 50_000 },
     ]
-    const withAdvisor = await transcript([JSON.stringify(line) + '\n'])
-    const advisorTotal = (await computeSessionUsage(emptyCache(SID), withAdvisor)).cache.costUSD
+    const withEscalation = await transcript([JSON.stringify(line) + '\n'])
+    const escalationTotal = (await computeSessionUsage(emptyCache(SID), withEscalation)).cache.costUSD
 
     expect(plainCost).toBeGreaterThan(0)
-    expect(advisorTotal).toBeGreaterThan(plainCost)
+    expect(escalationTotal).toBeGreaterThan(plainCost)
 
     // Streaming rewrite of the same message id replaces, not adds: the fold
-    // stays stable when the advisor-carrying line is written twice.
+    // stays stable when the escalation-carrying line is written twice.
     const rewritten = await transcript([JSON.stringify(line) + '\n', JSON.stringify(line) + '\n'])
     const rewrittenTotal = (await computeSessionUsage(emptyCache(SID), rewritten)).cache.costUSD
-    expect(rewrittenTotal).toBeCloseTo(advisorTotal, 10)
+    expect(rewrittenTotal).toBeCloseTo(escalationTotal, 10)
   })
 
   it('resets to a cold parse when the transcript shrinks (rotation)', async () => {

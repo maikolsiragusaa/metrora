@@ -47,7 +47,7 @@ export function TopBar({
   projectScopeId,
   onProjectScopeSelect,
   capabilities = DEFAULT_CAPABILITIES,
-  onAskAdvisor,
+  onAskHarness,
   onRefresh,
   refreshing = false,
 }: {
@@ -68,7 +68,7 @@ export function TopBar({
   projectScopeId?: string
   onProjectScopeSelect?: (id: string) => void
   capabilities?: DesktopSectionCapabilities
-  onAskAdvisor?: () => void
+  onAskHarness?: () => void
   onRefresh?: () => void
   refreshing?: boolean
 }) {
@@ -77,8 +77,8 @@ export function TopBar({
       <div className="t">{title}</div>
       {scope !== undefined && <span className="scope">{scope}</span>}
       <div className="sp" />
-      {onAskAdvisor && (
-        <button type="button" className="btn btn-s ask-advisor-button" onClick={onAskAdvisor}>
+      {onAskHarness && (
+        <button type="button" className="btn btn-s ask-harness-button" onClick={onAskHarness}>
           Ask Harness <span aria-hidden="true">↗</span>
         </button>
       )}

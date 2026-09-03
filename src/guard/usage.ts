@@ -1,6 +1,6 @@
 import { mkdir, readFile, stat, writeFile } from 'fs/promises'
 import { readSessionLines } from '../fs-utils.js'
-import { parseApiCall, parseAdvisorCalls, parseJsonlLine } from '../parser.js'
+import { parseApiCall, parseExternalEscalationCalls, parseJsonlLine } from '../parser.js'
 import { EDIT_TOOLS } from '../classifier.js'
 import { allowPath, sessionCachePath, sessionsDir } from './store.js'
 
@@ -33,7 +33,7 @@ export type GuardCache = {
 
 // v2: per-message-id replace fold (perMessage map, sawEdit boolean) and the
 // guard/sessions/ cache location. v1 caches are ignored and cold-reparse once.
-// v3: fold advisor (/advisor) cost into each message; v2 caches computed the
+// v3: fold external escalation cost into each message; v2 caches computed the
 // per-message cost without it, so they must cold-reparse.
 export const GUARD_CACHE_VERSION = 3
 
@@ -123,10 +123,10 @@ export async function computeSessionUsage(
     if (!entry) continue
     const call = parseApiCall(entry)
     if (!call) continue
-    // Advisor (/advisor) escalations are billed under a separate model and live
+    // External escalations are billed under a separate model and live
     // outside the top-level usage, so add their cost to the message total.
-    const advisorCost = parseAdvisorCalls(entry).reduce((sum, a) => sum + a.costUSD, 0)
-    const lineCost = call.costUSD + advisorCost
+    const escalationCost = parseExternalEscalationCalls(entry).reduce((sum, a) => sum + a.costUSD, 0)
+    const lineCost = call.costUSD + escalationCost
     // Last-wins per message id, matching the shipped dedupeStreamingMessageIds.
     // Lines without an id (rare, and never streamed in copies) just add.
     const msgId = (entry.message as { id?: string } | undefined)?.id

@@ -40,10 +40,9 @@ export type ApiUsage = {
     web_fetch_requests?: number
   }
   speed?: 'standard' | 'fast'
-  // Claude Code advisor tool (/advisor): per-turn sub-usage records. A record
-  // with type 'advisor_message' carries the advisor model's own tokens and is
-  // NOT included in the top-level totals above; type 'message' records mirror
-  // the main model and are already covered by the top-level totals.
+  // Claude Code can emit separately metered escalation sub-usage records. The
+  // legacy wire shape is read only by the bounded migration reader; such a
+  // record is not included in the top-level totals above.
   iterations?: ApiUsageIteration[]
 }
 

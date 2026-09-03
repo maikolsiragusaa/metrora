@@ -69,6 +69,11 @@ import { flushCopilotChatJournalInvalidations, queueCopilotChatJournalSource, re
 import { reconcileMissingProviderSources, shouldReconcileMissingProviderSources } from './parser-source-reconciliation.js'
 import { buildCwdEvidenceIndex, timeBoundCwdRefs } from './pr-attribution-time-bound.js'
 import { flattenString, flattenStringArray, flattenStringPrefix, flattenToolSequence } from './string-retention.js'
+import {
+  isLegacyExternalEscalationIteration,
+  legacyExternalEscalationDeduplicationKey,
+  legacyExternalEscalationIterations,
+} from './compat/legacy-migration-identifiers.js'
 export { settleSessionCacheCostsForRuntimeV1 } from './session-cache-cost-settlement.js'
 
 // Returns true for sessions whose canonical project key must NOT be derived
@@ -291,23 +296,17 @@ function readJsonNumberField(source: JsonSource, objectBounds: JsonValueBounds |
 }
 
 // The large-line parsers avoid JSON.parse on the whole (multi-KB) line, but the
-// usage object itself is tiny; parse just that slice to recover advisor
-// (/advisor) iterations, which the byte-scanner cannot cheaply extract. Without
-// this, an advisor escalation on a large assistant turn would be dropped.
-function extractAdvisorIterations(usageObjectJson: string): ApiUsageIteration[] | undefined {
+// usage object itself is tiny; parse just that slice to recover external
+// escalation iterations, which the byte-scanner cannot cheaply extract.
+function extractExternalEscalationIterations(usageObjectJson: string): ApiUsageIteration[] | undefined {
   let parsed: unknown
   try {
     parsed = JSON.parse(usageObjectJson)
   } catch {
     return undefined
   }
-  const iterations = (parsed as { iterations?: unknown }).iterations
-  if (!Array.isArray(iterations)) return undefined
-  const advisor = iterations.filter(
-    (it): it is ApiUsageIteration =>
-      !!it && typeof it === 'object' && (it as { type?: unknown }).type === 'advisor_message',
-  )
-  return advisor.length > 0 ? advisor : undefined
+  const iterations = legacyExternalEscalationIterations((parsed as { iterations?: unknown }).iterations)
+  return iterations.length > 0 ? iterations : undefined
 }
 
 function parseLargeUsage(source: JsonSource, usageBounds: JsonValueBounds | null) {
@@ -342,8 +341,8 @@ function parseLargeUsage(source: JsonSource, usageBounds: JsonValueBounds | null
     const speed = readJsonString(source, findObjectFieldValue(source, usageBounds.start, usageBounds.end, 'speed'))
     if (speed === 'standard' || speed === 'fast') usage.speed = speed
 
-    const advisor = extractAdvisorIterations(source.slice(usageBounds.start, usageBounds.end))
-    if (advisor) usage.iterations = advisor
+    const escalations = extractExternalEscalationIterations(source.slice(usageBounds.start, usageBounds.end))
+    if (escalations) usage.iterations = escalations
   }
 
   return usage
@@ -1009,16 +1008,14 @@ export function compactEntry(raw: JournalEntry): JournalEntry {
     }
   }
   if (u.speed) compactUsage.speed = u.speed
-  // Preserve only advisor_message iterations (/advisor sub-usage) so
-  // parseAdvisorCalls can attribute the advisor model's spend; drop the rest to
-  // keep the cache small. Other iteration types (plain `message`, and the
-  // `fallback_message` written when a turn retries on another model) are not
-  // accounted here, a separate pre-existing gap, so they are not preserved.
+  // Preserve only external escalation iterations so the accounting layer can
+  // attribute that separately metered sub-usage; drop the rest to keep the
+  // cache small. Other iteration types are already covered by top-level usage.
   if (Array.isArray(u.iterations)) {
-    const advisorIterations = u.iterations
-      .filter((it): it is ApiUsageIteration => !!it && it.type === 'advisor_message')
+    const escalationIterations = u.iterations
+      .filter(isLegacyExternalEscalationIteration)
       .map(it => {
-        const compact: ApiUsageIteration = { type: 'advisor_message' }
+        const compact: ApiUsageIteration = { type: it.type }
         if (typeof it.model === 'string') compact.model = it.model
         if (it.input_tokens) compact.input_tokens = it.input_tokens
         if (it.output_tokens) compact.output_tokens = it.output_tokens
@@ -1034,7 +1031,7 @@ export function compactEntry(raw: JournalEntry): JournalEntry {
         if (it.speed) compact.speed = it.speed
         return compact
       })
-    if (advisorIterations.length > 0) compactUsage.iterations = advisorIterations
+    if (escalationIterations.length > 0) compactUsage.iterations = escalationIterations
   }
 
   entry.message = {
@@ -1429,13 +1426,11 @@ export function parseApiCall(entry: JournalEntry, toolResultMeta?: Map<string, T
   })
 }
 
-/// Claude Code's advisor tool (/advisor) escalates hard decisions to a stronger
-/// advisor model mid-turn. Those tokens are recorded as `advisor_message`
-/// records inside `message.usage.iterations` under the advisor's own model, and
-/// are excluded from the top-level `message.usage` totals that `parseApiCall`
-/// reads. Emit them as separate calls so the advisor's spend is counted and
-/// attributed to the advisor model rather than silently dropped.
-export function parseAdvisorCalls(entry: JournalEntry): ParsedApiCall[] {
+/// Claude Code can emit a separately metered escalation model mid-turn. Those
+/// tokens are recorded in `message.usage.iterations` under that model and are
+/// excluded from the top-level usage totals. Emit them as separate accounting
+/// calls so their spend is not silently dropped.
+export function parseExternalEscalationCalls(entry: JournalEntry): ParsedApiCall[] {
   if (entry.type !== 'assistant') return []
   const msg = entry.message as AssistantMessageContent | undefined
   const iterations = msg?.usage?.iterations
@@ -1443,15 +1438,15 @@ export function parseAdvisorCalls(entry: JournalEntry): ParsedApiCall[] {
 
   const calls: ParsedApiCall[] = []
   const baseKey = msg.id ?? `claude:${entry.timestamp}`
-  // Ordinal among advisor entries (not the raw array index) so the dedup key is
+  // Ordinal among escalation entries (not the raw array index) so the dedup key is
   // identical whether it is computed from the raw record (guard path) or the
-  // compacted record whose non-advisor iterations were dropped (report path).
-  let advisorOrdinal = 0
+  // compacted record whose non-escalation iterations were dropped (report path).
+  let escalationOrdinal = 0
   for (const it of iterations) {
-    if (!it || it.type !== 'advisor_message') continue
+    if (!isLegacyExternalEscalationIteration(it)) continue
     const model = typeof it.model === 'string' && it.model ? it.model : msg.model
     if (!model) continue
-    const index = advisorOrdinal++
+    const index = escalationOrdinal++
 
     const cacheCreation = extractClaudeCacheCreation(it)
     const tokens: TokenUsage = {
@@ -1489,7 +1484,7 @@ export function parseAdvisorCalls(entry: JournalEntry): ParsedApiCall[] {
       speed,
       timestamp: entry.timestamp ?? '',
       bashCommands: [],
-      deduplicationKey: `${baseKey}:advisor:${index}`,
+      deduplicationKey: legacyExternalEscalationDeduplicationKey(baseKey, index),
       cacheCreationOneHourTokens: cacheCreation.oneHourTokens || undefined,
     }))
   }
@@ -1580,7 +1575,7 @@ export function groupIntoTurns(entries: JournalEntry[], seenMsgIds: Set<string>,
         currentCalls.push(call)
         if (call.spawnToolUseIds) for (const id of call.spawnToolUseIds) if (!currentSpawnIds.includes(id)) currentSpawnIds.push(id)
       }
-      for (const advisorCall of parseAdvisorCalls(entry)) currentCalls.push(advisorCall)
+      for (const escalationCall of parseExternalEscalationCalls(entry)) currentCalls.push(escalationCall)
     } else if (entry.type === 'pr-link') {
       const url = (entry as Record<string, unknown>)['prUrl']
       if (typeof url === 'string' && url && !currentPrRefs.includes(url)) currentPrRefs.push(url)

@@ -32,10 +32,9 @@ import { Plans } from './sections/Plans'
 import { Settings, type SettingsPane } from './sections/Settings'
 import { SpendContent } from './sections/Spend'
 import { WorkspaceContent } from './sections/Workspace'
-import { Advisor } from './sections/Advisor'
+import { Harness } from './sections/Harness'
 import { Bench } from './sections/Bench'
 import type { MenubarPayload } from './lib/types'
-import { createAdvisorContextualLaunch, type AdvisorContextualLaunchV1 } from './advisor/context'
 import { MetroraShell } from './shell/MetroraShell'
 import { MetroraSidebar } from './shell/sidebar/MetroraSidebar'
 
@@ -74,7 +73,6 @@ export function App() {
 function AppMain() {
   const [section, setSection] = useState<Section>('overview')
   const [settingsPane, setSettingsPane] = useState<SettingsPane>('general')
-  const [advisorLaunch, setAdvisorLaunch] = useState<AdvisorContextualLaunchV1 | null>(null)
   const [detectedProviders, setDetectedProviders] = useState<Array<{ id: string; label: string }>>([])
   const {
     period,
@@ -123,16 +121,14 @@ function AppMain() {
 
   const navigate = useCallback((next: Section, pane: SettingsPane = 'general') => {
     setSettingsPane(pane)
-    setAdvisorLaunch(null)
     setSection(next)
     trackEvent('section_view', { section: next })
   }, [trackEvent])
 
-  const openAdvisor = useCallback((launch: AdvisorContextualLaunchV1) => {
+  const openHarness = useCallback(() => {
     setSettingsPane('general')
-    setAdvisorLaunch(launch)
-    setSection('advisor')
-    trackEvent('section_view', { section: 'advisor' })
+    setSection('harness')
+    trackEvent('section_view', { section: 'harness' })
   }, [trackEvent])
 
   useDesktopShortcuts({ navigate, refresh: refreshVisible })
@@ -146,14 +142,6 @@ function AppMain() {
   const projectName = metroraProjectId === 'all'
     ? 'All projects'
     : projectScope?.options.find(option => option.id === metroraProjectId)?.name ?? null
-  const contextualAdvisorLaunch = createAdvisorContextualLaunch({
-    originatingSection: section,
-    period,
-    range: customRange,
-    provider,
-    projectId: metroraProjectId,
-    projectName,
-  })
   useEffect(() => {
     if (!projectScope || projectScope.options.some(option => option.id === metroraProjectId)) return
     onProjectScopeSelect('all')
@@ -169,14 +157,14 @@ function AppMain() {
       <div className="ct">
         <div className={overview.switching ? 'switch-line on' : 'switch-line'} aria-hidden="true" />
         <UpdateBanner />
-        {section !== 'advisor' && section !== 'bench' && <DailyBudgetBanner payload={overview.data ?? null} provider={provider} />}
+        {section !== 'harness' && section !== 'bench' && <DailyBudgetBanner payload={overview.data ?? null} provider={provider} />}
         <ErrorBoundary key={section}>
         {section === 'bench' ? (
           <Bench />
-        ) : section === 'advisor' ? (
-          <Advisor period={period} provider={provider} projectScopeId={metroraProjectId} range={customRange} overview={overview} detectedProviders={detectedProviders} contextualLaunch={advisorLaunch} />
+        ) : section === 'harness' ? (
+          <Harness period={period} provider={provider} projectScopeId={metroraProjectId} range={customRange} overview={overview} detectedProviders={detectedProviders} />
         ) : section === 'plans' ? (
-          <Plans period={period} refreshToken={refreshToken} onNavigate={navigate} onAskAdvisor={contextualAdvisorLaunch ? () => openAdvisor(contextualAdvisorLaunch) : undefined} onRefresh={refreshVisible} refreshing={overview.loading} ready={ready} />
+          <Plans period={period} refreshToken={refreshToken} onNavigate={navigate} onAskHarness={openHarness} onRefresh={refreshVisible} refreshing={overview.loading} ready={ready} />
         ) : section === 'settings' ? (
           <Settings period={period} refreshToken={refreshToken} onNavigate={navigate} initialPane={settingsPane} claudeConfigs={claudeConfigs} claudeConfigSource={claudeConfigSource} onConfigMutated={onConfigMutated} onRefresh={refreshVisible} refreshing={overview.loading} />
         ) : (
@@ -199,7 +187,7 @@ function AppMain() {
               projectScopeId={metroraProjectId}
               onProjectScopeSelect={onProjectScopeSelect}
               capabilities={sectionCapabilities}
-              onAskAdvisor={contextualAdvisorLaunch ? () => openAdvisor(contextualAdvisorLaunch) : undefined}
+              onAskHarness={openHarness}
               onRefresh={refreshVisible}
               refreshing={overview.loading}
             />
@@ -237,7 +225,7 @@ function AppMain() {
           </>
         )}
         </ErrorBoundary>
-        {section !== 'settings' && section !== 'advisor' && section !== 'bench' && (
+        {section !== 'settings' && section !== 'harness' && section !== 'bench' && (
           <Hint
             items={[
               { k: shortcutRangeLabel('1', '8'), label: 'Navigate' },

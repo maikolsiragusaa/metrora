@@ -29,7 +29,7 @@ get_overview_snapshot, get_project_drivers, get_session_highlights,
 get_coverage_report, and get_bench_evidence.
 
 Each result is produced by the canonical registry and preserves the
-advisor-tool-v1 envelope, coverage, freshness, unavailable and content-
+metrora-factual-tool-v1 envelope, coverage, freshness, unavailable and content-
 minimal privacy semantics. The adapter does not render tables or recalculate
 spend/savings.
 
