@@ -60,6 +60,7 @@ const bridge = {
   harnessProfileSetLocalModel: (runtime: 'ollama' | 'lmstudio' | 'llama-server', model: string) => invoke<HarnessRuntimeProfileV1>('metrora:harnessProfileSetLocalModel', runtime, model),
   harnessProfileSetHostedModel: (provider: HarnessHostedProvider, model: string) => invoke<HarnessRuntimeProfileV1>('metrora:harnessProfileSetHostedModel', provider, model),
   harnessProfileSetReasoning: (runtime: 'ollama' | 'lmstudio' | 'llama-server' | 'hosted', provider: HarnessHostedProvider | null, model: string, effort: HarnessReasoningEffort) => invoke<HarnessRuntimeProfileV1>('metrora:harnessProfileSetReasoning', runtime, provider, model, effort),
+  harnessProfileSetReasoningCapabilities: (runtime: 'ollama' | 'lmstudio' | 'llama-server' | 'hosted', provider: HarnessHostedProvider | null, model: string, efforts: HarnessReasoningEffort[]) => invoke<HarnessRuntimeProfileV1>('metrora:harnessProfileSetReasoningCapabilities', runtime, provider, model, efforts),
   harnessProfileSetConsent: (provider: HarnessHostedProvider, state: 'unknown' | 'accepted' | 'declined') => invoke<HarnessRuntimeProfileV1>('metrora:harnessProfileSetConsent', provider, state),
   harnessMcpGet: () => invoke<HarnessMcpServerStatus[]>('metrora:harnessMcpGet'),
   harnessMcpSetServers: (servers: HarnessMcpServerConfig[]) => invoke<{ profile: HarnessRuntimeProfileV1; statuses: HarnessMcpServerStatus[] }>('metrora:harnessMcpSetServers', servers),

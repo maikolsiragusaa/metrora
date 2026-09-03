@@ -34,6 +34,7 @@ describe('Harness runtime profile', () => {
       await store.setPort(19_876)
       await store.setLocalModel('llama-server', 'qwen2.5-coder')
       await store.setReasoning('llama-server', null, 'qwen2.5-coder', 'high')
+      await store.setReasoningCapabilities('llama-server', null, 'qwen2.5-coder', ['budget_tokens:8192', 'vendor-tier-2'])
       await store.setMcpServers([mcpFixture])
       await store.update({
         hostedConsentByProvider: { openai: 'accepted' },
@@ -46,6 +47,7 @@ describe('Harness runtime profile', () => {
       expect(profile.llamaServerPort).toBe(19_876)
       expect(profile.lastLocalModelByRuntime['llama-server']).toBe('qwen2.5-coder')
       expect(profile.reasoningByModel[JSON.stringify(['llama-server', null, 'qwen2.5-coder'])]).toBe('high')
+      expect(profile.reasoningCapabilitiesByModel[JSON.stringify(['llama-server', null, 'qwen2.5-coder'])]).toEqual(['budget_tokens:8192', 'vendor-tier-2'])
       expect(profile.hostedConsentByProvider.openai).toBe('accepted')
       expect(profile.ui).toEqual({ showReasoning: false, compactProcess: true, density: 'compact' })
       expect(profile.mcpServers).toEqual([mcpFixture])
@@ -87,10 +89,12 @@ describe('Harness runtime profile', () => {
       version: 1,
       llamaServerPort: 8080,
       reasoningByModel: { 'gpt-5': 'medium', secret: 'invalid', ['x'.repeat(200)]: 'high' },
+      reasoningCapabilitiesByModel: { 'gpt-5': ['low', 'high'], invalid: ['unsupported'], ['x'.repeat(200)]: ['high'] },
       prompt: 'must not survive',
       apiKey: 'must not survive',
     })
     expect(parsed.reasoningByModel).toEqual({ 'gpt-5': 'medium' })
+    expect(parsed.reasoningCapabilitiesByModel).toEqual({ 'gpt-5': ['low', 'high'], invalid: [] })
     expect(parsed).not.toHaveProperty('prompt')
     expect(parsed).not.toHaveProperty('apiKey')
 

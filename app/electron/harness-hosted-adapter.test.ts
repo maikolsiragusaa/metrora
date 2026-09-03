@@ -53,11 +53,55 @@ describe('Metrora hosted DSH adapter', () => {
   it('keeps provider reasoning IDs exact at the wire boundary', () => {
     expect(hostedReasoningConfig('openai', 'high')).toEqual({ reasoning_effort: 'high' })
     expect(hostedReasoningConfig('openrouter', 'xhigh')).toEqual({ reasoning_effort: 'xhigh' })
-    expect(hostedReasoningConfig('opencode-zen', 'vendor-tier-2')).toEqual({ reasoning_effort: 'vendor-tier-2' })
+    expect(hostedReasoningConfig('opencode-zen', 'low', 'deepseek-v4-flash')).toEqual({ reasoning_effort: 'low' })
     expect(hostedReasoningConfig('anthropic', 'budget-4096')).toEqual({ thinking: { type: 'enabled', budget_tokens: 4096 } })
-    expect(hostedReasoningConfig('gemini', 'high')).toEqual({ thinkingConfig: { thinkingBudget: 4096 } })
-    expect(hostedReasoningConfig('gemini', 'none')).toEqual({ thinkingConfig: { thinkingBudget: 0 } })
+    expect(hostedReasoningConfig('gemini', 'budget-4096')).toEqual({ thinkingConfig: { thinkingBudget: 4096 } })
+    expect(hostedReasoningConfig('opencode-zen', 'high', 'gemini-3-flash')).toEqual({ thinkingConfig: { includeThoughts: true, thinkingLevel: 'high' } })
+    expect(hostedReasoningConfig('opencode-zen', 'high', 'claude-sonnet-4-6')).toEqual({ thinking: { type: 'adaptive' }, effort: 'high' })
+    expect(hostedReasoningConfig('opencode-zen', 'high', 'claude-opus-4-7')).toEqual({ thinking: { type: 'adaptive', display: 'summarized' }, effort: 'high' })
+    expect(hostedReasoningConfig('opencode-zen', 'low', 'claude-opus-4-5')).toEqual({ thinking: { type: 'enabled', budget_tokens: 16_000 } })
+    expect(() => hostedReasoningConfig('opencode-zen', 'high', 'qwen3.5-plus')).toThrow('no reviewed provider wire translation')
+    expect(() => hostedReasoningConfig('anthropic', 'high')).toThrow('has no supported provider wire translation')
+    expect(() => hostedReasoningConfig('gemini', 'none')).toThrow('has no supported provider wire translation')
     expect(() => hostedReasoningConfig('anthropic', 'vendor-special')).toThrow('has no supported provider wire translation')
+  })
+
+  it('uses the reviewed OpenCode Zen transport for each selected model instead of assuming one universal endpoint', async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), init })
+      const url = String(input)
+      const body = url.endsWith('/responses')
+        ? ['data: {"type":"response.reasoning_summary_text.delta","delta":"checking "}\n\n', 'data: {"type":"response.output_text.delta","delta":"done"}\n\n', 'data: {"type":"response.completed","response":{"usage":{"input_tokens":3,"output_tokens":2,"total_tokens":5}}}\n\n'].join('')
+        : url.includes('/models/')
+          ? ['data: {"candidates":[{"content":{"parts":[{"thought":true,"text":"checking "},{"text":"done"}]}}]}\n\n'].join('')
+        : ['data: {"choices":[{"delta":{"reasoning_content":"checking "}}]}\n\n', 'data: {"choices":[{"delta":{"content":"done"}}]}\n\n', 'data: [DONE]\n\n'].join('')
+      return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+    }) as typeof fetch
+    const adapter = new MetroraHostedLlmAdapter({ fetchImpl, readCredential: async () => 'secret-value' })
+    const base = { messages: [createUserMessage({ content: [{ type: 'text', text: 'Check the route.' }], source: { kind: 'user' } })] }
+
+    const gptChunks = await collect(adapter.stream({ provider: hostedProviderRoute('opencode-zen'), model: 'gpt-5.6-sol', ...base, reasoningEffort: ReasoningEffortId('high') }))
+    expect(calls[0]?.url).toBe('https://opencode.ai/zen/v1/responses')
+    const gptBody = JSON.parse(String(calls[0]?.init?.body)) as Record<string, unknown>
+    expect(gptBody.reasoning).toEqual({ effort: 'high', summary: 'auto' })
+    expect(gptBody.input).toEqual([{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Check the route.' }] }])
+    expect(gptChunks).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'reasoning-delta', text: 'checking ' }), expect.objectContaining({ type: 'text-delta', text: 'done' })]))
+
+    await collect(adapter.stream({ provider: hostedProviderRoute('opencode-zen'), model: 'deepseek-v4-flash', ...base, reasoningEffort: ReasoningEffortId('low') }))
+    expect(calls[1]?.url).toBe('https://opencode.ai/zen/v1/chat/completions')
+    const deepSeekBody = JSON.parse(String(calls[1]?.init?.body)) as Record<string, unknown>
+    expect(deepSeekBody.reasoning_effort).toBe('low')
+    await collect(adapter.stream({ provider: hostedProviderRoute('opencode-zen'), model: 'gemini-3-flash', ...base, reasoningEffort: ReasoningEffortId('high') }))
+    expect(calls[2]?.url).toBe('https://opencode.ai/zen/v1/models/gemini-3-flash:streamGenerateContent?alt=sse')
+    const geminiBody = JSON.parse(String(calls[2]?.init?.body)) as Record<string, any>
+    expect(geminiBody.generationConfig).toEqual({ thinkingConfig: { includeThoughts: true, thinkingLevel: 'high' } })
+    await collect(adapter.stream({ provider: hostedProviderRoute('opencode-zen'), model: 'claude-sonnet-4-6', ...base, reasoningEffort: ReasoningEffortId('high') }))
+    expect(calls[3]?.url).toBe('https://opencode.ai/zen/v1/messages')
+    const claudeBody = JSON.parse(String(calls[3]?.init?.body)) as Record<string, any>
+    expect(claudeBody.thinking).toEqual({ type: 'adaptive' })
+    expect(claudeBody.max_tokens).toBe(4096)
+    expect(JSON.stringify(calls[0]?.init?.body)).not.toContain('secret-value')
   })
 
   it('writes the Anthropic thinking budget in the native request shape', async () => {

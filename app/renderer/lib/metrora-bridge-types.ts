@@ -142,6 +142,7 @@ export interface MetroraBridge extends ProjectBridge {
   harnessProfileSetLocalModel(runtime: 'ollama' | 'lmstudio' | 'llama-server', model: string): Promise<HarnessRuntimeProfileV1>
   harnessProfileSetHostedModel(provider: HarnessHostedProvider, model: string): Promise<HarnessRuntimeProfileV1>
   harnessProfileSetReasoning(runtime: 'ollama' | 'lmstudio' | 'llama-server' | 'hosted', provider: HarnessHostedProvider | null, model: string, effort: HarnessReasoningEffort): Promise<HarnessRuntimeProfileV1>
+  harnessProfileSetReasoningCapabilities(runtime: 'ollama' | 'lmstudio' | 'llama-server' | 'hosted', provider: HarnessHostedProvider | null, model: string, efforts: HarnessReasoningEffort[]): Promise<HarnessRuntimeProfileV1>
   harnessProfileSetConsent(provider: HarnessHostedProvider, state: 'unknown' | 'accepted' | 'declined'): Promise<HarnessRuntimeProfileV1>
   harnessMcpGet(): Promise<HarnessMcpServerStatus[]>
   harnessMcpSetServers(servers: HarnessMcpServerConfig[]): Promise<{ profile: HarnessRuntimeProfileV1; statuses: HarnessMcpServerStatus[] }>

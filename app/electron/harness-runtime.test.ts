@@ -10,6 +10,7 @@ import { LlmAdapter, LlmError, type GenerateOptions, type LlmModelInfo, type Llm
 import { createMetroraHarnessAuthority } from './harness-authority.mjs'
 import { MetroraHarnessHost } from './harness-runtime.mjs'
 import { MetroraToolBridge, metroraToolDefinitions } from './harness-tool-bridge.mjs'
+import { projectWorkspace } from './harness-workspace.mjs'
 import type { MetroraHarnessToolRegistry } from './canonical-metrora-tools.mjs'
 import { projectHarnessRuntimeEvent, projectHarnessText, type HarnessScopeInput } from './harness-runtime-types'
 import { METRORA_TOOL_DEFINITIONS } from '../../src/tools/contract'
@@ -507,6 +508,36 @@ describe('Metrora DSH Harness runtime', () => {
     } finally {
       await host.shutdown()
       await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps the DSH Session Workspace immutable across live selection and resume', async () => {
+    const sessionRoot = await tempRoot()
+    const firstWorkspace = path.join(sessionRoot, 'first-workspace')
+    const secondWorkspace = path.join(sessionRoot, 'second-workspace')
+    await Promise.all([mkdir(firstWorkspace), mkdir(secondWorkspace)])
+    const fixture = sourceFixture()
+    const firstAdapter = new ScriptedAdapter(() => textResponse('The first Workspace is fixed.'))
+    const firstHost = new MetroraHarnessHost({ sessionRoot, toolRegistry: canonicalToolRegistry, llmAdapter: firstAdapter, toolSource: fixture.source })
+
+    try {
+      await firstHost.sendMessage({ conversationId: 'fixed-workspace', runtime: 'ollama', model: 'local', question: 'Start here.', scope, workspaceRoot: firstWorkspace, mode: 'ask' })
+      await expect(firstHost.sendMessage({ conversationId: 'fixed-workspace', runtime: 'ollama', model: 'local', question: 'Move elsewhere.', scope, workspaceRoot: secondWorkspace, mode: 'ask' })).rejects.toThrow('Workspace is fixed')
+      expect(firstAdapter.calls).toHaveLength(1)
+      expect((await firstHost.getConversation('fixed-workspace'))?.workspace?.id).toBe(projectWorkspace(firstWorkspace)?.id)
+    } finally {
+      await firstHost.shutdown()
+    }
+
+    const secondAdapter = new ScriptedAdapter(() => textResponse('This must not run.'))
+    const secondHost = new MetroraHarnessHost({ sessionRoot, toolRegistry: canonicalToolRegistry, llmAdapter: secondAdapter, toolSource: fixture.source })
+    try {
+      await expect(secondHost.sendMessage({ conversationId: 'fixed-workspace', runtime: 'ollama', model: 'local', question: 'Move after restart.', scope, workspaceRoot: secondWorkspace, mode: 'ask' })).rejects.toThrow('Workspace is fixed')
+      expect(secondAdapter.calls).toHaveLength(0)
+      expect((await secondHost.getConversation('fixed-workspace'))?.workspace?.id).toBe(projectWorkspace(firstWorkspace)?.id)
+    } finally {
+      await secondHost.shutdown()
+      await rm(sessionRoot, { recursive: true, force: true })
     }
   })
 

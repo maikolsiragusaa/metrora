@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 
-import { exactReasoningEfforts, type HarnessLocalProbe, type HarnessReasoningEffort, type HarnessRuntimeId } from './harness-runtime-types.js'
+import { reasoningMetadata, type HarnessLocalProbe, type HarnessReasoningEffort, type HarnessRuntimeId } from './harness-runtime-types.js'
 
 const OLLAMA_ENDPOINT = 'http://127.0.0.1:11434'
 const LMSTUDIO_ENDPOINT = 'http://127.0.0.1:1234'
@@ -199,7 +199,7 @@ async function chatOpenAiCompatible(fetchImpl: FetchLike, endpoint: string, payl
 }
 
 function probeCapabilities(runtime: HarnessRuntimeId, models: string[], detail: string, endpoint: string, reasoningByModel: ReadonlyMap<string, HarnessReasoningEffort[]> = new Map()): HarnessLocalProbe {
-  return { runtime, endpoint, available: models.length > 0, models, detail, discoveryState: models.length ? 'models-discovered' : 'no-models', capabilities: models.map(modelId => ({ schemaVersion: 1, runtime, modelId, discovery: 'discovered', conversational: 'available', toolCall: 'unknown', streaming: 'supported', ...(reasoningByModel.get(modelId) ? { reasoningEfforts: reasoningByModel.get(modelId) } : {}), limitation: 'Native Tool and reasoning conformance is checked separately for this exact model.' })) }
+  return { runtime, endpoint, available: models.length > 0, models, detail, discoveryState: models.length ? 'models-discovered' : 'no-models', capabilities: models.map(modelId => ({ schemaVersion: 1, runtime, modelId, discovery: 'discovered', conversational: 'available', toolCall: 'unknown', streaming: 'supported', ...(reasoningByModel.has(modelId) ? { reasoningEfforts: reasoningByModel.get(modelId) ?? [], reasoningMetadataPresent: true } : {}), limitation: 'Native Tool and reasoning conformance is checked separately for this exact model.' })) }
 }
 
 export async function probeOllamaMain(fetchImpl: FetchLike = fetch, parent?: AbortSignal): Promise<HarnessLocalProbe> {
@@ -211,8 +211,8 @@ export async function probeOllamaMain(fetchImpl: FetchLike = fetch, parent?: Abo
       const reasoningByModel = new Map<string, HarnessReasoningEffort[]>()
       const models = rows.flatMap(row => {
         if (!isRecord(row) || typeof row.name !== 'string' || !validModel(row.name)) return []
-        const efforts = exactReasoningEfforts(row)
-        if (efforts) reasoningByModel.set(row.name, efforts)
+        const metadata = reasoningMetadata(row)
+        if (metadata.present) reasoningByModel.set(row.name, metadata.efforts)
         return [row.name]
       })
       return probeCapabilities('ollama', [...new Set(models)].slice(0, 64), 'Local Ollama is reachable.', OLLAMA_ENDPOINT, reasoningByModel)
@@ -261,8 +261,8 @@ export async function probeLMStudioMain(fetchImpl: FetchLike = fetch, parent?: A
       const reasoningByModel = new Map<string, HarnessReasoningEffort[]>()
       const models = rows.flatMap(row => {
         if (!isRecord(row) || row.type !== 'llm' || typeof row.key !== 'string' || !validModel(row.key)) return []
-        const efforts = exactReasoningEfforts(row)
-        if (efforts) reasoningByModel.set(row.key, efforts)
+        const metadata = reasoningMetadata(row)
+        if (metadata.present) reasoningByModel.set(row.key, metadata.efforts)
         return [row.key]
       })
       return probeCapabilities('lmstudio', [...new Set(models)].slice(0, 64), 'Local LM Studio is reachable.', LMSTUDIO_ENDPOINT, reasoningByModel)
@@ -296,8 +296,8 @@ export async function probeLlamaServerMain(fetchImpl: FetchLike = fetch, parent?
       const reasoningByModel = new Map<string, HarnessReasoningEffort[]>()
       const models = rows.flatMap(row => {
         if (!isRecord(row) || typeof row.id !== 'string' || !validModel(row.id)) return []
-        const efforts = exactReasoningEfforts(row)
-        if (efforts) reasoningByModel.set(row.id, efforts)
+        const metadata = reasoningMetadata(row)
+        if (metadata.present) reasoningByModel.set(row.id, metadata.efforts)
         return [row.id]
       })
       return { ...probeCapabilities('llama-server', [...new Set(models)].slice(0, 64), 'Local llama.cpp server is reachable on loopback.', safeEndpoint, reasoningByModel), endpoint: safeEndpoint }

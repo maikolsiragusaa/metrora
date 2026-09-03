@@ -147,6 +147,7 @@ const LOCAL_RUNTIMES: readonly HarnessRuntimeId[] = ['ollama', 'lmstudio', 'llam
 const HOSTED_PROVIDERS: readonly HarnessHostedProvider[] = ['openai', 'anthropic', 'gemini', 'openrouter', 'opencode-zen']
 const MODES: readonly HarnessMode[] = ['ask', 'plan', 'edit', 'build']
 const FACTUAL_TOOLS = new Set(['get_spend_snapshot', 'get_model_efficiency', 'get_quota_snapshot', 'get_overview_snapshot', 'get_project_drivers', 'get_session_highlights', 'get_coverage_report', 'get_bench_evidence'])
+const WORKSPACE_SESSION_ERROR = 'Workspace is fixed for this Harness Session; start a new Session to use another Workspace.'
 
 function mount(ctx: Context, plugin: unknown, config?: unknown): Promise<void> {
   return (ctx.plugin as unknown as (plugin: unknown, config?: unknown) => Promise<void>)(plugin, config)
@@ -192,6 +193,14 @@ function assertEffort(value: unknown): HarnessReasoningEffort | null {
 function assertQuestion(value: unknown): string {
   if (typeof value !== 'string' || !value.trim() || value.length > 32_000 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(value)) throw new Error('Harness prompt is invalid.')
   return value.trim()
+}
+
+function workspaceIdentity(root: string | null): string | null {
+  return root ? projectWorkspace(root)?.id ?? null : null
+}
+
+function assertWorkspaceSessionStable(currentRoot: string | null, nextRoot: string | null): void {
+  if (workspaceIdentity(currentRoot) !== workspaceIdentity(nextRoot)) throw new Error(WORKSPACE_SESSION_ERROR)
 }
 
 function dateText(value: unknown, fallback: number): string {
@@ -669,10 +678,11 @@ export class MetroraHarnessHost {
     if (!live) {
       const existing = await this.getConversation(id)
       if (!existing) return null
-      const normalized = await this.normalizeConversationInput(input, null, false)
+      const existingRoot = await this.sessionWorkspaceRoot(id)
+      const normalized = await this.normalizeConversationInput(input, existingRoot, false, true)
       live = await this.resumeLiveConversation(id, normalized, existing.title)
     } else {
-      const normalized = await this.normalizeConversationInput(input, live.workspaceRoot, false)
+      const normalized = await this.normalizeConversationInput(input, live.workspaceRoot, false, true)
       this.applySelection(live, normalized)
     }
     if (!live) return null
@@ -690,10 +700,11 @@ export class MetroraHarnessHost {
     let live = this.live.get(id)
     if (!live) {
       const existing = await this.getConversation(id)
-      const normalized = await this.normalizeConversationInput(input, null)
+      const existingRoot = existing ? await this.sessionWorkspaceRoot(id) : null
+      const normalized = await this.normalizeConversationInput(input, existingRoot, true, Boolean(existing))
       live = existing ? await this.resumeLiveConversation(id, normalized, existing.title) : await this.createLiveConversation(id, normalized, 'New chat')
     } else {
-      const normalized = await this.normalizeConversationInput(input, live.workspaceRoot)
+      const normalized = await this.normalizeConversationInput(input, live.workspaceRoot, true, true)
       this.applySelection(live, normalized)
     }
     if (!live) throw new Error('Harness Session could not be opened.')
@@ -1056,7 +1067,7 @@ export class MetroraHarnessHost {
     for (const key of this.factualCallStates.keys()) if (key.startsWith(prefix)) this.factualCallStates.delete(key)
   }
 
-  private async normalizeConversationInput(input: HarnessConversationInput, existingRoot: string | null, requireHostedConsent = true): Promise<NormalizedInput> {
+  private async normalizeConversationInput(input: HarnessConversationInput, existingRoot: string | null, requireHostedConsent = true, workspaceLocked = false): Promise<NormalizedInput> {
     if (!input || typeof input !== 'object') throw new Error('Harness conversation input is invalid.')
     const runtime = assertRuntime(input.runtime)
     const provider = runtime === 'hosted' ? assertProvider(input.provider) : null
@@ -1074,7 +1085,10 @@ export class MetroraHarnessHost {
       : assertEffort(input.reasoningEffort)
     let workspaceRoot: string | null = existingRoot
     if (input.workspaceRoot !== undefined) workspaceRoot = await canonicalizeWorkspaceRoot(input.workspaceRoot)
-    else {
+    else if (workspaceLocked) {
+      const existingId = workspaceIdentity(workspaceRoot)
+      if (input.workspaceId !== undefined && input.workspaceId !== null && input.workspaceId !== existingId) throw new Error(WORKSPACE_SESSION_ERROR)
+    } else {
       const candidate = this.options.getWorkspaceRoot?.() ?? null
       const candidateId = candidate ? projectWorkspace(candidate)?.id : null
       const existingId = workspaceRoot ? projectWorkspace(workspaceRoot)?.id : null
@@ -1099,10 +1113,18 @@ export class MetroraHarnessHost {
     return live
   }
 
+  private async sessionWorkspaceRoot(id: string): Promise<string | null> {
+    const inspection = await this.requireContext().sessionPersistence.inspect(SessionId(id))
+    const cwd = inspection.meta.cwd
+    if (typeof cwd !== 'string' || !cwd.trim()) return null
+    return await canonicalizeWorkspaceRoot(cwd).catch(() => path.resolve(cwd))
+  }
+
   private async resumeLiveConversation(id: string, input: NormalizedInput, title: string): Promise<LiveConversation> {
     const inspection = await this.requireContext().sessionPersistence.inspect(SessionId(id))
     const header = inspection.meta
-    const workspaceRoot = header.cwd ? await canonicalizeWorkspaceRoot(header.cwd).catch(() => null) : input.workspaceRoot
+    const workspaceRoot = header.cwd ? await canonicalizeWorkspaceRoot(header.cwd).catch(() => path.resolve(header.cwd!)) : null
+    assertWorkspaceSessionStable(workspaceRoot, input.workspaceRoot)
     const agent = await this.requireContext().agents.resume({ resumeSessionId: SessionId(id), agentOptions: { provider: this.routeFor(input), model: input.model, ...(input.reasoningEffort ? { reasoningEffort: ReasoningEffortId(input.reasoningEffort) } : {}) } })
     const saved = this.metadata.get(id)
     const sameRoute = saved?.runtime === input.runtime && saved.provider === input.provider && saved.model === input.model && saved.reasoningEffort === input.reasoningEffort
@@ -1116,6 +1138,7 @@ export class MetroraHarnessHost {
   private routeForLive(live: LiveConversation): string { return this.routeFor(live) }
 
   private applySelection(live: LiveConversation, normalized: NormalizedInput): void {
+    assertWorkspaceSessionStable(live.workspaceRoot, normalized.workspaceRoot)
     const routeChanged = live.runtime !== normalized.runtime
       || live.provider !== normalized.provider
       || live.model !== normalized.model
@@ -1126,7 +1149,7 @@ export class MetroraHarnessHost {
     live.mode = normalized.mode
     live.reasoningEffort = normalized.reasoningEffort
     live.scope = normalized.scope
-    live.workspaceRoot = normalized.workspaceRoot ?? live.workspaceRoot
+    live.workspaceRoot = normalized.workspaceRoot
     if (routeChanged) live.conformance = defaultConformance()
     this.toolBridge?.setContext(live.id, live.scope, live.workspaceRoot, live.mode)
   }

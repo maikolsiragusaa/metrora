@@ -34,6 +34,7 @@ const bridge = vi.hoisted(() => ({
   harnessProfileSetLocalModel: vi.fn(),
   harnessProfileSetHostedModel: vi.fn(),
   harnessProfileSetReasoning: vi.fn(),
+  harnessProfileSetReasoningCapabilities: vi.fn(),
   harnessProfileSetConsent: vi.fn(),
   harnessCredentialSet: vi.fn(),
   harnessMcpGet: vi.fn(),
@@ -54,6 +55,7 @@ const profile: HarnessRuntimeProfileV1 = {
   lastHostedModelByProvider: {},
   llamaServerPort: 8080,
   reasoningByModel: { [JSON.stringify(['ollama', null, 'qwen2.5-coder'])]: 'medium' },
+  reasoningCapabilitiesByModel: {},
   hostedConsentByProvider: {},
   lastUsable: { runtime: 'ollama', provider: null, model: 'qwen2.5-coder' },
   mcpServers: [],
@@ -137,6 +139,26 @@ describe('Metrora Harness cockpit', () => {
     expect(await screen.findByText('The selected Workspace is ready.')).toBeInTheDocument()
   })
 
+  it('keeps the active Session Workspace fixed while choosing a Workspace for the next Session', async () => {
+    const nextWorkspace: HarnessWorkspace = { id: 'workspace-fedcba9876543210', displayName: 'Next project', relativeRoot: '.', available: true }
+    bridge.harnessWorkspaceOpen.mockResolvedValueOnce(workspace).mockResolvedValueOnce(nextWorkspace)
+    renderHarness()
+
+    expect(await screen.findByRole('heading', { name: 'Start a coding Session' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Open Workspace/i }))
+    await waitFor(() => expect(bridge.harnessWorkspaceOpen).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByRole('button', { name: /New Session/i }))
+    await waitFor(() => expect(bridge.harnessCreateConversation).toHaveBeenCalled())
+
+    fireEvent.click(screen.getByRole('button', { name: /Metrora project/i }))
+    await waitFor(() => expect(bridge.harnessWorkspaceOpen).toHaveBeenCalledTimes(2))
+    expect(await screen.findByRole('status')).toHaveTextContent('Workspace ready for new Sessions · Next project')
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Ask Metrora Harness' }), { target: { value: 'Stay on the active project.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
+    await waitFor(() => expect(bridge.harnessSendMessage).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: workspace.id, question: 'Stay on the active project.' })))
+  })
+
   it('hydrates a prior Session and resolves its exact inline Shield approval', async () => {
     const approvalConversation: HarnessConversation = {
       ...summary,
@@ -181,6 +203,7 @@ describe('Metrora Harness cockpit', () => {
       ...profile,
       lastLocalModelByRuntime: { ollama: modelA },
       reasoningByModel: { ...profile.reasoningByModel, [JSON.stringify(['ollama', null, modelB])]: 'high' },
+      reasoningCapabilitiesByModel: profile.reasoningCapabilitiesByModel,
     }
     bridge.harnessProfileGet.mockResolvedValue(testProfile)
     bridge.harnessListConversations.mockResolvedValue([summaryA])

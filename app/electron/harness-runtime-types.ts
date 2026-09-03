@@ -17,6 +17,12 @@ export type HarnessMode = 'ask' | 'plan' | 'edit' | 'build'
  * universal min/low/medium/high/max vocabulary.
  */
 export type HarnessReasoningEffort = string
+export type HarnessReasoningCapabilitySource = 'provider' | 'catalog' | 'oss' | 'user'
+export type HarnessReasoningCapability = {
+  efforts: HarnessReasoningEffort[]
+  source: HarnessReasoningCapabilitySource
+  automatic: boolean
+}
 
 const REASONING_EFFORT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,80}$/u
 const INVALID_REASONING_IDS = new Set(['invalid', 'unknown', 'unsupported', 'unavailable'])
@@ -282,6 +288,8 @@ export type HarnessRuntimeProfileV1 = {
   lastHostedModelByProvider: Partial<Record<HarnessHostedProvider, string>>
   llamaServerPort: number
   reasoningByModel: Record<string, HarnessReasoningEffort>
+  /** User declarations are kept apart from the selected preference. */
+  reasoningCapabilitiesByModel: Record<string, HarnessReasoningEffort[]>
   hostedConsentByProvider: Partial<Record<HarnessHostedProvider, 'unknown' | 'accepted' | 'declined'>>
   lastUsable: { runtime: HarnessRuntimeChoice; provider: HarnessHostedProvider | null; model: string } | null
   mcpServers: HarnessMcpServerConfig[]
@@ -293,30 +301,57 @@ export function reasoningProfileKey(runtime: HarnessRuntimeChoice, provider: Har
   return JSON.stringify([runtime, provider, model])
 }
 
-/** Read only an adapter/provider-declared exact effort list. We intentionally
- * do not infer levels from a model name or from a generic "thinking" flag. */
-export function exactReasoningEfforts(value: unknown): HarnessReasoningEffort[] | undefined {
-  const read = (candidate: unknown): HarnessReasoningEffort[] => {
-    if (!Array.isArray(candidate)) return []
-    const values = candidate.flatMap(item => {
-      const raw = typeof item === 'string'
-        ? item
-        : item && typeof item === 'object' && !Array.isArray(item) && typeof (item as { id?: unknown }).id === 'string'
-          ? (item as { id: string }).id
-          : ''
-      return isHarnessReasoningEffort(raw) ? [raw] : []
-    })
-    return [...new Set(values)]
-  }
-  const direct = read(value)
-  if (direct.length) return direct
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+export type HarnessReasoningMetadata = { present: boolean; efforts: HarnessReasoningEffort[] }
+
+function readReasoningIds(value: unknown, allowNull = false): HarnessReasoningEffort[] {
+  if (!Array.isArray(value)) return []
+  const values = value.flatMap(item => {
+    if (allowNull && item === null) return ['none']
+    const raw = typeof item === 'string'
+      ? item
+      : item && typeof item === 'object' && !Array.isArray(item) && typeof (item as { id?: unknown }).id === 'string'
+        ? (item as { id: string }).id
+        : ''
+    return isHarnessReasoningEffort(raw) ? [raw] : []
+  })
+  return [...new Set(values)]
+}
+
+function readReasoningOptions(value: unknown): HarnessReasoningMetadata {
+  if (!Array.isArray(value)) return { present: false, efforts: [] }
+  const efforts = value.flatMap(option => {
+    if (!option || typeof option !== 'object' || Array.isArray(option)) return []
+    const row = option as Record<string, unknown>
+    return row.type === 'effort' && Array.isArray(row.values) ? readReasoningIds(row.values, true) : []
+  })
+  return { present: true, efforts: [...new Set(efforts)] }
+}
+
+/** Read exact provider metadata, preserving the difference between absent and
+ * explicitly empty controls. No model-name or generic thinking inference is
+ * performed. */
+export function reasoningMetadata(value: unknown): HarnessReasoningMetadata {
+  if (Array.isArray(value)) return { present: true, efforts: readReasoningIds(value) }
+  if (!value || typeof value !== 'object') return { present: value === false, efforts: [] }
   const row = value as Record<string, unknown>
-  for (const key of ['efforts', 'reasoningEfforts', 'reasoning_efforts', 'supportedReasoningEfforts', 'supported_reasoning_efforts']) {
-    const parsed = read(row[key])
-    if (parsed.length) return parsed
+  for (const key of ['reasoning_efforts', 'reasoningEfforts', 'supported_reasoning_efforts', 'supportedReasoningEfforts', 'efforts']) {
+    if (Object.prototype.hasOwnProperty.call(row, key) && Array.isArray(row[key])) return { present: true, efforts: readReasoningIds(row[key]) }
   }
-  return exactReasoningEfforts(row.reasoning)
+  for (const key of ['reasoning_options', 'reasoningOptions']) {
+    if (Object.prototype.hasOwnProperty.call(row, key)) return readReasoningOptions(row[key])
+  }
+  if (row.reasoning === false) return { present: true, efforts: [] }
+  if (row.reasoning !== undefined) {
+    const nested = reasoningMetadata(row.reasoning)
+    if (nested.present) return nested
+  }
+  return { present: false, efforts: [] }
+}
+
+/** Compatibility helper for callers that only need a non-empty exact list. */
+export function exactReasoningEfforts(value: unknown): HarnessReasoningEffort[] | undefined {
+  const metadata = reasoningMetadata(value)
+  return metadata.present && metadata.efforts.length ? metadata.efforts : undefined
 }
 
 export type HarnessLocalProbe = {
@@ -336,6 +371,9 @@ export type HarnessLocalProbe = {
     toolCall: 'supported' | 'unsupported' | 'unknown' | 'failed-conformance'
     streaming: 'supported' | 'unsupported' | 'unknown'
     reasoningEfforts?: HarnessReasoningEffort[]
+    reasoningMetadataPresent?: boolean
+    reasoningSource?: HarnessReasoningCapabilitySource
+    reasoningAutomatic?: boolean
     limitation: string
   }>
 }
@@ -349,6 +387,9 @@ export type HarnessHostedModel = {
   limitation: string | null
   capabilities: { conversational: 'available' | 'unavailable' | 'unknown'; streaming: 'supported' | 'unsupported' | 'unknown'; toolCall: 'supported' | 'unsupported' | 'unknown' | 'failed-conformance' }
   reasoningEfforts?: HarnessReasoningEffort[]
+  reasoningMetadataPresent?: boolean
+  reasoningSource?: HarnessReasoningCapabilitySource
+  reasoningAutomatic?: boolean
 }
 export type HarnessHostedProbe = {
   provider: HarnessHostedProvider

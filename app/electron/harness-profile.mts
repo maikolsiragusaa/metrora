@@ -62,6 +62,17 @@ function boundedModelMap(value: unknown): Record<string, HarnessReasoningEffort>
   return result
 }
 
+function boundedReasoningCapabilitiesMap(value: unknown): Record<string, HarnessReasoningEffort[]> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const result: Record<string, HarnessReasoningEffort[]> = {}
+  for (const [model, efforts] of Object.entries(value)) {
+    if (Object.keys(result).length >= 128 || !validReasoningKey(model) || !Array.isArray(efforts)) continue
+    const exact = [...new Set(efforts.filter(isHarnessReasoningEffort))].slice(0, 64)
+    result[model] = exact
+  }
+  return result
+}
+
 function boundedRuntimeMap(value: unknown): Partial<Record<HarnessRuntimeId, string>> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   const result: Partial<Record<HarnessRuntimeId, string>> = {}
@@ -91,6 +102,7 @@ export function defaultHarnessRuntimeProfile(): HarnessRuntimeProfileV1 {
     lastHostedModelByProvider: {},
     llamaServerPort: DEFAULT_LLAMA_SERVER_PORT,
     reasoningByModel: {},
+    reasoningCapabilitiesByModel: {},
     hostedConsentByProvider: {},
     lastUsable: null,
     mcpServers: [],
@@ -128,6 +140,7 @@ export function parseHarnessRuntimeProfile(value: unknown): HarnessRuntimeProfil
     lastHostedModelByProvider: boundedProviderMap(row.lastHostedModelByProvider),
     llamaServerPort: normalizeLlamaServerPort(row.llamaServerPort),
     reasoningByModel: boundedModelMap(row.reasoningByModel),
+    reasoningCapabilitiesByModel: boundedReasoningCapabilitiesMap(row.reasoningCapabilitiesByModel),
     hostedConsentByProvider: consent,
     lastUsable: usable,
     mcpServers: parseHarnessMcpServers(row.mcpServers),
@@ -202,6 +215,12 @@ export class HarnessRuntimeProfileStore {
   async setReasoning(runtime: HarnessRuntimeChoice, provider: HarnessHostedProvider | null, model: string, effort: HarnessReasoningEffort): Promise<HarnessRuntimeProfileV1> {
     if (!validModel(model) || !isHarnessReasoningEffort(effort)) throw new Error('Harness reasoning preference is invalid.')
     return this.update({ reasoningByModel: { ...this.current.reasoningByModel, [reasoningProfileKey(runtime, provider, model)]: effort } })
+  }
+
+  async setReasoningCapabilities(runtime: HarnessRuntimeChoice, provider: HarnessHostedProvider | null, model: string, efforts: HarnessReasoningEffort[]): Promise<HarnessRuntimeProfileV1> {
+    if (!validModel(model) || !Array.isArray(efforts) || efforts.length > 64 || efforts.some(effort => !isHarnessReasoningEffort(effort))) throw new Error('Harness reasoning capabilities are invalid.')
+    const exact = [...new Set(efforts)]
+    return this.update({ reasoningCapabilitiesByModel: { ...this.current.reasoningCapabilitiesByModel, [reasoningProfileKey(runtime, provider, model)]: exact } })
   }
 
   async setPort(port: number): Promise<HarnessRuntimeProfileV1> {

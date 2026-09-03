@@ -1,5 +1,4 @@
-import { useState } from 'react'
-import type { FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 
 import { metrora } from '../lib/ipc'
 import type {
@@ -10,8 +9,11 @@ import type {
   HarnessMcpServerStatus,
   HarnessRuntimeChoice,
   HarnessRuntimeProfileV1,
+  HarnessReasoningCapabilitySource,
+  HarnessReasoningEffort,
   HarnessWorkspace,
 } from '../../electron/harness-runtime-types'
+import { reasoningProfileKey } from '../../electron/harness-runtime-types'
 
 type HarnessSettingsProps = {
   profile: HarnessRuntimeProfileV1
@@ -20,6 +22,11 @@ type HarnessSettingsProps = {
   hostedConsent: 'unknown' | 'accepted' | 'declined'
   localProbe: HarnessLocalProbe | null
   hostedProbe: { detail: string; credentialState: string } | null
+  model: string
+  reasoningEfforts: HarnessReasoningEffort[]
+  reasoningSource?: HarnessReasoningCapabilitySource
+  reasoningAutomatic?: boolean
+  onReasoningCapabilitiesChange: (efforts: HarnessReasoningEffort[]) => Promise<void>
   workspace: HarnessWorkspace | null
   mcpStatuses: HarnessMcpServerStatus[]
   onPortChange: (port: number) => Promise<void>
@@ -56,7 +63,7 @@ function mcpStatusLabel(status: HarnessMcpServerStatus | undefined): string {
   return status.state === 'connected' ? `${status.toolCount} Tool${status.toolCount === 1 ? '' : 's'}` : status.state.replaceAll('-', ' ')
 }
 
-export function HarnessSettings({ profile, runtime, hostedProvider, hostedConsent, localProbe, hostedProbe, workspace, mcpStatuses, onPortChange, onCredentialChange, onConsentChange, onMcpSave, onMcpReload, onCheckConformance, conformance }: HarnessSettingsProps) {
+export function HarnessSettings({ profile, runtime, hostedProvider, hostedConsent, localProbe, hostedProbe, model, reasoningEfforts, reasoningSource, reasoningAutomatic, onReasoningCapabilitiesChange, workspace, mcpStatuses, onPortChange, onCredentialChange, onConsentChange, onMcpSave, onMcpReload, onCheckConformance, conformance }: HarnessSettingsProps) {
   const [port, setPort] = useState(String(profile.llamaServerPort))
   const [secret, setSecret] = useState('')
   const [mcpName, setMcpName] = useState('')
@@ -74,6 +81,11 @@ export function HarnessSettings({ profile, runtime, hostedProvider, hostedConsen
   const [mcpCredentialState, setMcpCredentialState] = useState<string | null>(null)
   const [mcpBusy, setMcpBusy] = useState(false)
   const [mcpNotice, setMcpNotice] = useState<string | null>(null)
+  const capabilityKey = model ? reasoningProfileKey(runtime, runtime === 'hosted' ? hostedProvider : null, model) : null
+  const declaredCapabilities = capabilityKey ? profile.reasoningCapabilitiesByModel[capabilityKey] ?? [] : []
+  const [capabilityText, setCapabilityText] = useState(declaredCapabilities.join('\n'))
+  const [capabilityNotice, setCapabilityNotice] = useState<string | null>(null)
+  useEffect(() => { setCapabilityText(declaredCapabilities.join('\n')); setCapabilityNotice(null) }, [capabilityKey, declaredCapabilities.join('\u0000')])
 
   const mutateMcp = async (servers: HarnessMcpServerConfig[]): Promise<boolean> => {
     setMcpBusy(true)
@@ -108,9 +120,18 @@ export function HarnessSettings({ profile, runtime, hostedProvider, hostedConsen
     } catch (error) { setMcpCredentialState(errorText(error)) }
   }
 
+  const saveCapabilities = async () => {
+    setCapabilityNotice(null)
+    try {
+      await onReasoningCapabilitiesChange(parseArgsSettings(capabilityText))
+      setCapabilityNotice('Exact capability IDs saved for this route/model.')
+    } catch (error) { setCapabilityNotice(errorText(error)) }
+  }
+
   return <aside className="harness-settings" aria-label="Harness settings"><div className="harness-settings-head"><div><span className="harness-eyebrow">RUNTIME SETTINGS</span><h2>Provider & Workspace</h2></div><span className="harness-settings-state">{runtime === 'hosted' ? hostedProbe?.credentialState ?? 'not checked' : localProbe?.discoveryState ?? 'not checked'}</span></div><div className="harness-settings-grid">
     {runtime === 'llama-server' && <label><span>llama.cpp loopback port</span><div className="harness-inline-input"><input aria-label="llama.cpp port" inputMode="numeric" value={port} onChange={event => setPort(event.target.value)} /><button type="button" onClick={() => void onPortChange(Number(port))}>Apply</button></div><small>Default 8080 · loopback only</small></label>}
     {runtime === 'hosted' && <><label><span>{hostedProvider} credential</span><div className="harness-inline-input"><input aria-label="Hosted provider credential" type="password" autoComplete="off" value={secret} onChange={event => setSecret(event.target.value)} placeholder="Stored in the OS vault" /><button type="button" onClick={() => { void onCredentialChange(secret); setSecret('') }}>Save</button></div><small>{hostedProbe?.detail ?? 'Credentials never enter the Session or profile.'}</small></label><label className="harness-consent"><span>Hosted provider consent</span><select aria-label="Hosted provider consent" value={hostedConsent} onChange={event => void onConsentChange(event.target.value as 'unknown' | 'accepted' | 'declined')}><option value="unknown">Ask before sending</option><option value="accepted">Allow hosted requests</option><option value="declined">Decline hosted requests</option></select><small>Requests go directly to {hostedProvider}; credentials stay in the OS vault and never enter the Session.</small></label></>}
+    {model && reasoningAutomatic !== true && <section className="harness-reasoning-config" aria-label="Custom model reasoning capabilities"><div><span>Custom model capabilities</span><strong>{reasoningSource === 'user' ? 'User declaration' : 'Automatic metadata unavailable'}</strong><small>Enter exact provider IDs, one per line or comma-separated. Provider default is always available.</small></div><textarea aria-label="Custom reasoning capability IDs" value={capabilityText} onChange={event => setCapabilityText(event.target.value)} placeholder="e.g. budget_tokens:8192&#10;vendor-tier-2" rows={3} /><small>{reasoningEfforts.length ? `Current variants: ${reasoningEfforts.join(', ')}` : 'No exact variants declared for this model.'}</small><button type="button" className="harness-link-button" onClick={() => void saveCapabilities()}>Save capability IDs</button>{capabilityNotice && <small role="status">{capabilityNotice}</small>}</section>}
     <div className="harness-settings-fact"><span>Workspace</span><strong>{workspace?.displayName ?? 'Not selected'}</strong><small>{workspace ? 'Coding Tools are fenced to this folder.' : 'Choose a local folder from the header.'}</small></div>
     <div className="harness-settings-fact"><span>Exact model conformance</span><strong>{conformance?.state ?? 'Not checked'}</strong><small>Verified requires a native Tool round trip and final synthesis.</small><button type="button" className="harness-link-button" onClick={onCheckConformance}>Run conformance again</button></div>
     <section className="harness-mcp-panel" aria-label="MCP server settings"><div className="harness-mcp-heading"><div><span className="harness-eyebrow">TOOL EXTENSIONS</span><h3>MCP servers</h3></div><span className="harness-mcp-count">{profile.mcpServers.length}/16</span></div><p className="harness-mcp-intro">Connect external Tools to the same Agent Session. Every MCP call stays visible and requires Shield approval.</p>

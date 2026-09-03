@@ -11,7 +11,8 @@ import type {
 } from '@deepseek-ai/dsh-llm'
 import { LlmAdapter, LlmError } from '@deepseek-ai/dsh-llm'
 
-import { exactReasoningEfforts, type HarnessHostedModel, type HarnessHostedProbe, type HarnessHostedProvider, type HarnessReasoningEffort } from './harness-runtime-types.js'
+import { reasoningMetadata, type HarnessHostedModel, type HarnessHostedProbe, type HarnessHostedProvider, type HarnessReasoningEffort } from './harness-runtime-types.js'
+import { reviewedOpenCodeZenReasoningConfig, reviewedOpenCodeZenTransport } from './harness-reasoning-catalog.mjs'
 
 type FetchLike = typeof fetch
 type SecretReader = (provider: HarnessHostedProvider) => Promise<string | null>
@@ -38,8 +39,6 @@ const MAX_BYTES = 2 * 1024 * 1024
 const MAX_CALLS = 16
 const PROBE_TIMEOUT_MS = 5_000
 const MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,160}$/u
-const ANTHROPIC_REASONING_BUDGETS: Readonly<Record<string, number>> = Object.freeze({ min: 1_024, minimal: 1_024, low: 2_048, medium: 4_096, high: 8_192, xhigh: 16_384, max: 32_768 })
-const GEMINI_REASONING_BUDGETS: Readonly<Record<string, number>> = Object.freeze({ min: 512, minimal: 512, low: 1_024, medium: 2_048, high: 4_096, xhigh: 8_192, max: 8_192 })
 
 function isRecord(value: unknown): value is RecordValue { return Boolean(value && typeof value === 'object' && !Array.isArray(value)) }
 function textBlocks(blocks: readonly ContentBlock[]): string { return blocks.flatMap(block => block.type === 'text' ? [block.text] : []).join('') }
@@ -71,6 +70,9 @@ function toolCalls(value: unknown): Array<{ id: string; name: string; arguments:
 function toolSchemas(tools: readonly ToolSchema[] | undefined): Array<Record<string, unknown>> {
   return (tools ?? []).slice(0, 32).map(tool => ({ type: 'function', function: { name: tool.name, description: tool.description, parameters: tool.parameters } }))
 }
+function responsesToolSchemas(tools: readonly ToolSchema[] | undefined): Array<Record<string, unknown>> {
+  return (tools ?? []).slice(0, 32).map(tool => ({ type: 'function', name: tool.name, description: tool.description, parameters: tool.parameters }))
+}
 function providerMessages(options: GenerateOptions): Array<Record<string, unknown>> {
   const messages: Array<Record<string, unknown>> = []
   for (const message of options.messages) {
@@ -84,6 +86,29 @@ function providerMessages(options: GenerateOptions): Array<Record<string, unknow
   }
   if (options.system && !messages.some(message => message.role === 'system')) messages.unshift({ role: 'system', content: options.system })
   return messages
+}
+function responsesInput(options: GenerateOptions): { input: Array<Record<string, unknown>>; instructions?: string } {
+  const input: Array<Record<string, unknown>> = []
+  const instructionParts = options.system ? [options.system] : []
+  for (const message of options.messages) {
+    if (message.role === 'system') { instructionParts.push(textBlocks(message.content)); continue }
+    if (message.source.kind === 'tool') {
+      input.push({ type: 'function_call_output', call_id: String(message.source.callId), output: resultBlocks(message.content) })
+      continue
+    }
+    if (message.role === 'assistant') {
+      const text = textBlocks(message.content)
+      if (text) input.push({ type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] })
+      for (const [index, block] of message.content.entries()) {
+        if (block.type !== 'tool-call') continue
+        input.push({ type: 'function_call', call_id: block.id || `responses-call-${index + 1}`, name: block.name, arguments: block.arguments })
+      }
+      continue
+    }
+    input.push({ type: 'message', role: 'user', content: [{ type: 'input_text', text: textBlocks(message.content) }] })
+  }
+  const instructions = instructionParts.filter(Boolean).join('\n\n')
+  return { input, ...(instructions ? { instructions } : {}) }
 }
 function jsonObject(value: string): Record<string, unknown> {
   try {
@@ -172,17 +197,20 @@ function numericReasoningBudget(effort: string): number | null {
 }
 
 /** Translate one opaque DSH effort id at the provider boundary. OpenAI
- * compatible routes preserve the id verbatim; Anthropic and Gemini expose a
- * token budget instead, so only provider-declared budget ids or explicit
- * provider adapter aliases are accepted. Unknown ids fail closed rather than
+ * compatible routes preserve the id verbatim. Native Anthropic/Gemini budget
+ * wiring is accepted only for an explicit budget id, while OpenCode Zen uses
+ * reviewed exact model/transport records. Unknown ids fail closed rather than
  * silently becoming a different level of reasoning. */
-export function hostedReasoningConfig(provider: HarnessHostedProvider, effort: string | null | undefined): Record<string, unknown> | undefined {
+export function hostedReasoningConfig(provider: HarnessHostedProvider, effort: string | null | undefined, model?: string): Record<string, unknown> | undefined {
   if (!effort) return undefined
-  if (provider === 'openai' || provider === 'openrouter' || provider === 'opencode-zen') return { reasoning_effort: effort }
-  if (effort.toLowerCase() === 'none') return provider === 'gemini' ? { thinkingConfig: { thinkingBudget: 0 } } : undefined
-  const aliases = provider === 'anthropic' ? ANTHROPIC_REASONING_BUDGETS : GEMINI_REASONING_BUDGETS
-  const budget = numericReasoningBudget(effort) ?? aliases[effort.toLowerCase()]
-  if (budget === undefined) throw new Error(`The selected ${provider} reasoning capability "${effort}" has no supported provider wire translation.`)
+  if (provider === 'openai' || provider === 'openrouter') return { reasoning_effort: effort }
+  if (provider === 'opencode-zen') {
+    const reviewed = model ? reviewedOpenCodeZenReasoningConfig(model, effort) : undefined
+    if (reviewed) return reviewed
+    throw new Error(`The selected ${provider} model "${model ?? 'unknown'}" and reasoning capability "${effort}" have no reviewed provider wire translation.`)
+  }
+  const budget = numericReasoningBudget(effort)
+  if (budget === null) throw new Error(`The selected ${provider} reasoning capability "${effort}" has no supported provider wire translation.`)
   return provider === 'anthropic'
     ? { thinking: { type: 'enabled', budget_tokens: budget } }
     : { thinkingConfig: { thinkingBudget: budget } }
@@ -219,8 +247,8 @@ export async function probeHostedProvider(
       const raw = typeof row.id === 'string' ? row.id : typeof row.name === 'string' ? row.name : typeof row.key === 'string' ? row.key : ''
       const model = raw.replace(/^models\//u, '')
       if (!MODEL_PATTERN.test(model)) return []
-      const reasoningEfforts = exactReasoningEfforts(row)
-      return [{ id: model, label: model, state: 'discovered', limitation: 'Exact Tool and reasoning conformance is checked on first use.', capabilities: { conversational: 'available', streaming: 'supported', toolCall: 'unknown' }, ...(reasoningEfforts ? { reasoningEfforts } : {}) }]
+      const metadata = reasoningMetadata(row)
+      return [{ id: model, label: model, state: 'discovered', limitation: 'Exact Tool and reasoning conformance is checked on first use.', capabilities: { conversational: 'available', streaming: 'supported', toolCall: 'unknown' }, ...(metadata.present ? { reasoningEfforts: metadata.efforts, reasoningMetadataPresent: true } : {}) }]
     })
     return { provider, available: true, models, detail: `${provider} is reachable.`, credentialState: 'ready' }
   } catch (error) {
@@ -264,44 +292,69 @@ export class MetroraHostedLlmAdapter extends LlmAdapter {
         ? await this.anthropic(secret, options)
         : provider === 'gemini'
           ? await this.gemini(secret, options)
+          : provider === 'opencode-zen'
+            ? await this.openCodeZen(secret, options)
           : await this.openAiCompatible(secret, provider, options)
       yield* this.chunks(result, options)
     } catch (error) { throw providerError(error) }
   }
 
+  private async openCodeZen(secret: string, options: GenerateOptions): Promise<ParsedHostedResult> {
+    const transport = reviewedOpenCodeZenTransport(options.model)
+    if (!transport) throw new Error('The selected OpenCode Zen model has no reviewed transport mapping.')
+    if (transport === 'responses') return this.responses(secret, options)
+    if (transport === 'messages') return this.anthropic(secret, options, `${ORIGINS['opencode-zen']}/zen/v1/messages`, 'x-api-key', 'opencode-zen')
+    if (transport === 'gemini') return this.gemini(secret, options, `${ORIGINS['opencode-zen']}/zen/v1/models/${encodeURIComponent(options.model)}:streamGenerateContent?alt=sse`, 'opencode-zen')
+    return this.openAiCompatible(secret, 'opencode-zen', options)
+  }
+
   private async openAiCompatible(secret: string, provider: HarnessHostedProvider, options: GenerateOptions): Promise<ParsedHostedResult> {
     const endpoint = provider === 'openrouter' ? `${ORIGINS[provider]}/api/v1/chat/completions` : provider === 'opencode-zen' ? `${ORIGINS[provider]}/zen/v1/chat/completions` : `${ORIGINS[provider]}/v1/chat/completions`
-    const body = JSON.stringify({ model: options.model, messages: providerMessages(options), ...(options.tools?.length ? { tools: toolSchemas(options.tools) } : {}), stream: true, ...hostedReasoningConfig(provider, options.reasoningEffort ? String(options.reasoningEffort) : undefined) })
+    const body = JSON.stringify({ model: options.model, messages: providerMessages(options), ...(options.tools?.length ? { tools: toolSchemas(options.tools) } : {}), stream: true, ...hostedReasoningConfig(provider, options.reasoningEffort ? String(options.reasoningEffort) : undefined, options.model) })
     boundedText(body, 'Hosted Harness request exceeded the safety limit.')
     const response = await this.fetchImpl(endpoint, { method: 'POST', headers: { Authorization: `Bearer ${secret}`, Accept: 'text/event-stream', 'Content-Type': 'application/json' }, body, redirect: 'error', signal: options.signal })
     if (!response.ok) throw errorStatus(response.status)
     return parseOpenAiStream(await boundedResponseText(response, 'Hosted Harness provider response exceeded the safety limit.'), options, this.onTextDelta, this.onReasoningDelta)
   }
 
-  private async anthropic(secret: string, options: GenerateOptions): Promise<ParsedHostedResult> {
+  private async anthropic(secret: string, options: GenerateOptions, endpoint = `${ORIGINS.anthropic}/v1/messages`, auth: 'x-api-key' | 'bearer' = 'x-api-key', reasoningProvider: HarnessHostedProvider = 'anthropic'): Promise<ParsedHostedResult> {
     const messages = providerMessages(options).filter(message => message.role !== 'system').map(message => {
       if (message.role === 'tool') return { role: 'user', content: [{ type: 'tool_result', tool_use_id: message.tool_call_id, content: message.content }] }
       if (message.role === 'assistant' && Array.isArray(message.tool_calls)) return { role: 'assistant', content: [...(typeof message.content === 'string' && message.content ? [{ type: 'text', text: message.content }] : []), ...message.tool_calls.map(call => ({ type: 'tool_use', id: call.id, name: call.function.name, input: JSON.parse(String(call.function.arguments || '{}')) }))] }
       return { role: message.role, content: message.content }
     })
     const system = providerMessages(options).find(message => message.role === 'system')?.content
-    const body = JSON.stringify({ model: options.model, max_tokens: options.maxTokens ?? 4096, ...(system ? { system } : {}), messages, ...(options.tools?.length ? { tools: (options.tools ?? []).slice(0, 32).map(tool => ({ name: tool.name, description: tool.description, input_schema: tool.parameters })) } : {}), stream: true, ...hostedReasoningConfig('anthropic', options.reasoningEffort ? String(options.reasoningEffort) : undefined) })
+    const reasoning = hostedReasoningConfig(reasoningProvider, options.reasoningEffort ? String(options.reasoningEffort) : undefined, options.model)
+    const thinking = reasoning && isRecord(reasoning.thinking) ? reasoning.thinking : undefined
+    const thinkingBudget = thinking && typeof thinking.budget_tokens === 'number' ? thinking.budget_tokens : null
+    const maxTokens = Math.max(options.maxTokens ?? 4096, thinkingBudget === null ? 0 : thinkingBudget + 1)
+    const body = JSON.stringify({ model: options.model, max_tokens: maxTokens, ...(system ? { system } : {}), messages, ...(options.tools?.length ? { tools: (options.tools ?? []).slice(0, 32).map(tool => ({ name: tool.name, description: tool.description, input_schema: tool.parameters })) } : {}), stream: true, ...reasoning })
     boundedText(body, 'Hosted Harness request exceeded the safety limit.')
-    const response = await this.fetchImpl(`${ORIGINS.anthropic}/v1/messages`, { method: 'POST', headers: { 'x-api-key': secret, 'anthropic-version': '2023-06-01', Accept: 'text/event-stream', 'Content-Type': 'application/json' }, body, redirect: 'error', signal: options.signal })
+    const response = await this.fetchImpl(endpoint, { method: 'POST', headers: { ...(auth === 'x-api-key' ? { 'x-api-key': secret } : { Authorization: `Bearer ${secret}` }), 'anthropic-version': '2023-06-01', Accept: 'text/event-stream', 'Content-Type': 'application/json' }, body, redirect: 'error', signal: options.signal })
     if (!response.ok) throw errorStatus(response.status)
     return parseAnthropicStream(await boundedResponseText(response, 'Hosted Harness provider response exceeded the safety limit.'), options, this.onTextDelta, this.onReasoningDelta)
   }
 
-  private async gemini(secret: string, options: GenerateOptions): Promise<ParsedHostedResult> {
+  private async gemini(secret: string, options: GenerateOptions, endpoint = `${ORIGINS.gemini}/v1beta/models/${encodeURIComponent(options.model.replace(/^models\//u, ''))}:streamGenerateContent?alt=sse`, reasoningProvider: HarnessHostedProvider = 'gemini'): Promise<ParsedHostedResult> {
     const converted = providerMessages(options)
     const system = converted.find(message => message.role === 'system')?.content
     const contents = geminiContents(options)
-    const reasoning = hostedReasoningConfig('gemini', options.reasoningEffort ? String(options.reasoningEffort) : undefined)
+    const reasoning = hostedReasoningConfig(reasoningProvider, options.reasoningEffort ? String(options.reasoningEffort) : undefined, options.model)
     const body = JSON.stringify({ ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}), contents, ...(options.tools?.length ? { tools: [{ functionDeclarations: (options.tools ?? []).slice(0, 32).map(tool => ({ name: tool.name, description: tool.description, parameters: tool.parameters })) }] } : {}), ...(reasoning ? { generationConfig: reasoning } : {}) })
     boundedText(body, 'Hosted Harness request exceeded the safety limit.')
-    const response = await this.fetchImpl(`${ORIGINS.gemini}/v1beta/models/${encodeURIComponent(options.model.replace(/^models\//u, ''))}:streamGenerateContent?alt=sse`, { method: 'POST', headers: { 'x-goog-api-key': secret, Accept: 'text/event-stream', 'Content-Type': 'application/json' }, body, redirect: 'error', signal: options.signal })
+    const response = await this.fetchImpl(endpoint, { method: 'POST', headers: { 'x-goog-api-key': secret, Accept: 'text/event-stream', 'Content-Type': 'application/json' }, body, redirect: 'error', signal: options.signal })
     if (!response.ok) throw errorStatus(response.status)
     return parseGeminiStream(await boundedResponseText(response, 'Hosted Harness provider response exceeded the safety limit.'), options, this.onTextDelta, this.onReasoningDelta)
+  }
+
+  private async responses(secret: string, options: GenerateOptions): Promise<ParsedHostedResult> {
+    const converted = responsesInput(options)
+    const reasoning = options.reasoningEffort ? { reasoning: { effort: String(options.reasoningEffort), summary: 'auto' }, include: ['reasoning.encrypted_content'] } : {}
+    const body = JSON.stringify({ model: options.model, ...converted, ...(options.tools?.length ? { tools: responsesToolSchemas(options.tools) } : {}), stream: true, ...reasoning })
+    boundedText(body, 'Hosted Harness request exceeded the safety limit.')
+    const response = await this.fetchImpl(`${ORIGINS['opencode-zen']}/zen/v1/responses`, { method: 'POST', headers: { Authorization: `Bearer ${secret}`, Accept: 'text/event-stream', 'Content-Type': 'application/json' }, body, redirect: 'error', signal: options.signal })
+    if (!response.ok) throw errorStatus(response.status)
+    return parseResponsesStream(await boundedResponseText(response, 'Hosted Harness provider response exceeded the safety limit.'), options, this.onTextDelta, this.onReasoningDelta)
   }
 
   private *chunks(result: ParsedHostedResult, options: GenerateOptions): Generator<StreamChunk> {
@@ -337,6 +390,44 @@ async function parseOpenAiStream(value: string, options: GenerateOptions, onText
     }
   }
   return { content, reasoning, calls: toolCalls(calls.filter(Boolean)), usage: lastUsage }
+}
+async function parseResponsesStream(value: string, options: GenerateOptions, onText?: TextDelta, onReasoning?: ReasoningDelta): Promise<ParsedHostedResult> {
+  let content = ''; let reasoning = ''; let lastUsage: ParsedHostedResult['usage'] = null
+  const calls = new Map<string, { id: string; name: string; arguments: string }>()
+  for (const line of value.split(/\r?\n/gu)) {
+    if (!line.startsWith('data:')) continue
+    const raw = line.slice(5).trim(); if (!raw || raw === '[DONE]') continue
+    let payload: unknown; try { payload = JSON.parse(raw) } catch { continue }
+    if (!isRecord(payload)) continue
+    if (payload.type === 'response.completed' && isRecord(payload.response)) lastUsage = usage(payload.response.usage) ?? lastUsage
+    if ((payload.type === 'response.output_text.delta' || payload.type === 'response.reasoning_summary_text.delta' || payload.type === 'response.reasoning_text.delta') && typeof payload.delta === 'string') {
+      if (payload.type === 'response.output_text.delta') { content += payload.delta; onText?.({ sessionId: options.sessionId, text: payload.delta }) }
+      else { reasoning += payload.delta; onReasoning?.({ sessionId: options.sessionId, text: payload.delta }) }
+    }
+    if (payload.type === 'response.output_item.added' || payload.type === 'response.output_item.done') {
+      const item = isRecord(payload.item) ? payload.item : null
+      if (item?.type === 'function_call') {
+        const key = typeof item.id === 'string' && item.id ? item.id : typeof item.call_id === 'string' && item.call_id ? item.call_id : `responses-call-${calls.size + 1}`
+        const current = calls.get(key) ?? { id: id(item.call_id ?? item.id, `responses-call-${calls.size + 1}`), name: typeof item.name === 'string' ? item.name : 'unknown_tool', arguments: '' }
+        if (typeof item.name === 'string' && item.name) current.name = item.name
+        if (typeof item.arguments === 'string') current.arguments = item.arguments
+        calls.set(key, current)
+      }
+    }
+    if (payload.type === 'response.function_call_arguments.delta' && typeof payload.delta === 'string') {
+      const key = typeof payload.item_id === 'string' && payload.item_id ? payload.item_id : `responses-call-${Number(payload.output_index) + 1}`
+      const current = calls.get(key) ?? { id: key, name: 'unknown_tool', arguments: '' }
+      current.arguments += payload.delta
+      calls.set(key, current)
+    }
+    if (payload.type === 'response.function_call_arguments.done' && typeof payload.arguments === 'string') {
+      const key = typeof payload.item_id === 'string' && payload.item_id ? payload.item_id : `responses-call-${Number(payload.output_index) + 1}`
+      const current = calls.get(key) ?? { id: key, name: 'unknown_tool', arguments: '' }
+      current.arguments = payload.arguments
+      calls.set(key, current)
+    }
+  }
+  return { content, reasoning, calls: [...calls.values()].slice(0, MAX_CALLS).map(call => ({ ...call, arguments: args(call.arguments || '{}') })), usage: lastUsage }
 }
 async function parseAnthropicStream(value: string, options: GenerateOptions, onText?: TextDelta, onReasoning?: ReasoningDelta): Promise<ParsedHostedResult> {
   let content = ''; let reasoning = ''; const calls: Array<{ id: string; name: string; arguments: string }> = []; let active: { id: string; name: string; args: string } | null = null; let lastUsage: ParsedHostedResult['usage'] = null

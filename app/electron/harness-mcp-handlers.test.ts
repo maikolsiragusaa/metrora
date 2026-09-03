@@ -6,7 +6,7 @@ import { createHarnessMcpHandlers } from './harness-mcp-handlers'
 describe('Harness MCP main-process handlers', () => {
   it('persists bounded config, reloads the existing Host, and never returns secrets', async () => {
     const statuses = [{ id: 'fixture', serverName: 'fixture', transport: 'stdio' as const, enabled: true, state: 'connected' as const, toolCount: 1, toolNames: ['mcp__fixture__echo'], detail: 'Connected.', checkedAt: '2026-09-03T00:00:00.000Z' }]
-    const profile = { version: 1 as const, mcpServers: [], runtime: 'ollama' as const, lastLocalRuntime: 'ollama' as const, lastLocalModelByRuntime: {}, lastHostedModelByProvider: {}, llamaServerPort: 8080, reasoningByModel: {}, hostedConsentByProvider: {}, lastUsable: null, ui: { showReasoning: true, compactProcess: true, density: 'comfortable' as const } }
+    const profile = { version: 1 as const, mcpServers: [], runtime: 'ollama' as const, lastLocalRuntime: 'ollama' as const, lastLocalModelByRuntime: {}, lastHostedModelByProvider: {}, llamaServerPort: 8080, reasoningByModel: {}, reasoningCapabilitiesByModel: {}, hostedConsentByProvider: {}, lastUsable: null, ui: { showReasoning: true, compactProcess: true, density: 'comfortable' as const } }
     const nextProfile = { ...profile, mcpServers: [{ id: 'fixture', serverName: 'fixture', enabled: true, transport: 'stdio' as const, command: 'node', args: [], cwd: null, env: {}, envRefs: {} }] }
     const host = { getMcpStatuses: vi.fn(async () => statuses), configureMcpServers: vi.fn(async () => statuses), reloadMcpServer: vi.fn(async () => statuses) }
     const profileStore = { setMcpServers: vi.fn(async () => nextProfile) }

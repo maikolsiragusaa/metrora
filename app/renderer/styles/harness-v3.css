@@ -1,6 +1,5 @@
-/* Metrora Harness surface adapted to the DeepSeek Harness client grammar.
-   Keep product identity in tokens; keep the interaction density and restraint
-   of the upstream session/sidebar/composer/process patterns. */
+/* Metrora Harness surface grammar.
+   Keep product identity in tokens and the interaction density restrained. */
 
 .harness-shell {
   display: flex;
