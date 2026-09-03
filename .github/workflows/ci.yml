@@ -112,7 +112,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: '22.15.0'
+          node-version: '22.19.0'
           cache: npm
       - name: Detect affected draft surfaces conservatively
         id: surfaces
@@ -257,7 +257,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22.15.0'
+          node-version: '22.19.0'
           cache: npm
       - name: Validate runtime compression support
         run: node -e "if (typeof require('node:zlib').zstdDecompressSync !== 'function') throw new Error('Required runtime compression support is unavailable')"

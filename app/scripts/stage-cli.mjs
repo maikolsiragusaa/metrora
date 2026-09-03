@@ -17,6 +17,7 @@
 //   build/cli/dist/desktop-reviewed-production.js
 //   build/cli/dist/desktop-share-runtime.js
 //   build/cli/dist/act-desktop-bridge.js
+//   build/cli/dist/metrora-tools.js
 //   build/cli/dist/launch.js
 //   build/cli/node_modules/
 //
@@ -35,7 +36,7 @@ const root = join(appDir, '..') // repo root
 const dist = join(root, 'dist')
 const rootModules = join(root, 'node_modules')
 const stage = join(appDir, 'build', 'cli')
-const emittedFiles = ['cli.js', 'main.js', 'desktop-local-state.js', 'desktop-reviewed-production.js', 'desktop-share-runtime.js', 'act-desktop-bridge.js']
+const emittedFiles = ['cli.js', 'main.js', 'desktop-local-state.js', 'desktop-reviewed-production.js', 'desktop-share-runtime.js', 'act-desktop-bridge.js', 'metrora-tools.js']
 const noticeFiles = [
   ['THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_NOTICES.md'],
   [join('LICENSES', 'Apache-2.0.txt'), join('LICENSES', 'Apache-2.0.txt')],

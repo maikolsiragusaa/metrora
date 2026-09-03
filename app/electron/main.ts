@@ -198,6 +198,11 @@ function harnessScopeArgs(scope: { period: string; range: { from: string; to: st
 
 async function registerHandlers(): Promise<void> {
   const { MetroraHarnessHost } = await import('./harness-runtime.mjs')
+  const { loadMetroraHarnessToolRegistry } = await import('./canonical-metrora-tools.mjs')
+  const canonicalToolsPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'cli.asar', 'dist', 'metrora-tools.js')
+    : path.join(app.getAppPath(), '..', 'dist', 'metrora-tools.js')
+  const toolRegistry = await loadMetroraHarnessToolRegistry(canonicalToolsPath)
   const share = initializeDesktopShareRuntime({
     isPackaged: app.isPackaged,
     resourcesPath: process.resourcesPath,
@@ -231,7 +236,6 @@ async function registerHandlers(): Promise<void> {
   })
   harnessHostInstance = new MetroraHarnessHost({
     sessionRoot: path.join(app.getPath('userData'), 'harness', 'sessions'),
-    workspaceRoot: process.cwd(),
     toolSource: {
       getOverview: async (scope, signal) => {
         throwIfHarnessAborted(signal)
@@ -258,6 +262,7 @@ async function registerHandlers(): Promise<void> {
         return value
       },
     },
+    toolRegistry,
     onEvent: broadcastHarnessRuntimeEvent,
   })
   const handlers = createBridgeHandlers({

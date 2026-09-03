@@ -7,6 +7,7 @@ export default defineConfig({
     'desktop-reviewed-production': 'src/desktop-reviewed-production-entry.ts',
     'desktop-share-runtime': 'src/desktop-share-runtime-entry.ts',
     'act-desktop-bridge': 'src/act/desktop-bridge.ts',
+    'metrora-tools': 'src/tools/runtime.ts',
   },
   format: ['esm'],
   target: 'node20',

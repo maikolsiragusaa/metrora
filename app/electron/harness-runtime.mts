@@ -19,19 +19,12 @@ import { BasicCompactionEngine } from '@deepseek-ai/dsh-compaction-basic'
 import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
 import { ToolRuntime } from '@deepseek-ai/dsh-tools'
 import { ApprovalService } from '@deepseek-ai/dsh-user-approval'
-import { LocalFileSystem } from '@deepseek-ai/dsh-fs-local'
-import { LocalSubprocessRuntime } from '@deepseek-ai/dsh-subprocess-local'
-import { PwshLocalExecutor } from '@deepseek-ai/dsh-pwsh-local'
-import { ShellEnvRegistry } from '@deepseek-ai/dsh-shell-env'
-import * as ToolFs from '@deepseek-ai/dsh-tool-fs'
-import * as ToolFsSearch from '@deepseek-ai/dsh-tool-fs-search'
-import * as ToolStrReplace from '@deepseek-ai/dsh-tool-str-replace-editor'
-import * as ToolPwsh from '@deepseek-ai/dsh-tool-pwsh'
 import { SubagentRuntime } from '@deepseek-ai/dsh-subagent'
 import * as SpawnInProcess from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
 
 import { createMetroraHarnessAuthority } from './harness-authority.mjs'
+import type { MetroraHarnessToolRegistry } from './canonical-metrora-tools.mjs'
 import { MetroraLocalLlmAdapter, harnessProviderRoute } from './harness-llm-adapter.mjs'
 import { MetroraToolBridge, type MetroraHarnessToolScope, type MetroraHarnessToolSource } from './harness-tool-bridge.mjs'
 import {
@@ -51,8 +44,8 @@ import {
 
 export type MetroraHarnessHostOptions = {
   sessionRoot: string
-  workspaceRoot: string
   toolSource: MetroraHarnessToolSource
+  toolRegistry: MetroraHarnessToolRegistry
   llmAdapter?: LlmAdapter
   llmProviders?: readonly string[]
   onEvent?: (event: MetroraHarnessRuntimeEvent) => void
@@ -71,6 +64,7 @@ type LiveConversation = {
   active: boolean
   cancelRequested: boolean
   requestId?: string
+  lastFailure?: { requestId: string; question: string }
 }
 
 const SESSION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u
@@ -141,10 +135,40 @@ function summaryFromSession(session: Session, runtime: HarnessRuntimeId, model: 
 }
 
 function stateForTool(name: string): HarnessLifecycleState {
-  if (name === 'glob' || name === 'grep') return 'searching'
   if (name === 'subagent') return 'running-agent'
-  if (name === 'write' || name === 'edit' || name === 'str_replace_editor' || name === 'pwsh') return 'waiting-approval'
   return 'reading'
+}
+
+function retryNotice() {
+  return createUserMessage({
+    content: [{ type: 'text', text: 'Retry the previous failed request using the existing user request. Do not ask the user to repeat it.' }],
+    source: {
+      kind: 'plugin',
+      plugin: 'metrora-harness',
+      form: 'notice',
+      summary: 'Retrying the previous failed request',
+    },
+  })
+}
+
+function lastFailedTurnQuestion(session: Session): string | null {
+  const events = session.snapshotEvents()
+  for (let endIndex = events.length - 1; endIndex >= 0; endIndex -= 1) {
+    const end = events[endIndex]
+    if (end.type !== 'turn/end' || end.data.reason.kind !== 'error') continue
+    for (let startIndex = endIndex - 1; startIndex >= 0; startIndex -= 1) {
+      const start = events[startIndex]
+      if (start.type !== 'turn/start' || start.data.turn !== end.data.turn) continue
+      for (let eventIndex = startIndex + 1; eventIndex < endIndex; eventIndex += 1) {
+        const event = events[eventIndex]
+        if (event.type !== 'user/message' || event.data.source.kind !== 'user') continue
+        const text = messageText(event.data)
+        if (text) return text
+      }
+      break
+    }
+  }
+  return null
 }
 
 /**
@@ -166,7 +190,6 @@ export class MetroraHarnessHost {
     this.options = {
       ...options,
       sessionRoot: path.resolve(options.sessionRoot),
-      workspaceRoot: path.resolve(options.workspaceRoot),
     }
     this.ready = this.start()
     // IPC callers receive the safe error envelope from `handlers()`. Keep a
@@ -231,6 +254,8 @@ export class MetroraHarnessHost {
     const question = assertQuestion(input.question)
     const normalized = this.normalizeConversationInput(input)
     const id = normalized.conversationId ?? `metrora-${randomUUID()}`
+    const retryRequestId = input.retryRequestId ? projectHarnessId(input.retryRequestId) : undefined
+    const requestId = input.requestId ? projectHarnessId(input.requestId) : undefined
     let live = this.live.get(id)
     if (!live) {
       const existing = await this.getConversation(id)
@@ -238,16 +263,23 @@ export class MetroraHarnessHost {
         ? await this.resumeLiveConversation(id, normalized.runtime, normalized.model, normalized.scope, existing.title)
         : await this.createLiveConversation(id, normalized.runtime, normalized.model, normalized.scope, 'New chat')
     }
+    if (live.active) throw new Error('Metrora Harness already has an active turn for this conversation.')
+    if (retryRequestId) {
+      const failedQuestion = live.lastFailure?.requestId === retryRequestId
+        ? live.lastFailure.question
+        : lastFailedTurnQuestion(live.handle.agent.session)
+      if (!failedQuestion || failedQuestion !== question) throw new Error('Metrora Harness retry identity is stale or does not match the failed turn.')
+    }
     live.scope = normalized.scope
     live.runtime = normalized.runtime
     live.model = normalized.model
-    live.requestId = input.requestId ? projectHarnessId(input.requestId) : undefined
+    live.requestId = requestId
     live.cancelRequested = false
     live.active = true
     this.toolBridge?.setScope(id, normalized.scope)
     this.emit(id, 'thinking')
     try {
-      live.handle.agent.followup(createUserMessage({ content: [{ type: 'text', text: question }], source: { kind: 'user' } }))
+      live.handle.agent.followup(retryRequestId ? retryNotice() : createUserMessage({ content: [{ type: 'text', text: question }], source: { kind: 'user' } }))
       await live.handle.agent.whenIdle()
       await this.requireContext().sessions.flush(live.handle.agent.session)
       const messages = projectedMessages(live.handle.agent.session)
@@ -257,12 +289,19 @@ export class MetroraHarnessHost {
         throw new Error('Harness completed without an assistant response.')
       }
       live.title = live.title === 'New chat' ? question.slice(0, 42) : live.title
+      live.lastFailure = undefined
       this.emit(id, 'preparing')
       this.emit(id, 'done')
       return { conversationId: id, message, runtime: live.runtime, model: live.model }
     } catch (error) {
       if (live.cancelRequested || this.isCancellation(error)) this.emit(id, 'cancelled')
-      else this.emit(id, 'failed')
+      else {
+        live.lastFailure = {
+          requestId: retryRequestId ?? requestId ?? `turn-${live.handle.agent.session.snapshotEvents().length}`,
+          question,
+        }
+        this.emit(id, 'failed')
+      }
       throw error
     } finally {
       try { await this.requireContext().sessions.flush(live.handle.agent.session) } catch { /* preserve the primary turn result */ }
@@ -341,17 +380,9 @@ export class MetroraHarnessHost {
       maxOverflowRetries: 1,
     })
 
-    // DSH commodity coding capabilities are mounted once. Metrora's policy
-    // listener below is the authority gate for every call, including these
-    // tools and bounded in-process subagents.
-    await ctx.plugin(LocalSubprocessRuntime)
-    await ctx.plugin(LocalFileSystem, { cwd: this.options.workspaceRoot })
-    await ctx.plugin(ShellEnvRegistry, { dshHome: path.join(this.options.sessionRoot, 'dsh-home') })
-    await ctx.plugin(PwshLocalExecutor, { cwd: this.options.workspaceRoot, timeoutMs: 120_000, maxTimeoutMs: 120_000 })
-    await ctx.plugin(ToolFs, { readLimit: 400, readMaxBytes: 64 * 1024 })
-    await ctx.plugin(ToolFsSearch, { sampleOverCapGlobResults: false })
-    await ctx.plugin(ToolStrReplace, { maxOutputChars: 16_000 })
-    await ctx.plugin(ToolPwsh, { enableRunInBackground: false })
+    // P1 mounts only the DSH orchestration substrate and bounded in-process
+    // delegation. Filesystem/process/mutation packages are intentionally not
+    // mounted until Metrora owns an explicit Workspace root and ACT contract.
     await ctx.plugin(SubagentRuntime)
     await ctx.plugin(SpawnInProcess, { providerName: 'spawn' })
 
@@ -368,7 +399,7 @@ export class MetroraHarnessHost {
       // even if a child asks for them.
       toolFilter: {
         allow: [
-          'read', 'glob', 'grep', 'subagent',
+          'subagent',
           'get_spend_snapshot', 'get_model_efficiency', 'get_quota_snapshot',
           'get_overview_snapshot', 'get_project_drivers', 'get_session_highlights',
           'get_coverage_report', 'get_bench_evidence',
@@ -376,7 +407,7 @@ export class MetroraHarnessHost {
       },
     })
 
-    this.toolBridge = new MetroraToolBridge(this.options.toolSource)
+    this.toolBridge = new MetroraToolBridge(this.options.toolSource, this.options.toolRegistry)
     this.toolBridge.register(ctx)
     ctx.on('tools/pre-execute', async execution => this.authority.decide(execution))
     ctx.on('session/event', (session, event) => this.onSessionEvent(session, event))
@@ -385,6 +416,18 @@ export class MetroraHarnessHost {
       if (!live || !live.active) return
       if (status === 'running') this.emit(live.id, 'thinking')
       else this.emit(live.id, 'preparing')
+    })
+    ctx.on('agent/created', ({ agent }) => {
+      // DSH's supported request waterfall is the authoritative per-request
+      // switch. It preserves the same Session while causing prepareCall and
+      // GenerateOptions to use the current Metrora-selected route/model.
+      agent.ctx.on('agent/request', async (_payload, next) => {
+        const config = await next()
+        const live = this.live.get(String(agent.id))
+        return live
+          ? { ...config, provider: harnessProviderRoute(live.runtime), model: live.model }
+          : config
+      })
     })
     this.ctx = ctx
   }
@@ -400,7 +443,6 @@ export class MetroraHarnessHost {
     const context = this.requireContext()
     const agent = await context.agents.create({
       sessionId: SessionId(id),
-      meta: { cwd: this.options.workspaceRoot },
       agentOptions: { provider: harnessProviderRoute(runtime), model },
     })
     const live: LiveConversation = { id, runtime, model, scope, title, handle: agent, active: false, cancelRequested: false }

@@ -15,9 +15,6 @@ export type MetroraHarnessAuthority = {
 }
 
 const READ_ONLY_TOOLS = new Set([
-  'read',
-  'glob',
-  'grep',
   'subagent',
   'get_spend_snapshot',
   'get_model_efficiency',

@@ -1,7 +1,7 @@
 /**
  * Main-process boundary types for the Metrora Harness runtime.
  *
- * These are deliberately product-facing projections. DeepSeek Harness events,
+ * These are deliberately product-facing projections. Upstream runtime events,
  * provider payloads, tool arguments, and session paths never cross this
  * boundary as-is.
  */
@@ -64,6 +64,7 @@ export type HarnessConversationInput = {
 export type HarnessSendMessageInput = HarnessConversationInput & {
   question: string
   requestId?: string
+  retryRequestId?: string
 }
 
 export type HarnessSendMessageResult = {

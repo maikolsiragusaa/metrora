@@ -17,7 +17,7 @@ import { isSwarmExperimentalEnabled } from '../swarm/feature-gate'
 import { useSwarmRun } from '../swarm/useSwarmRun'
 import { isAdvisorCancelled, useAdvisorLocalRuntime } from './useAdvisorLocalRuntime'
 import { useHarnessConversationState, type AdvisorConversation, type AdvisorMessage } from './useHarnessConversationState'
-type DetectedProvider = { id: string; label: string }; type AdvisorFailedRequest = { question: string; scope: AdvisorScope; conversationId: string; conversation: AdvisorConversationTurn[] }
+type DetectedProvider = { id: string; label: string }; type AdvisorFailedRequest = { question: string; scope: AdvisorScope; conversationId: string; conversation: AdvisorConversationTurn[]; requestId: string }
 function makeId(prefix: string): string {
   return prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7)
 }
@@ -241,7 +241,7 @@ export function Advisor({
           model: runtimeModel,
           scope: requestedScope,
           question,
-          requestId: String(requestId),
+          requestId: String(requestId), ...(retryRequest?.requestId ? { retryRequestId: retryRequest.requestId } : {}),
         })
         if (!isCurrentRequest()) return
         const assistantMessage: AdvisorMessage = {
@@ -335,7 +335,7 @@ export function Advisor({
           question,
           scope: { ...requestedScope, range: requestedScope.range ? { ...requestedScope.range } : null },
           conversationId,
-          conversation: history.map(turn => ({ ...turn })),
+          conversation: history.map(turn => ({ ...turn })), requestId: String(requestId),
         })
         setError(caught instanceof Error ? caught.message : 'Harness could not complete this request.')
       }
