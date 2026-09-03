@@ -221,11 +221,15 @@ async function streamNdjsonResponse(response: Response, onDelta?: (text: string)
   if (validMessages === 0) throw new Error('Local runtime stream contained no valid messages.')
   return { message: { content, tool_calls: toolCalls.slice(0, 16) }, streamed: true }
 }
-const ADVISOR_MESSAGE_ROLES = new Set(['system', 'user', 'assistant'])
+// The DSH adapter uses the provider-neutral tool-result continuation shape
+// for Ollama as well. Legacy renderer calls still send only the first three
+// roles, so this remains backwards-compatible while allowing the new loop to
+// reuse the existing bounded wire parser.
+const ADVISOR_MESSAGE_ROLES = new Set(['system', 'user', 'assistant', 'tool'])
 
 function validateChatPayload(value: unknown): asserts value is AdvisorRuntimeChatPayload {
   if (!isRecord(value) || typeof value.model !== 'string' || !validModel(value.model)) throw new Error('Local runtime model is invalid.')
-  if (!Array.isArray(value.messages) || !Array.isArray(value.tools) || value.messages.length > 32 || value.tools.length > 12) {
+  if (!Array.isArray(value.messages) || !Array.isArray(value.tools) || value.messages.length > 32 || value.tools.length > 32) {
     throw new Error('Local runtime request exceeded the safety limit.')
   }
   if (typeof value.stream !== 'boolean') throw new Error('Local runtime stream flag is invalid.')
@@ -233,7 +237,12 @@ function validateChatPayload(value: unknown): asserts value is AdvisorRuntimeCha
     if (!isRecord(message) || typeof message.role !== 'string' || !ADVISOR_MESSAGE_ROLES.has(message.role)) throw new Error('Local runtime request contains a malformed message.')
     if (typeof message.content !== 'string') throw new Error('Local runtime request contains malformed message content.')
     boundedMessageContent(message.content)
-    if (message.tool_calls !== undefined || message.tool_name !== undefined) throw new Error('Local runtime provider-native tool continuation is not supported.')
+    if (message.role === 'tool' && (typeof message.tool_call_id !== 'string' || !message.tool_call_id.trim())) throw new Error('Local runtime tool result is missing its call id.')
+    if (message.tool_calls !== undefined) {
+      if (message.role !== 'assistant') throw new Error('Local runtime tool calls must belong to an assistant message.')
+      parseToolCalls(message.tool_calls)
+    }
+    if (message.tool_name !== undefined && typeof message.tool_name !== 'string') throw new Error('Local runtime tool name is malformed.')
   }
   for (const tool of value.tools) {
     if (!isRecord(tool) || tool.type !== 'function' || !isRecord(tool.function) || typeof tool.function.name !== 'string' || !tool.function.name.trim()) {

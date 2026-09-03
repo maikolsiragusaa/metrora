@@ -36,6 +36,8 @@ type Deps = {
   harnessActHandlers?: Record<string, Handler>
   /** Main-process projection for local conversational text deltas only. */
   emitAdvisorDelta?: (event: { requestId: string; text: string }) => void
+  /** Metrora-owned durable Harness runtime handlers. */
+  harnessHandlers?: Record<string, (...args: any[]) => Promise<Envelope>>
 }
 
 export const NO_UPDATE_STATUS: UpdateStatus = { currentVersion: '', latestVersion: null, updateAvailable: false, tag: null }
@@ -372,6 +374,7 @@ export function createBridgeHandlers(deps: Deps): Record<string, Handler> {
     ...createAdvisorRuntimeHandlers(fetch, deps.emitAdvisorDelta),
     ...(deps.advisorHostedHandlers ?? {}),
     ...(deps.harnessActHandlers ?? {}),
+    ...(deps.harnessHandlers ?? {}),
     ...(deps.advisorCredentials ? {
       'metrora:advisorCredentialStatus': credentialStatus,
       'metrora:advisorCredentialSet': credentialSet,

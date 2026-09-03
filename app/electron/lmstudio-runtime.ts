@@ -147,7 +147,7 @@ function openAIMessageList(messages: Array<Record<string, unknown>>): Array<Reco
 }
 function validatePayload(value: unknown): asserts value is ChatPayload {
   if (!isRecord(value) || typeof value.model !== 'string' || !validModel(value.model)) throw new Error('Local runtime model is invalid.')
-  if (!Array.isArray(value.messages) || !Array.isArray(value.tools) || value.messages.length > 32 || value.tools.length > 12) throw new Error('Local runtime request exceeded the safety limit.')
+  if (!Array.isArray(value.messages) || !Array.isArray(value.tools) || value.messages.length > 32 || value.tools.length > 32) throw new Error('Local runtime request exceeded the safety limit.')
   if (typeof value.stream !== 'boolean') throw new Error('Local runtime stream flag is invalid.')
   for (const message of value.messages) {
     if (!isRecord(message) || typeof message.role !== 'string' || !['system', 'user', 'assistant', 'tool'].includes(message.role)) throw new Error('Local runtime request contains a malformed message.')

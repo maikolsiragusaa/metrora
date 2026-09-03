@@ -29,6 +29,7 @@ type BeforeQuitDeps = {
   getTelemetry: () => QuitTelemetry | null
   killAll: () => void
   stopShare?: () => Promise<unknown>
+  stopHarness?: () => Promise<unknown>
   quit: () => void
   timeoutMs?: number
 }
@@ -53,6 +54,7 @@ export function createBeforeQuitHandler(deps: BeforeQuitDeps): (event: BeforeQui
         try { deps.killAll() } catch { /* child cleanup must not wedge quit */ }
 
         const stopShare = deps.stopShare ? Promise.resolve().then(deps.stopShare).catch(() => false) : Promise.resolve(false)
+        const stopHarness = deps.stopHarness ? Promise.resolve().then(deps.stopHarness).catch(() => false) : Promise.resolve(false)
 
         let telemetry: QuitTelemetry | null = null
         try { telemetry = deps.getTelemetry() } catch { /* telemetry lookup is best-effort */ }
@@ -69,7 +71,7 @@ export function createBeforeQuitHandler(deps: BeforeQuitDeps): (event: BeforeQui
         const timeout = new Promise<void>(resolve => {
           timer = setTimeout(resolve, deps.timeoutMs ?? QUIT_FLUSH_TIMEOUT_MS)
         })
-        await Promise.race([Promise.all([flush.catch(() => false), stopShare.catch(() => false)]), timeout])
+        await Promise.race([Promise.all([flush.catch(() => false), stopShare.catch(() => false), stopHarness.catch(() => false)]), timeout])
       } finally {
         if (timer !== undefined) clearTimeout(timer)
         allowQuit = true
@@ -88,6 +90,9 @@ export const UPDATE_CHANNEL = 'metrora:update'
 export const ADVISOR_DELTA_CHANNEL = 'metrora:advisorDelta'
 // Renderer-safe lifecycle projection for the single accepted Harness action.
 export const HARNESS_ACTION_EVENT_CHANNEL = 'metrora:harnessActionEvent'
+// Renderer-safe projection of DSH lifecycle state; raw event names, arguments,
+// provider payloads, and private reasoning never cross this channel.
+export const HARNESS_RUNTIME_EVENT_CHANNEL = 'metrora:harnessRuntimeEvent'
 
 function broadcastProgress(event: unknown): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -118,6 +123,19 @@ function broadcastHarnessActionEvent(event: HarnessActionEvent): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue
     win.webContents.send(HARNESS_ACTION_EVENT_CHANNEL, event)
+  }
+}
+
+type HarnessRuntimeEvent = {
+  conversationId: string
+  state: 'thinking' | 'reading' | 'searching' | 'running-agent' | 'waiting-approval' | 'preparing' | 'done' | 'cancelled' | 'failed'
+  requestId?: string
+}
+
+function broadcastHarnessRuntimeEvent(event: HarnessRuntimeEvent): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue
+    win.webContents.send(HARNESS_RUNTIME_EVENT_CHANNEL, event)
   }
 }
 
@@ -156,7 +174,30 @@ export function shouldInstallApplicationMenu(_isDev: boolean, platform = process
   return platform === 'darwin'
 }
 
-function registerHandlers(): void {
+type HarnessRuntimeHost = {
+  shutdown(): Promise<void>
+  handlers(): Record<string, (...args: any[]) => Promise<{ ok: true; value: unknown } | { ok: false; error: { kind: string; message: string } }>>
+}
+let harnessHostInstance: HarnessRuntimeHost | null = null
+
+function throwIfHarnessAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return
+  const error = new Error('Metrora Harness read cancelled.')
+  error.name = 'AbortError'
+  throw error
+}
+
+function harnessScopeArgs(scope: { period: string; range: { from: string; to: string } | null; provider: string; projectId: string }): string[] {
+  return [
+    '--period', scope.period,
+    ...(scope.range ? ['--from', scope.range.from, '--to', scope.range.to] : []),
+    ...(scope.provider !== 'all' ? ['--provider', scope.provider] : []),
+    ...(scope.projectId !== 'all' ? ['--metrora-project', scope.projectId] : []),
+  ]
+}
+
+async function registerHandlers(): Promise<void> {
+  const { MetroraHarnessHost } = await import('./harness-runtime.mjs')
   const share = initializeDesktopShareRuntime({
     isPackaged: app.isPackaged,
     resourcesPath: process.resourcesPath,
@@ -188,6 +229,37 @@ function registerHandlers(): void {
     appPath: app.getAppPath(),
     emit: broadcastHarnessActionEvent,
   })
+  harnessHostInstance = new MetroraHarnessHost({
+    sessionRoot: path.join(app.getPath('userData'), 'harness', 'sessions'),
+    workspaceRoot: process.cwd(),
+    toolSource: {
+      getOverview: async (scope, signal) => {
+        throwIfHarnessAborted(signal)
+        const value = await spawnCli(['status', '--format', 'menubar-json', '--no-timeline', ...harnessScopeArgs(scope)], { extraEnv: { METRORA_READ_MODE: 'snapshot' } })
+        throwIfHarnessAborted(signal)
+        return value
+      },
+      getModels: async (scope, signal) => {
+        throwIfHarnessAborted(signal)
+        const value = await spawnCli(['models', '--format', 'json', ...harnessScopeArgs(scope)], { extraEnv: { METRORA_READ_MODE: 'snapshot' } })
+        throwIfHarnessAborted(signal)
+        return value
+      },
+      getQuota: async signal => {
+        throwIfHarnessAborted(signal)
+        const value = await getQuota()
+        throwIfHarnessAborted(signal)
+        return value
+      },
+      getBenchEvidence: async (scope, signal) => {
+        throwIfHarnessAborted(signal)
+        const value = await spawnCli(['bench', 'evidence', '--format', 'json', ...harnessScopeArgs(scope)], { extraEnv: { METRORA_READ_MODE: 'snapshot' } })
+        throwIfHarnessAborted(signal)
+        return value
+      },
+    },
+    onEvent: broadcastHarnessRuntimeEvent,
+  })
   const handlers = createBridgeHandlers({
     spawnCli,
     spawnCliAction,
@@ -201,6 +273,7 @@ function registerHandlers(): void {
     advisorCredentials,
     advisorHostedHandlers,
     harnessActHandlers,
+    harnessHandlers: harnessHostInstance.handlers(),
   })
   const trustedRendererIpcChannels = new Set([
     'metrora:advisorHostedProbe',
@@ -213,6 +286,11 @@ function registerHandlers(): void {
     'metrora:harnessApproveCoreCompatibility',
     'metrora:harnessCancelCoreCompatibility',
     'metrora:harnessReadCoreCompatibility',
+    'metrora:harnessListConversations',
+    'metrora:harnessGetConversation',
+    'metrora:harnessCreateConversation',
+    'metrora:harnessSendMessage',
+    'metrora:harnessCancel',
     'metrora:runPerformanceBench',
     'metrora:cancelPerformanceBench',
     'metrora:chooseFile',
@@ -362,10 +440,11 @@ function bootstrap(): void {
     getTelemetry: () => telemetryInstance,
     killAll: shutdownCli,
     stopShare: stopDesktopShareRuntime,
+    stopHarness: () => harnessHostInstance?.shutdown() ?? Promise.resolve(false),
     quit: () => app.quit(),
   }))
 
-  void app.whenReady().then(() => {
+  void app.whenReady().then(async () => {
     // Consent-gated anonymous telemetry (desktop only). Nothing transmits until
     // the onboarding consent screen is completed and the toggle is on; EU/EEA/
     // UK/CH installs default the toggle off. Dev builds never send.
@@ -383,7 +462,7 @@ function bootstrap(): void {
     } catch (err) {
       console.error('telemetry init failed (continuing without):', err)
     }
-    registerHandlers()
+    await registerHandlers()
     installApplicationMenu()
     createWindow()
     app.on('activate', () => {

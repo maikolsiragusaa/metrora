@@ -1,3 +1,9 @@
+/**
+ * @deprecated Compatibility fallback for older/test bridges. Normal local
+ * conversational turns now use the main-process DSH-backed Metrora Harness;
+ * this kernel remains only for hosted/fallback paths until those consumers
+ * migrate to the same runtime adapter contract.
+ */
 import { buildUnknownEvidence } from './evidence'
 import { buildActionProposalEvidence, buildBenchEvidence, buildClarificationEvidence, buildConversationEvidence, buildSocialEvidence, buildUnsupportedEvidence } from './special-evidence'
 import { createAdvisorModelGuardV1, resolveAdvisorQuestion } from './comprehension'

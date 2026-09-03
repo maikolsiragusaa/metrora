@@ -319,7 +319,7 @@ function openAIMessageList(messages: Array<Record<string, unknown>>): Array<Reco
 
 function validatePayload(value: unknown): asserts value is AdvisorRuntimeChatPayload {
   if (!isRecord(value) || !validModelId(value.model)) throw new Error('Local llama-server model is invalid.')
-  if (!Array.isArray(value.messages) || !Array.isArray(value.tools) || value.messages.length > 32 || value.tools.length > 12) throw new Error('Local llama-server request exceeded the safety limit.')
+  if (!Array.isArray(value.messages) || !Array.isArray(value.tools) || value.messages.length > 32 || value.tools.length > 32) throw new Error('Local llama-server request exceeded the safety limit.')
   if (typeof value.stream !== 'boolean') throw new Error('Local llama-server stream flag is invalid.')
   for (const message of value.messages) {
     if (!isRecord(message) || typeof message.role !== 'string' || !['system', 'user', 'assistant', 'tool'].includes(message.role)) throw new Error('Local llama-server request contains a malformed message.')

@@ -16,7 +16,7 @@ import type { ParsedProviderCall, Provider, SessionParser, SessionSource } from 
 /** Bump whenever unchanged Zed rows must be re-reviewed for signed sharing. */
 export const ZED_PARSER_VERSION = 'threads-sqlite-zstd-cumulative-topup-v1'
 
-// zstd landed in node:zlib in 22.15 / 23.8; the package floor is 22.13, so the
+// zstd landed in node:zlib in 22.15 / 23.8; the package floor is 22.19, so the
 // provider degrades with a notice instead of assuming the export exists.
 const zstdDecompress = (zlib as { zstdDecompressSync?: (buf: Buffer) => Buffer }).zstdDecompressSync
 

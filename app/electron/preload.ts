@@ -2,6 +2,14 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 import type { Envelope } from './main'
 import type { HarnessActionEvent } from './act-bridge'
+import type {
+  HarnessConversation,
+  HarnessConversationInput,
+  HarnessConversationSummary,
+  HarnessSendMessageInput,
+  HarnessSendMessageResult,
+  MetroraHarnessRuntimeEvent,
+} from './harness-runtime-types'
 
 type DateRange = { from: string; to: string }
 type PriceRates = { input?: number; output?: number; cacheRead?: number; cacheCreation?: number }
@@ -143,6 +151,16 @@ const bridge = {
     const listener = (_event: unknown, event: HarnessActionEvent) => cb(event)
     ipcRenderer.on('metrora:harnessActionEvent', listener)
     return () => { ipcRenderer.removeListener('metrora:harnessActionEvent', listener) }
+  },
+  harnessListConversations: () => invoke<HarnessConversationSummary[]>('metrora:harnessListConversations'),
+  harnessGetConversation: (conversationId: string) => invoke<HarnessConversation | null>('metrora:harnessGetConversation', conversationId),
+  harnessCreateConversation: (input: HarnessConversationInput) => invoke<HarnessConversation>('metrora:harnessCreateConversation', input),
+  harnessSendMessage: (input: HarnessSendMessageInput) => invoke<HarnessSendMessageResult>('metrora:harnessSendMessage', input),
+  harnessCancel: (conversationId: string) => invoke<boolean>('metrora:harnessCancel', conversationId),
+  onHarnessRuntimeEvent: (cb: (event: MetroraHarnessRuntimeEvent) => void) => {
+    const listener = (_event: unknown, event: MetroraHarnessRuntimeEvent) => cb(event)
+    ipcRenderer.on('metrora:harnessRuntimeEvent', listener)
+    return () => { ipcRenderer.removeListener('metrora:harnessRuntimeEvent', listener) }
   },
   platform: process.platform,
   arch: process.arch,

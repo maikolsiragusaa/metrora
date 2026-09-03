@@ -2,14 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Polled } from '../hooks/usePolled'
 import { metrora } from '../lib/ipc'
 import type { DateRange, MenubarPayload, Period } from '../lib/types'
-import type { MetroraHarnessActionEvent } from '../lib/metrora-bridge-types'
 import { createAdvisorDataSource } from '../advisor/source'
 import { createAdvisorKernel } from '../advisor/kernel'
 import { createAdvisorRuntime } from '../advisor/runtime'
 import { HostedAdvisorRuntime, probeHostedAdvisor } from '../advisor/hosted'
 import { periodLabel, scopeLabel } from '../advisor/evidence'
 import { advisorContextualSurfaceLabel, advisorScopeFromContextualLaunch, normalizeAdvisorContextualLaunch, type AdvisorContextualLaunchV1, type AdvisorContextualScopeMode } from '../advisor/context'
-import { advisorScopeFingerprint, type AdvisorAnswer, type AdvisorConversationTurn, type AdvisorHostedProviderId, type AdvisorLocalRuntimeId, type AdvisorScope } from '../advisor/types'
+import { advisorScopeFingerprint, type AdvisorConversationTurn, type AdvisorHostedProviderId, type AdvisorLocalRuntimeId, type AdvisorScope } from '../advisor/types'
 import { createHostedProbeChecking, createHostedProbeFailure, presentHostedProbe, type HarnessHostedProbePresentation, type HarnessRuntimeChoice } from '../harness/HarnessRuntimePopover'
 import { AdvisorHostedOperationGuard, isSelectableHostedModel } from './advisor-hosted-operation-guard'
 import { harnessToolLabel, type HarnessToolActivity } from '../harness/HarnessWorkTrace'
@@ -17,10 +16,8 @@ import { HarnessSurface } from '../harness/HarnessSurface'
 import { isSwarmExperimentalEnabled } from '../swarm/feature-gate'
 import { useSwarmRun } from '../swarm/useSwarmRun'
 import { isAdvisorCancelled, useAdvisorLocalRuntime } from './useAdvisorLocalRuntime'
-type DetectedProvider = { id: string; label: string }
-type AdvisorMessage = { id: string; role: 'user' | 'assistant'; text?: string; answer?: AdvisorAnswer; scopeFingerprint: string }
-type AdvisorConversation = { id: string; title: string; messages: AdvisorMessage[] }
-type AdvisorFailedRequest = { question: string; scope: AdvisorScope; conversationId: string; conversation: AdvisorConversationTurn[] }
+import { useHarnessConversationState, type AdvisorConversation, type AdvisorMessage } from './useHarnessConversationState'
+type DetectedProvider = { id: string; label: string }; type AdvisorFailedRequest = { question: string; scope: AdvisorScope; conversationId: string; conversation: AdvisorConversationTurn[] }
 function makeId(prefix: string): string {
   return prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7)
 }
@@ -166,8 +163,6 @@ export function Advisor({
     void checkHostedRuntime()
     return () => hostedProbeController.current?.abort()
   }, [checkHostedRuntime, runtimeChoice])
-  const [conversations, setConversations] = useState<AdvisorConversation[]>(() => [{ id: makeId('chat'), title: 'New chat', messages: [] }])
-  const [activeConversationId, setActiveConversationId] = useState(() => conversations[0]!.id)
   const [historyQuery, setHistoryQuery] = useState('')
   const [composer, setComposer] = useState('')
   const [credentialEntry, setCredentialEntry] = useState('')
@@ -184,17 +179,10 @@ export function Advisor({
         : null
     : null
   useEffect(() => { setCredentialEntry('') }, [hostedProvider])
-  const [error, setError] = useState<string | null>(null)
-  const [failedRequest, setFailedRequest] = useState<AdvisorFailedRequest | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
-  const [selectedAnswerId, setSelectedAnswerId] = useState<string | null>(null)
-  const [harnessActions, setHarnessActions] = useState<Record<string, MetroraHarnessActionEvent>>({})
+  const [error, setError] = useState<string | null>(null); const [failedRequest, setFailedRequest] = useState<AdvisorFailedRequest | null>(null)
+  const [notice, setNotice] = useState<string | null>(null); const [selectedAnswerId, setSelectedAnswerId] = useState<string | null>(null)
   const [harnessActionBusyId, setHarnessActionBusyId] = useState<string | null>(null)
-  useEffect(() => {
-    const subscribe = metrora.onHarnessActionEvent
-    if (typeof subscribe !== 'function') return
-    return subscribe(event => setHarnessActions(current => ({ ...current, [event.actionId]: event })))
-  }, [])
+  const { conversations, setConversations, activeConversationId, setActiveConversationId, harnessActions, setHarnessActions } = useHarnessConversationState(scope, loadingQuestion, setToolStatus)
   useEffect(() => () => invalidateAdvisorRequest(), [invalidateAdvisorRequest])
   useEffect(() => {
     if (!normalizedContextualLaunch || !contextualScope) return
@@ -203,8 +191,7 @@ export function Advisor({
     setNotice(`Context from ${advisorContextualSurfaceLabel(normalizedContextualLaunch.originatingSection)} loaded. Review the suggested question before sending.`)
     setSelectedAnswerId(null)
   }, [contextualScope, normalizedContextualLaunch])
-  const activeConversation = conversations.find(conversation => conversation.id === activeConversationId) ?? conversations[0]!
-  const messages = activeConversation.messages
+  const activeConversation = conversations.find(conversation => conversation.id === activeConversationId) ?? conversations[0]!; const messages = activeConversation.messages
   const updateConversation = useCallback((conversationId: string, update: (conversation: AdvisorConversation) => AdvisorConversation) => {
     setConversations(current => current.map(conversation => conversation.id === conversationId ? update(conversation) : conversation))
   }, [])
@@ -246,6 +233,27 @@ export function Advisor({
     setToolStatus(null)
     setToolActivity([])
     try {
+      const durableSend = metrora.harnessSendMessage
+      if (runtimeChoice !== 'hosted' && runtimeModel && typeof durableSend === 'function') {
+        const result = await durableSend({
+          conversationId,
+          runtime: runtimeId,
+          model: runtimeModel,
+          scope: requestedScope,
+          question,
+          requestId: String(requestId),
+        })
+        if (!isCurrentRequest()) return
+        const assistantMessage: AdvisorMessage = {
+          id: result.message.id || makeId('assistant'),
+          role: 'assistant',
+          text: result.message.text,
+          scopeFingerprint: requestedScopeFingerprint,
+        }
+        updateConversation(conversationId, conversation => ({ ...conversation, messages: [...conversation.messages, assistantMessage] }))
+        setSelectedAnswerId(assistantMessage.id)
+        return
+      }
       let answer = await kernel.investigate({
         question,
         scope: requestedScope,
@@ -338,7 +346,7 @@ export function Advisor({
       setStreamPreview('')
       setToolStatus(null)
     }
-  }, [activeConversationId, contextualScopeMode, conversations, hostedSubmitBlockReason, invalidateAdvisorRequest, kernel, loadingQuestion, normalizedContextualLaunch, overview.data, overview.loading, overview.switching, period, projectScopeId, provider, range?.from, range?.to, runtimeChoice, runtimeModel, scope, updateConversation])
+  }, [activeConversationId, contextualScopeMode, conversations, hostedSubmitBlockReason, invalidateAdvisorRequest, kernel, loadingQuestion, normalizedContextualLaunch, overview.data, overview.loading, overview.switching, period, projectScopeId, provider, range?.from, range?.to, runtimeChoice, runtimeId, runtimeModel, scope, updateConversation])
   const confirmHarnessAction = useCallback(async (actionId: string, digest: string) => {
     if (harnessActionBusyId || typeof metrora.harnessApproveCoreCompatibility !== 'function') {
       if (!harnessActionBusyId) setNotice('This desktop build cannot confirm a Core Compatibility action.')
@@ -372,6 +380,7 @@ export function Advisor({
     }
   }, [harnessActionBusyId])
   const cancel = () => {
+    if (typeof metrora.harnessCancel === 'function') void metrora.harnessCancel(activeConversationId).catch(() => {})
     invalidateAdvisorRequest()
     setNotice('Cancelling request…')
   }
@@ -382,6 +391,9 @@ export function Advisor({
     setSelectedAnswerId(null)
     setError(null)
     setNotice(null)
+    if (runtimeChoice !== 'hosted' && runtimeModel && typeof metrora.harnessCreateConversation === 'function') {
+      void metrora.harnessCreateConversation({ conversationId: next.id, runtime: runtimeId, model: runtimeModel, scope }).catch(() => {})
+    }
   }
   const activateHosted = () => {
     invalidateAdvisorRequest()

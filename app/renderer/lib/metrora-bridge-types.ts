@@ -31,6 +31,14 @@ import type { HarnessActionEvent } from '../../electron/act-bridge'
 import type { PerformanceRunV1 } from '../../../src/bench/performance-contract-v1'
 import type { PerformanceComparisonV1 } from '../../../src/bench/performance-compare-v1'
 import type { CanonicalBenchEvidenceV1 } from '../../../src/bench/evidence-contract-v1'
+import type {
+  HarnessConversation,
+  HarnessConversationInput,
+  HarnessConversationSummary,
+  HarnessSendMessageInput,
+  HarnessSendMessageResult,
+  MetroraHarnessRuntimeEvent,
+} from '../../electron/harness-runtime-types'
 
 export type AdvisorCredentialProvider = 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'opencode-zen'
 export type AdvisorCredentialState = 'not-configured' | 'ready' | 'locked-unavailable' | 'invalid' | 'needs-reentry'
@@ -153,6 +161,13 @@ export interface MetroraBridge extends ProjectBridge {
   harnessCancelCoreCompatibility(actionId: string): Promise<MetroraHarnessActionEvent | null>
   harnessReadCoreCompatibility(actionId: string): Promise<MetroraHarnessActionEvent | null>
   onHarnessActionEvent(cb: (event: MetroraHarnessActionEvent) => void): () => void
+  /** Durable DSH-backed Harness surface; optional for older renderer test/mocks. */
+  harnessListConversations?: () => Promise<HarnessConversationSummary[]>
+  harnessGetConversation?: (conversationId: string) => Promise<HarnessConversation | null>
+  harnessCreateConversation?: (input: HarnessConversationInput) => Promise<HarnessConversation>
+  harnessSendMessage?: (input: HarnessSendMessageInput) => Promise<HarnessSendMessageResult>
+  harnessCancel?: (conversationId: string) => Promise<boolean>
+  onHarnessRuntimeEvent?: (cb: (event: MetroraHarnessRuntimeEvent) => void) => () => void
   // `fresh` is reserved for explicit Refresh; navigation reads the snapshot.
   getOverview(period: Period, provider: string, range?: DateRange, configSource?: string | null, background?: boolean, fresh?: boolean, projectScopeId?: string | null): Promise<MenubarPayload>
   getPlans(period: Period): Promise<StatusJson>

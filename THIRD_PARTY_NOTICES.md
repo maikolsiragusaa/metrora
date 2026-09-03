@@ -2,6 +2,21 @@
 
 Metrora includes third-party and upstream-licensed components. Those components retain their original copyright notices and licence terms.
 
+## DeepSeek Harness OSS runtime substrate
+
+The Desktop Harness runtime composes the package-level DeepSeek Harness OSS
+substrate from `deepseek-ai/deepseek-harness` at exact commit
+`49a606bc5b5934603f22a26957a07dc799ab0291`, release `0.1.2-alpha.5`.
+The selected upstream work is MIT licensed by DeepSeek; the complete original
+notice and licence text are preserved in
+[`LICENSES/DEEPSEEK-HARNESS-MIT.txt`](LICENSES/DEEPSEEK-HARNESS-MIT.txt).
+Metrora retains ownership of product context, canonical facts, Shield/ACT
+authority, evidence projections, provider selection and user-facing UX; the
+upstream packages provide the durable session, agent-loop, tool registry and
+bounded subagent substrate.
+
+Source repository: `https://github.com/deepseek-ai/deepseek-harness`
+
 ## Incorporated MIT component
 
 Portions of Metrora were derived from an upstream source snapshot at commit

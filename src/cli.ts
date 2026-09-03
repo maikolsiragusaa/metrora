@@ -6,9 +6,9 @@
 if (process.versions.electron) process.argv.splice(1, 1)
 
 const [major, minor] = process.versions.node.split('.').map(Number)
-if (major < 22 || (major === 22 && minor < 13)) {
+if (major < 22 || (major === 22 && minor < 19)) {
   process.stderr.write(
-    `Metrora requires Node.js >= 22.13.0 (current: ${process.version})\n` +
+    `Metrora requires Node.js >= 22.19.0 (current: ${process.version})\n` +
     'Upgrade at https://nodejs.org/\n',
   )
   process.exit(1)

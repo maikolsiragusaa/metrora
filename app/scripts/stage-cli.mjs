@@ -10,6 +10,7 @@
 //   build/cli/THIRD_PARTY_NOTICES.md
 //   build/cli/LICENSES/Apache-2.0.txt
 //   build/cli/LICENSES/UPSTREAM-MIT.txt
+//   build/cli/LICENSES/DEEPSEEK-HARNESS-MIT.txt
 //   build/cli/dist/cli.js
 //   build/cli/dist/main.js
 //   build/cli/dist/desktop-local-state.js
@@ -39,6 +40,7 @@ const noticeFiles = [
   ['THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_NOTICES.md'],
   [join('LICENSES', 'Apache-2.0.txt'), join('LICENSES', 'Apache-2.0.txt')],
   [join('LICENSES', 'UPSTREAM-MIT.txt'), join('LICENSES', 'UPSTREAM-MIT.txt')],
+  [join('LICENSES', 'DEEPSEEK-HARNESS-MIT.txt'), join('LICENSES', 'DEEPSEEK-HARNESS-MIT.txt')],
 ]
 
 for (const file of emittedFiles) {
