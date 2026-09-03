@@ -20,7 +20,7 @@ const mcpFixture = {
   transport: 'stdio' as const,
   command: 'node',
   args: ['fixture.mjs'],
-  cwd: 'C:\\workspace',
+  cwd: path.resolve(os.tmpdir(), 'metrora-harness-workspace'),
   env: { MODE: 'test' },
   envRefs: { TOKEN: 'mcp:fixture:TOKEN' },
 }
