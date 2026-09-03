@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { createAssistantMessage, createToolResultMessage, createUserMessage, ReasoningEffortId, ToolCallId, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 
-import { MetroraHostedLlmAdapter, hostedProviderRoute, probeHostedProvider } from './harness-hosted-adapter.mjs'
+import { MetroraHostedLlmAdapter, hostedProviderRoute, hostedReasoningConfig, probeHostedProvider } from './harness-hosted-adapter.mjs'
 
 function jsonResponse(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } })
@@ -26,6 +26,57 @@ describe('Metrora hosted DSH adapter', () => {
     expect(calls[0]?.url).toBe('https://api.openai.com/v1/models')
     expect(String(calls[0]?.init?.headers)).not.toContain('secret-value')
     expect(JSON.stringify(result)).not.toContain('secret-value')
+  })
+
+  it('normalizes realistic model-list payloads across every hosted route', async () => {
+    const fixtures: Record<string, { url: string; payload: unknown; model: string; reasoningEfforts?: string[] }> = {
+      openai: { url: 'https://api.openai.com/v1/models', payload: { data: [{ id: 'gpt-5.1', reasoning_efforts: ['medium', 'high'] }] }, model: 'gpt-5.1', reasoningEfforts: ['medium', 'high'] },
+      anthropic: { url: 'https://api.anthropic.com/v1/models', payload: { data: [{ id: 'claude-sonnet-4-6' }] }, model: 'claude-sonnet-4-6' },
+      gemini: { url: 'https://generativelanguage.googleapis.com/v1beta/models', payload: { models: [{ name: 'models/gemini-2.5-flash', supportedGenerationMethods: ['generateContent'] }] }, model: 'gemini-2.5-flash' },
+      openrouter: { url: 'https://openrouter.ai/api/v1/models', payload: { data: [{ id: 'openai/gpt-5.1', supported_parameters: ['tools'], reasoning_efforts: ['xhigh'] }] }, model: 'openai/gpt-5.1', reasoningEfforts: ['xhigh'] },
+      'opencode-zen': { url: 'https://opencode.ai/zen/v1/models', payload: { data: [{ id: 'opencode/zenith', reasoning_efforts: ['vendor-tier-2'] }] }, model: 'opencode/zenith', reasoningEfforts: ['vendor-tier-2'] },
+    }
+
+    for (const [provider, fixture] of Object.entries(fixtures)) {
+      const calls: string[] = []
+      const fetchImpl = (async (input: RequestInfo | URL) => {
+        calls.push(String(input))
+        return jsonResponse(fixture.payload)
+      }) as typeof fetch
+      const result = await probeHostedProvider(provider as Parameters<typeof probeHostedProvider>[0], async () => 'secret-value', fetchImpl)
+      expect(calls).toEqual([fixture.url])
+      expect(result).toMatchObject({ available: true, provider, models: [{ id: fixture.model }] })
+      if (fixture.reasoningEfforts) expect(result.models[0]?.reasoningEfforts).toEqual(fixture.reasoningEfforts)
+    }
+  })
+
+  it('keeps provider reasoning IDs exact at the wire boundary', () => {
+    expect(hostedReasoningConfig('openai', 'high')).toEqual({ reasoning_effort: 'high' })
+    expect(hostedReasoningConfig('openrouter', 'xhigh')).toEqual({ reasoning_effort: 'xhigh' })
+    expect(hostedReasoningConfig('opencode-zen', 'vendor-tier-2')).toEqual({ reasoning_effort: 'vendor-tier-2' })
+    expect(hostedReasoningConfig('anthropic', 'budget-4096')).toEqual({ thinking: { type: 'enabled', budget_tokens: 4096 } })
+    expect(hostedReasoningConfig('gemini', 'high')).toEqual({ thinkingConfig: { thinkingBudget: 4096 } })
+    expect(hostedReasoningConfig('gemini', 'none')).toEqual({ thinkingConfig: { thinkingBudget: 0 } })
+    expect(() => hostedReasoningConfig('anthropic', 'vendor-special')).toThrow('has no supported provider wire translation')
+  })
+
+  it('writes the Anthropic thinking budget in the native request shape', async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), init })
+      return new Response('data: {"type":"message_stop"}\n\n', { status: 200, headers: { 'content-type': 'text/event-stream' } })
+    }) as typeof fetch
+    const adapter = new MetroraHostedLlmAdapter({ fetchImpl, readCredential: async () => 'secret-value' })
+    await collect(adapter.stream({
+      provider: hostedProviderRoute('anthropic'),
+      model: 'claude-sonnet-4-6',
+      messages: [createUserMessage({ content: [{ type: 'text', text: 'Explain the change.' }], source: { kind: 'user' } })],
+      reasoningEffort: ReasoningEffortId('budget-4096'),
+    }))
+    expect(calls[0]?.url).toBe('https://api.anthropic.com/v1/messages')
+    const body = JSON.parse(String(calls[0]?.init?.body)) as Record<string, unknown>
+    expect(body.thinking).toEqual({ type: 'enabled', budget_tokens: 4096 })
+    expect(JSON.stringify(body)).not.toContain('secret-value')
   })
 
   it('preserves native OpenAI tool-call IDs and translates reasoning into DSH blocks', async () => {

@@ -6,6 +6,7 @@ import type { Polled } from '../hooks/usePolled'
 import type { MenubarPayload } from '../lib/types'
 import type {
   HarnessConversation,
+  HarnessConversationInput,
   HarnessConversationSummary,
   HarnessRuntimeProfileV1,
   HarnessWorkspace,
@@ -24,6 +25,7 @@ const bridge = vi.hoisted(() => ({
   harnessGetConversation: vi.fn(),
   harnessCreateConversation: vi.fn(),
   harnessSendMessage: vi.fn(),
+  harnessSelectModelForSession: vi.fn(),
   harnessCancel: vi.fn(),
   harnessApprove: vi.fn(),
   harnessDeny: vi.fn(),
@@ -97,6 +99,7 @@ beforeEach(() => {
   bridge.harnessGetConversation.mockResolvedValue(null)
   bridge.harnessCreateConversation.mockResolvedValue({ ...summary, messages: [] })
   bridge.harnessSendMessage.mockResolvedValue({ conversationId: summary.id, message: answer.messages[1], runtime: 'ollama', provider: null, model: 'qwen2.5-coder' })
+  bridge.harnessSelectModelForSession.mockImplementation(async (input: HarnessConversationInput) => ({ ...answer, ...summary, id: input.conversationId!, runtime: input.runtime, provider: input.provider ?? null, model: input.model, mode: input.mode ?? 'ask', reasoningEffort: input.reasoningEffort ?? null }))
   bridge.harnessGetConversation.mockResolvedValue(answer)
   bridge.harnessApprove.mockResolvedValue(true)
   bridge.harnessDeny.mockResolvedValue(true)
@@ -116,10 +119,10 @@ describe('Metrora Harness cockpit', () => {
   it('renders the durable Session rail, current Workspace and standard controls, then sends through the selected Session', async () => {
     renderHarness()
 
-    expect(await screen.findByRole('heading', { name: 'A calm, capable place to work with your code.' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Start a coding Session' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Open Workspace/i })).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: 'Harness mode' })).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: 'Harness reasoning effort' })).toHaveValue('medium')
+    expect(screen.getByRole('button', { name: 'Harness mode' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Harness model' })).toHaveTextContent('medium')
     expect(document.body.textContent).not.toContain(['Ad', 'visor'].join(''))
 
     fireEvent.click(screen.getByRole('button', { name: /Open Workspace/i }))
@@ -129,7 +132,7 @@ describe('Metrora Harness cockpit', () => {
     fireEvent.click(screen.getByRole('button', { name: /New Session/i }))
     await waitFor(() => expect(bridge.harnessCreateConversation).toHaveBeenCalled())
     fireEvent.change(screen.getByRole('textbox', { name: 'Ask Metrora Harness' }), { target: { value: 'Inspect the project.' } })
-    fireEvent.click(screen.getByRole('button', { name: /^Send/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
     await waitFor(() => expect(bridge.harnessSendMessage).toHaveBeenCalledWith(expect.objectContaining({ model: 'qwen2.5-coder', mode: 'ask', question: 'Inspect the project.' })))
     expect(await screen.findByText('The selected Workspace is ready.')).toBeInTheDocument()
   })
@@ -165,5 +168,64 @@ describe('Metrora Harness cockpit', () => {
     expect(screen.getByText('Shield · edit')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
     await waitFor(() => expect(bridge.harnessApprove).toHaveBeenCalledWith('approval-1'))
+  })
+
+  it('changes the model through the active Session and keeps it after remount', async () => {
+    const modelA = 'qwen-a'
+    const modelB = 'qwen-b'
+    const summaryA: HarnessConversationSummary = { ...summary, model: modelA, reasoningEffort: 'medium' }
+    const summaryB: HarnessConversationSummary = { ...summary, model: modelB, reasoningEffort: 'high', updatedAt: '2026-09-03T12:05:00.000Z' }
+    const answerA: HarnessConversation = { ...summaryA, messages: answer.messages }
+    const answerB: HarnessConversation = { ...summaryB, messages: answer.messages }
+    const testProfile: HarnessRuntimeProfileV1 = {
+      ...profile,
+      lastLocalModelByRuntime: { ollama: modelA },
+      reasoningByModel: { ...profile.reasoningByModel, [JSON.stringify(['ollama', null, modelB])]: 'high' },
+    }
+    bridge.harnessProfileGet.mockResolvedValue(testProfile)
+    bridge.harnessListConversations.mockResolvedValue([summaryA])
+    bridge.harnessGetConversation.mockResolvedValue(answerA)
+    bridge.harnessProbeLocal.mockResolvedValue({
+      runtime: 'ollama',
+      endpoint: 'http://127.0.0.1:11434',
+      available: true,
+      models: [modelA, modelB],
+      detail: 'Local Ollama is reachable.',
+      discoveryState: 'models-discovered',
+      capabilities: [
+        { schemaVersion: 1, runtime: 'ollama', modelId: modelA, discovery: 'discovered', conversational: 'available', toolCall: 'unknown', streaming: 'supported', reasoningEfforts: ['medium'], limitation: 'Exact Tool and reasoning conformance is checked separately for this exact model.' },
+        { schemaVersion: 1, runtime: 'ollama', modelId: modelB, discovery: 'discovered', conversational: 'available', toolCall: 'unknown', streaming: 'supported', reasoningEfforts: ['high'], limitation: 'Exact Tool and reasoning conformance is checked separately for this exact model.' },
+      ],
+    })
+    bridge.harnessSelectModelForSession.mockImplementation(async (input: HarnessConversationInput) => ({
+      ...answerB,
+      id: input.conversationId!,
+      runtime: input.runtime,
+      provider: input.provider ?? null,
+      model: input.model,
+      mode: input.mode ?? 'ask',
+      reasoningEffort: input.reasoningEffort ?? null,
+    }))
+    localStorage.setItem('harness.activeSession', summaryA.id)
+
+    const rendered = renderHarness()
+    const modelButton = await screen.findByRole('button', { name: 'Harness model' })
+    await waitFor(() => expect(modelButton).toHaveTextContent(modelA))
+    fireEvent.click(modelButton)
+    fireEvent.click(await screen.findByRole('menuitem', { name: new RegExp(`${modelA}.*Ollama`) }))
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: new RegExp(modelB) }))
+    await waitFor(() => expect(bridge.harnessSelectModelForSession).toHaveBeenCalledWith(expect.objectContaining({ conversationId: summaryA.id, runtime: 'ollama', model: modelB, mode: 'ask', reasoningEffort: 'high' })))
+    await waitFor(() => expect(modelButton).toHaveTextContent(modelB))
+
+    bridge.harnessGetConversation.mockResolvedValue(answerB)
+    bridge.harnessListConversations.mockResolvedValue([summaryB])
+    fireEvent.change(screen.getByRole('textbox', { name: 'Ask Metrora Harness' }), { target: { value: 'Use model B.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
+    await waitFor(() => expect(bridge.harnessSendMessage).toHaveBeenCalledWith(expect.objectContaining({ conversationId: summaryA.id, model: modelB, reasoningEffort: 'high', question: 'Use model B.' })))
+
+    rendered.unmount()
+    renderHarness()
+    const remountedModelButton = await screen.findByRole('button', { name: 'Harness model' })
+    await waitFor(() => expect(remountedModelButton).toHaveTextContent(modelB))
   })
 })

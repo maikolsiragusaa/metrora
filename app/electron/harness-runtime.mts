@@ -5,7 +5,7 @@ import path from 'node:path'
 
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
-import { AgentRegistry } from '@deepseek-ai/dsh-agent'
+import { AgentRegistry, installModelSelection, type ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import { AgentLoop } from '@deepseek-ai/dsh-agent-loop'
 import { LlmRuntime, ReasoningEffortId, type LlmAdapter } from '@deepseek-ai/dsh-llm'
 import { createUserMessage, type ContentBlock } from '@deepseek-ai/dsh-llm'
@@ -18,7 +18,7 @@ import TokenMeter from '@deepseek-ai/dsh-token-meter'
 import ToolResultPruner from '@deepseek-ai/dsh-compaction-tool-result-pruner'
 import { BasicCompactionEngine } from '@deepseek-ai/dsh-compaction-basic'
 import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
-import { ToolRuntime } from '@deepseek-ai/dsh-tools'
+import { ToolRuntime, type ToolExecution, type ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import type { ApprovalOutcome } from '@deepseek-ai/dsh-user-approval'
 import { ApprovalService } from '@deepseek-ai/dsh-user-approval'
 import { SubagentRuntime } from '@deepseek-ai/dsh-subagent'
@@ -57,6 +57,7 @@ import {
   projectHarnessId,
   projectHarnessRuntimeEvent,
   projectHarnessText,
+  isHarnessReasoningEffort,
   reasoningProfileKey,
   type HarnessApprovalProjection,
   type HarnessConversation,
@@ -145,7 +146,6 @@ const MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,160}$/u
 const LOCAL_RUNTIMES: readonly HarnessRuntimeId[] = ['ollama', 'lmstudio', 'llama-server']
 const HOSTED_PROVIDERS: readonly HarnessHostedProvider[] = ['openai', 'anthropic', 'gemini', 'openrouter', 'opencode-zen']
 const MODES: readonly HarnessMode[] = ['ask', 'plan', 'edit', 'build']
-const EFFORTS: readonly HarnessReasoningEffort[] = ['min', 'low', 'medium', 'high', 'max']
 const FACTUAL_TOOLS = new Set(['get_spend_snapshot', 'get_model_efficiency', 'get_quota_snapshot', 'get_overview_snapshot', 'get_project_drivers', 'get_session_highlights', 'get_coverage_report', 'get_bench_evidence'])
 
 function mount(ctx: Context, plugin: unknown, config?: unknown): Promise<void> {
@@ -185,7 +185,7 @@ function assertMode(value: unknown): HarnessMode {
 
 function assertEffort(value: unknown): HarnessReasoningEffort | null {
   if (value === undefined || value === null) return null
-  if (EFFORTS.includes(value as HarnessReasoningEffort)) return value as HarnessReasoningEffort
+  if (isHarnessReasoningEffort(value)) return value
   throw new Error('Harness reasoning effort is invalid for this model.')
 }
 
@@ -392,26 +392,65 @@ function safeJson(value: unknown): unknown {
   try { return JSON.parse(value) as unknown } catch { return {} }
 }
 
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value as Record<string, unknown>).sort().map(key => `${JSON.stringify(key)}:${stableJson((value as Record<string, unknown>)[key])}`).join(',')}}`
+  }
+  return JSON.stringify(value) ?? 'null'
+}
+
+function currentOpenTurn(agent: Pick<Agent, 'session'> | undefined): number | null {
+  if (!agent) return null
+  const events = agent.session.snapshotEvents() as readonly SessionEventRecord[]
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event.type === 'turn/end') return null
+    if (event.type === 'turn/start' && typeof event.data?.turn === 'number') return event.data.turn
+  }
+  return null
+}
+
+const TERMINAL_TOOL_STATUSES = new Set<HarnessToolProjection['status']>(['completed', 'failed', 'interrupted', 'denied'])
+
+function mergeToolProjection(previous: HarnessToolProjection | undefined, incoming: HarnessToolProjection): HarnessToolProjection {
+  if (!previous) return incoming
+  const merged = { ...previous, ...incoming }
+  // A late/replayed tool/call event is allowed to enrich a card, but never to
+  // reopen a call that already reached a terminal state.
+  if (TERMINAL_TOOL_STATUSES.has(previous.status)) merged.status = previous.status
+  return merged
+}
+
+function processIdentity(item: HarnessProcessItem): string {
+  if (item.kind === 'tool') return `tool:${item.item.callId}`
+  if (item.kind === 'approval') return `approval:${item.item.approvalId}`
+  if (item.kind === 'agent') return `agent:${item.item.agentId}`
+  return `${item.kind}:${item.id}`
+}
+
 function projectedMessages(session: Session, workspaceRoot: string | null): HarnessConversationMessage[] {
   const events = session.snapshotEvents() as readonly SessionEventRecord[]
-  const processes = new Map<string, HarnessProcessItem[]>()
   const processesByTurn = new Map<number, HarnessProcessItem[]>()
-  const processByMessage = new Map<string, HarnessProcessItem[]>()
-  const messageTurn = new Map<string, number>()
   const tools = new Map<string, HarnessToolProjection>()
   const approvals = new Map<string, HarnessApprovalProjection>()
   const toolStepByCallId = new Map<string, string>()
   const reasoningByStep = new Map<string, string>()
-  const processFor = (key: string): HarnessProcessItem[] => {
-    const current = processes.get(key) ?? []
-    processes.set(key, current)
-    return current
-  }
+  const assistantTurnById = new Map<string, number>()
+  const assistantGroups = new Map<number, Array<{ id: string; text: string; reasoning: string; interrupted: boolean }>>()
   const processForTurn = (turn: unknown): HarnessProcessItem[] => {
     const key = typeof turn === 'number' && Number.isInteger(turn) ? turn : 0
     const current = processesByTurn.get(key) ?? []
     processesByTurn.set(key, current)
     return current
+  }
+  const appendProcess = (turn: unknown, item: HarnessProcessItem): void => {
+    const list = processForTurn(turn)
+    const identity = processIdentity(item)
+    const index = list.findIndex(existing => processIdentity(existing) === identity)
+    if (index < 0) list.push(item)
+    else if (item.kind === 'tool' && list[index]?.kind === 'tool') list[index] = { kind: 'tool', item: mergeToolProjection(list[index].item, item.item) }
+    else list[index] = item
   }
   for (const event of events) {
     const data = event.data
@@ -425,10 +464,10 @@ function projectedMessages(session: Session, workspaceRoot: string | null): Harn
       const pendingDetails = toolCallDetails(String(data.name), args, workspaceRoot)
       const source = mcpSourceForTool(String(data.name))
       const item: HarnessToolProjection = { callId, ...(typeof data.rootCallId === 'string' ? { rootCallId: data.rootCallId } : {}), ...(typeof data.parentCallId === 'string' ? { parentCallId: data.parentCallId } : {}), name: String(data.name), kind: toolKind(String(data.name), args), ...(source ? { source } : {}), status: 'running', inputSummary: summary.inputSummary, risk: projectionAuthority.classify(String(data.name), args), ...(summary.path ? { path: summary.path } : {}), ...(summary.command ? { command: summary.command } : {}), ...(pendingDetails ? { details: pendingDetails } : {}), startedAt: dateText(event.time, Date.now()) }
-      tools.set(callId, item)
+      const merged = mergeToolProjection(tools.get(callId), item)
+      tools.set(callId, merged)
       toolStepByCallId.set(callId, stepKey(data.turn, data.step))
-      processFor(stepKey(data.turn, data.step)).push({ kind: 'tool', item })
-      processForTurn(data.turn).push({ kind: 'tool', item })
+      appendProcess(data.turn, { kind: 'tool', item: merged })
     } else if (event.type === 'tool/result') {
       const callId = data?.message?.source?.kind === 'tool' ? String(data.message.source.callId) : ''
       const item = tools.get(callId)
@@ -438,34 +477,44 @@ function projectedMessages(session: Session, workspaceRoot: string | null): Harn
         const startedAt = item.startedAt ? Date.parse(item.startedAt) : NaN
         const details = toolDetails(item.name, data, workspaceRoot)
         const terminalDetails = details?.kind === 'terminal' ? details : undefined
-        tools.set(callId, { ...item, status: failed ? 'failed' : 'completed', resultSummary: resultSummary(item.name, failed, data), ...(terminalDetails?.exitCode !== undefined ? { exitCode: terminalDetails.exitCode } : {}), finishedAt, ...(Number.isFinite(startedAt) ? { durationMs: Math.max(0, Date.parse(finishedAt) - startedAt) } : {}), ...(details ? { details } : {}) })
+        const resultItem: HarnessToolProjection = { ...item, status: failed ? 'failed' : 'completed', resultSummary: resultSummary(item.name, failed, data), ...(terminalDetails?.exitCode !== undefined ? { exitCode: terminalDetails.exitCode } : {}), finishedAt, ...(Number.isFinite(startedAt) ? { durationMs: Math.max(0, Date.parse(finishedAt) - startedAt) } : {}), ...(details ? { details } : {}) }
+        const merged = mergeToolProjection(item, resultItem)
+        tools.set(callId, merged)
+        const step = toolStepByCallId.get(callId)
+        appendProcess(step ? Number(step.split(':', 1)[0]) : data.turn, { kind: 'tool', item: merged })
       }
     } else if (event.type === 'approval/asked') {
       const callId = data.callId ? String(data.callId) : null
       const call = callId ? tools.get(callId) : undefined
       const summary = call ? { path: call.path, command: call.command } : summarizeToolInput(String(data.toolName), {}, workspaceRoot)
       const approval: HarnessApprovalProjection = { approvalId: String(data.id), callId, toolName: String(data.toolName), action: projectHarnessText(data.reason, `Approve ${String(data.toolName)}`), ...(summary.path ? { workspacePath: summary.path } : {}), ...(summary.command ? { command: summary.command } : {}), risk: call?.risk ?? projectionAuthority.classify(String(data.toolName), {}), state: 'proposed', reason: projectHarnessText(data.reason, 'Metrora Shield requires approval.') }
-      approvals.set(String(data.id), approval)
-      processFor((callId && toolStepByCallId.get(callId)) ?? stepKey(data.turn ?? 0, data.step ?? 0)).push({ kind: 'approval', item: approval })
-      processForTurn(data.turn).push({ kind: 'approval', item: approval })
+      const approvalId = String(data.id)
+      const previous = approvals.get(approvalId)
+      const merged = previous && previous.state !== 'proposed' ? { ...previous, ...approval, state: previous.state } : { ...previous, ...approval }
+      approvals.set(approvalId, merged)
+      const step = callId ? toolStepByCallId.get(callId) : undefined
+      appendProcess(step ? Number(step.split(':', 1)[0]) : data.turn, { kind: 'approval', item: merged })
     } else if (event.type === 'approval/decided') {
       const previous = approvals.get(String(data.id))
-      if (previous) approvals.set(String(data.id), { ...previous, state: data.outcome === 'allowed-once' ? 'approved' : 'denied' })
+      if (previous && previous.state === 'proposed') {
+        const next = { ...previous, state: data.outcome === 'allowed-once' ? 'approved' as const : 'denied' as const }
+        approvals.set(String(data.id), next)
+        appendProcess(data.turn, { kind: 'approval', item: next })
+      }
     } else if (event.type === 'assistant/message') {
+      const turn = typeof data.turn === 'number' && Number.isInteger(data.turn) ? data.turn : 0
+      const messageId = String(data.message.id)
       const key = stepKey(data.turn, data.step)
-      messageTurn.set(String(data.message.id), typeof data.turn === 'number' ? data.turn : 0)
-      const list = [...(processes.get(key) ?? [])]
       const reasoning = reasoningByStep.get(key) ?? messageReasoning(data.message)
-      if (reasoning && !list.some(item => item.kind === 'reasoning')) list.unshift({ kind: 'reasoning', id: `reasoning-${event.seq}`, text: projectHarnessText(reasoning, ''), state: 'completed' })
-      processByMessage.set(String(data.message.id), list.map(item => item.kind === 'tool' && tools.has(item.item.callId)
-        ? { kind: 'tool', item: tools.get(item.item.callId)! }
-        : item.kind === 'approval' && approvals.has(item.item.approvalId)
-          ? { kind: 'approval', item: approvals.get(item.item.approvalId)! }
-          : item))
+      assistantTurnById.set(messageId, turn)
+      const group = assistantGroups.get(turn) ?? []
+      group.push({ id: messageId, text: messageText(data.message), reasoning, interrupted: data.interrupted === true })
+      assistantGroups.set(turn, group)
+      if (reasoning) appendProcess(turn, { kind: 'reasoning', id: `reasoning-${messageId}`, text: projectHarnessText(reasoning, ''), state: 'completed' })
     }
   }
   const projected: HarnessConversationMessage[] = []
-  let pendingProcess: HarnessProcessItem[] = []
+  const emittedTurns = new Set<number>()
   for (const message of session.deriveMessages()) {
     if (message.role === 'user' && message.source.kind === 'user') {
       const text = messageText(message)
@@ -473,23 +522,23 @@ function projectedMessages(session: Session, workspaceRoot: string | null): Harn
       continue
     }
     if (message.role !== 'assistant') continue
-    const text = messageText(message)
-    const reasoning = messageReasoning(message)
-    const turn = messageTurn.get(String(message.id))
-    const process = [...pendingProcess, ...(processByMessage.get(String(message.id)) ?? []), ...(turn === undefined ? [] : processesByTurn.get(turn) ?? [])]
+    const turn = assistantTurnById.get(String(message.id))
+    if (turn === undefined || emittedTurns.has(turn)) continue
+    emittedTurns.add(turn)
+    const group = assistantGroups.get(turn) ?? []
+    const text = [...group].reverse().find(item => item.text.trim())?.text ?? ''
+    const reasoning = [...group].map(item => item.reasoning).filter(Boolean).join('\n').slice(0, 32_000)
+    const rawProcess = processesByTurn.get(turn) ?? []
+    const process = rawProcess.map(item => item.kind === 'tool' && tools.has(item.item.callId)
+      ? { kind: 'tool' as const, item: tools.get(item.item.callId)! }
+      : item.kind === 'approval' && approvals.has(item.item.approvalId)
+        ? { kind: 'approval' as const, item: approvals.get(item.item.approvalId)! }
+        : item)
     const seen = new Set<string>()
-    const uniqueProcess = process.filter(item => {
-      const identity = item.kind === 'tool' ? `tool:${item.item.callId}` : item.kind === 'approval' ? `approval:${item.item.approvalId}` : item.kind === 'agent' ? `agent:${item.item.agentId}` : `reasoning:${item.id ?? item.text}`
-      if (seen.has(identity)) return false
-      seen.add(identity)
-      return true
-    })
-    pendingProcess = []
-    if (!text.trim() && !reasoning.trim()) {
-      pendingProcess = process
-      continue
-    }
-    projected.push({ id: String(message.id), role: 'assistant', text: projectHarnessText(text, ''), ...(reasoning ? { reasoning: projectHarnessText(reasoning, '') } : {}), ...(uniqueProcess.length ? { process: uniqueProcess } : {}) })
+    const uniqueProcess = process.filter(item => { const identity = processIdentity(item); if (seen.has(identity)) return false; seen.add(identity); return true })
+    const final = group.at(-1)
+    if (!text.trim() && !reasoning.trim() && uniqueProcess.length === 0) continue
+    projected.push({ id: final?.id ?? String(message.id), role: 'assistant', text: projectHarnessText(text, ''), ...(reasoning ? { reasoning: projectHarnessText(reasoning, '') } : {}), ...(final?.interrupted ? { interrupted: true } : {}), ...(uniqueProcess.length ? { process: uniqueProcess } : {}) })
   }
   return projected
 }
@@ -499,7 +548,7 @@ function retryNotice() {
 }
 
 function modeNotice(mode: HarnessMode, workspaceRoot: string | null): ReturnType<typeof createUserMessage> {
-  const detail = mode === 'ask' ? 'Ask mode is conversational and read-only.' : mode === 'plan' ? 'Plan mode may inspect and search, but state-changing actions require explicit approval.' : mode === 'edit' ? 'Edit mode is for focused Workspace changes; Shield approval is required before mutation or process actions.' : 'Build mode may inspect, edit, test and iterate inside the accepted Workspace; Shield approval still governs state-changing actions.'
+  const detail = mode === 'ask' ? 'Ask mode is conversational and read-only.' : mode === 'plan' ? 'Plan mode may inspect and search, but state-changing actions are not permitted.' : mode === 'edit' ? 'Edit mode is for focused Workspace changes; Shield approval is required before mutation or process actions.' : 'Build mode may inspect, edit, test and iterate inside the accepted Workspace; Shield approval still governs state-changing actions.'
   return createUserMessage({ content: [{ type: 'text', text: `Metrora Harness mode: ${detail} ${workspaceRoot ? 'The accepted Workspace is the current Session working directory.' : 'No local Workspace is open, so coding Tools are unavailable.'} Current Metrora usage, cost, quota, Models, Capacity, Projects and Bench facts come only from canonical Metrora Tools; do not estimate unavailable facts.` }], source: { kind: 'plugin', plugin: 'metrora-harness', form: 'snapshot', sections: [{ name: 'mode', text: detail }] } })
 }
 
@@ -552,6 +601,8 @@ export class MetroraHarnessHost {
   private readonly mcpStatuses = new Map<string, import('./harness-runtime-types.js').HarnessMcpServerStatus>()
   private mcpServers: import('./harness-runtime-types.js').HarnessMcpServerConfig[] = []
   private mcpMutation: Promise<void> = Promise.resolve()
+  private readonly factualCallStates = new Map<string, { state: 'in-flight' | 'completed'; callId: string }>()
+  private factualGuardDisposer: (() => void) | null = null
   private shuttingDown = false
 
   constructor(options: MetroraHarnessHostOptions) {
@@ -605,6 +656,32 @@ export class MetroraHarnessHost {
     return this.conversationFromSession(live.handle.agent.session, live)
   }
 
+  /** Apply an explicit route/model/reasoning selection to the existing DSH
+   * Agent. This is the core Session operation used by the renderer; changing
+   * React state or global profile preferences alone is not sufficient. */
+  async selectModelForSession(input: HarnessConversationInput): Promise<HarnessConversation | null> {
+    await this.ready
+    if (this.shuttingDown) throw new Error('Metrora Harness is shutting down.')
+    const id = input?.conversationId ? assertConversationId(input.conversationId) : ''
+    if (!id) throw new Error('Harness model selection requires a Session id.')
+    let live = this.live.get(id)
+    if (live?.active) throw new Error('Metrora Harness cannot change the model during an active turn.')
+    if (!live) {
+      const existing = await this.getConversation(id)
+      if (!existing) return null
+      const normalized = await this.normalizeConversationInput(input, null, false)
+      live = await this.resumeLiveConversation(id, normalized, existing.title)
+    } else {
+      const normalized = await this.normalizeConversationInput(input, live.workspaceRoot, false)
+      this.applySelection(live, normalized)
+    }
+    if (!live) return null
+    if (live !== this.live.get(id)) throw new Error('Harness Session selection lost its live Agent.')
+    if (live.active) throw new Error('Metrora Harness cannot change the model during an active turn.')
+    await this.persist(live)
+    return this.conversationFromSession(live.handle.agent.session, live)
+  }
+
   async sendMessage(input: HarnessSendMessageInput): Promise<HarnessSendMessageResult> {
     await this.ready
     if (this.shuttingDown) throw new Error('Metrora Harness is shutting down.')
@@ -617,15 +694,7 @@ export class MetroraHarnessHost {
       live = existing ? await this.resumeLiveConversation(id, normalized, existing.title) : await this.createLiveConversation(id, normalized, 'New chat')
     } else {
       const normalized = await this.normalizeConversationInput(input, live.workspaceRoot)
-      const routeChanged = live.runtime !== normalized.runtime || live.provider !== normalized.provider || live.model !== normalized.model || live.reasoningEffort !== normalized.reasoningEffort
-      live.runtime = normalized.runtime
-      live.provider = normalized.provider
-      live.model = normalized.model
-      live.mode = normalized.mode
-      live.reasoningEffort = normalized.reasoningEffort
-      live.scope = normalized.scope
-      live.workspaceRoot = normalized.workspaceRoot ?? live.workspaceRoot
-      if (routeChanged) live.conformance = defaultConformance()
+      this.applySelection(live, normalized)
     }
     if (!live) throw new Error('Harness Session could not be opened.')
     if (live.active) throw new Error('Metrora Harness already has an active turn for this Session.')
@@ -749,6 +818,9 @@ export class MetroraHarnessHost {
       try { await live.handle.dispose() } catch { /* best effort */ }
     }
     this.live.clear()
+    this.factualCallStates.clear()
+    this.factualGuardDisposer?.()
+    this.factualGuardDisposer = null
     await this.mcpMutation.catch(() => {})
     await this.unmountMcpServers()
     this.toolBridge?.dispose()
@@ -766,6 +838,7 @@ export class MetroraHarnessHost {
       'metrora:harnessListConversations': safe(() => this.listConversations()),
       'metrora:harnessGetConversation': safe((id: string) => this.getConversation(id)),
       'metrora:harnessCreateConversation': safe((input: HarnessConversationInput) => this.createConversation(input)),
+      'metrora:harnessSelectModelForSession': safe((input: HarnessConversationInput) => this.selectModelForSession(input)),
       'metrora:harnessSendMessage': safe((input: HarnessSendMessageInput) => this.sendMessage(input)),
       'metrora:harnessCancel': safe((id: string) => this.cancelConversation(id)),
       'metrora:harnessApprove': safe((id: string) => this.approveApproval(id)),
@@ -882,6 +955,8 @@ export class MetroraHarnessHost {
       const binding = this.toolBridge ? this.toolBridge.contextForAgent(execution.agent) : null
       return this.authority.decide(execution, binding ? { mode: binding.mode, workspaceRoot: binding.workspaceRoot } : {})
     })
+    this.factualGuardDisposer = ctx.tools.guard(execution => this.guardRepeatedFactualCall(execution))
+    ctx.on('tools/result', (execution, result) => this.recordFactualToolResult(execution, result))
     ctx.on('session/event', (session, event) => this.onSessionEvent(session, event))
     ctx.on('approval/request', async request => this.askApproval(request))
     ctx.on('agent/status', ({ agent, status }) => this.onAgentStatus(agent, status))
@@ -930,28 +1005,73 @@ export class MetroraHarnessHost {
   }
 
   private bindAgentRequestRoute(agent: Agent): void {
-    agent.ctx.on('agent/request', async (_payload, next) => {
-      const config = await next()
-      const direct = this.live.get(String(agent.id))
-      const live = direct ?? (agent.session.header.parentSession ? this.live.get(String(agent.session.header.parentSession)) : undefined)
-      if (!live) return config
-      const { reasoningEffort: _previousEffort, ...withoutEffort } = config
-      return { ...withoutEffort, provider: this.routeForLive(live), model: live.model, ...(live.reasoningEffort ? { reasoningEffort: ReasoningEffortId(live.reasoningEffort) } : {}) }
-    })
+    const thisHost = this
+    const selection: ModelSelectionRef = {
+      get current() {
+        const direct = thisHost.live.get(String(agent.id))
+        const live = direct ?? (agent.session.header.parentSession ? thisHost.live.get(String(agent.session.header.parentSession)) : undefined)
+        if (!live) return undefined
+        return {
+          provider: thisHost.routeForLive(live),
+          model: live.model,
+          ...(live.reasoningEffort ? { reasoningEffort: ReasoningEffortId(live.reasoningEffort) } : {}),
+        }
+      },
+      assembled: undefined,
+    }
+    // `installModelSelection` is the pinned DSH seam: it couples prompt
+    // assembly and the next request, including clearing inherited reasoning
+    // when the selected session has no explicit effort.
+    installModelSelection(agent.ctx, selection)
   }
 
-  private async normalizeConversationInput(input: HarnessConversationInput, existingRoot: string | null): Promise<NormalizedInput> {
+  private factualCallKey(execution: Pick<ToolExecution, 'agent' | 'name' | 'arguments'>): string | null {
+    if (!FACTUAL_TOOLS.has(execution.name) || !execution.agent) return null
+    const turn = currentOpenTurn(execution.agent)
+    if (turn === null) return null
+    return `${String(execution.agent.id)}:${turn}:${execution.name}:${stableJson(execution.arguments)}`
+  }
+
+  private guardRepeatedFactualCall(execution: Readonly<ToolExecution>): string | undefined {
+    const key = this.factualCallKey(execution)
+    if (!key) return undefined
+    if (this.factualCallStates.has(key)) return 'This factual Metrora Tool call was already completed or is already running in this turn; use its result instead of repeating it.'
+    this.factualCallStates.set(key, { state: 'in-flight', callId: String(execution.callId) })
+    return undefined
+  }
+
+  private recordFactualToolResult(execution: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>): undefined {
+    const key = this.factualCallKey(execution)
+    if (!key) return undefined
+    const current = this.factualCallStates.get(key)
+    if (!current || current.callId !== String(execution.callId)) return undefined
+    if (result.isError) this.factualCallStates.delete(key)
+    else this.factualCallStates.set(key, { ...current, state: 'completed' })
+    return undefined
+  }
+
+  private clearFactualTurn(agentId: string, turn: unknown): void {
+    if (typeof turn !== 'number' || !Number.isInteger(turn)) return
+    const prefix = `${agentId}:${turn}:`
+    for (const key of this.factualCallStates.keys()) if (key.startsWith(prefix)) this.factualCallStates.delete(key)
+  }
+
+  private async normalizeConversationInput(input: HarnessConversationInput, existingRoot: string | null, requireHostedConsent = true): Promise<NormalizedInput> {
     if (!input || typeof input !== 'object') throw new Error('Harness conversation input is invalid.')
     const runtime = assertRuntime(input.runtime)
     const provider = runtime === 'hosted' ? assertProvider(input.provider) : null
-    if (runtime === 'hosted' && provider && this.profile.read().hostedConsentByProvider[provider] !== 'accepted') {
+    if (requireHostedConsent && runtime === 'hosted' && provider && this.profile.read().hostedConsentByProvider[provider] !== 'accepted') {
       throw new Error('Accept hosted provider consent in Harness settings before sending requests.')
     }
     const model = assertModel(input.model)
     const profile = this.profile.read()
-    const mode = input.mode === undefined ? 'ask' : assertMode(input.mode)
+    const saved = input.conversationId ? this.metadata.get(assertConversationId(input.conversationId)) : null
+    const sameSavedRoute = Boolean(saved && saved.runtime === runtime && saved.provider === provider && saved.model === model)
+    const mode = input.mode === undefined ? sameSavedRoute ? saved!.mode : 'ask' : assertMode(input.mode)
     const exactReasoningKey = reasoningProfileKey(runtime, provider, model)
-    const effort = input.reasoningEffort === undefined ? profile.reasoningByModel[exactReasoningKey] ?? null : assertEffort(input.reasoningEffort)
+    const effort = input.reasoningEffort === undefined
+      ? sameSavedRoute ? saved!.reasoningEffort : profile.reasoningByModel[exactReasoningKey] ?? null
+      : assertEffort(input.reasoningEffort)
     let workspaceRoot: string | null = existingRoot
     if (input.workspaceRoot !== undefined) workspaceRoot = await canonicalizeWorkspaceRoot(input.workspaceRoot)
     else {
@@ -962,7 +1082,13 @@ export class MetroraHarnessHost {
       const switched = Boolean(workspaceRoot && input.workspaceId && candidate && candidateId === input.workspaceId && existingId !== input.workspaceId)
       if (current || switched) workspaceRoot = await canonicalizeWorkspaceRoot(candidate)
     }
-    return { ...(input.conversationId !== undefined ? { conversationId: assertConversationId(input.conversationId) } : {}), runtime, provider, model, mode, reasoningEffort: effort, workspaceRoot, scope: input.scope }
+    // The Agent's inference model is not an evidence filter. Keep any
+    // explicit factual period/provider/project scope supplied by a caller,
+    // but force the base model dimension to null; model-specific factual
+    // queries remain explicit Tool arguments governed by the canonical
+    // Metrora contract.
+    const scope: MetroraHarnessToolScope = { ...input.scope, range: input.scope.range ? { ...input.scope.range } : null, model: null }
+    return { ...(input.conversationId !== undefined ? { conversationId: assertConversationId(input.conversationId) } : {}), runtime, provider, model, mode, reasoningEffort: effort, workspaceRoot, scope }
   }
 
   private async createLiveConversation(id: string, input: NormalizedInput, title: string): Promise<LiveConversation> {
@@ -988,6 +1114,22 @@ export class MetroraHarnessHost {
 
   private routeFor(input: Pick<NormalizedInput, 'runtime' | 'provider'>): string { return input.runtime === 'hosted' && input.provider ? hostedProviderRoute(input.provider) : harnessProviderRoute(input.runtime as HarnessRuntimeId) }
   private routeForLive(live: LiveConversation): string { return this.routeFor(live) }
+
+  private applySelection(live: LiveConversation, normalized: NormalizedInput): void {
+    const routeChanged = live.runtime !== normalized.runtime
+      || live.provider !== normalized.provider
+      || live.model !== normalized.model
+      || live.reasoningEffort !== normalized.reasoningEffort
+    live.runtime = normalized.runtime
+    live.provider = normalized.provider
+    live.model = normalized.model
+    live.mode = normalized.mode
+    live.reasoningEffort = normalized.reasoningEffort
+    live.scope = normalized.scope
+    live.workspaceRoot = normalized.workspaceRoot ?? live.workspaceRoot
+    if (routeChanged) live.conformance = defaultConformance()
+    this.toolBridge?.setContext(live.id, live.scope, live.workspaceRoot, live.mode)
+  }
 
   private summaryFor(session: Session, live: LiveConversation | null): HarnessConversationSummary {
     const saved = this.metadata.get(String(session.id))
@@ -1070,6 +1212,7 @@ export class MetroraHarnessHost {
         }
       }
     } else if (record.type === 'turn/end') {
+      this.clearFactualTurn(String(session.id), record.data?.turn)
       if (record.data?.reason?.kind === 'aborted') this.emit(live, 'cancelled')
       else if (record.data?.reason?.kind === 'error') this.emit(live, 'failed')
       else this.emit(live, 'preparing')

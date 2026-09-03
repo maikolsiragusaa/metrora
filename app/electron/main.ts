@@ -11,6 +11,7 @@ import { Telemetry } from './telemetry'
 import { createUpdateChecker, type UpdateChecker, type UpdateStatus } from './updates'
 import { createBridgeHandlers, NO_UPDATE_STATUS } from './bridge-handlers'
 import { harnessProviderRoute, hostedProviderRoute } from './harness-runtime-types.js'
+import { isHarnessReasoningEffort } from './harness-runtime-types.js'
 import type { HarnessHostedProvider, HarnessReasoningEffort, HarnessRuntimeId, MetroraHarnessRuntimeEvent } from './harness-runtime-types.js'
 import { createHarnessActHandlers, type HarnessActionEvent } from './act-bridge'
 import { createHarnessMcpHandlers } from './harness-mcp-handlers'
@@ -282,7 +283,7 @@ async function registerHandlers(): Promise<void> {
       return { ok: true, value: await harnessProfile.setHostedModel(provider as HarnessHostedProvider, model) }
     },
     'metrora:harnessProfileSetReasoning': async (runtime: unknown, provider: unknown, model: unknown, effort: unknown) => {
-      if (runtime !== 'hosted' && runtime !== 'ollama' && runtime !== 'lmstudio' && runtime !== 'llama-server' || provider !== null && provider !== undefined && provider !== 'openai' && provider !== 'anthropic' && provider !== 'gemini' && provider !== 'openrouter' && provider !== 'opencode-zen' || typeof model !== 'string' || effort !== 'min' && effort !== 'low' && effort !== 'medium' && effort !== 'high' && effort !== 'max') return { ok: false, error: { kind: 'bad-args', message: 'Invalid Harness reasoning selection.' } }
+      if (runtime !== 'hosted' && runtime !== 'ollama' && runtime !== 'lmstudio' && runtime !== 'llama-server' || provider !== null && provider !== undefined && provider !== 'openai' && provider !== 'anthropic' && provider !== 'gemini' && provider !== 'openrouter' && provider !== 'opencode-zen' || typeof model !== 'string' || !isHarnessReasoningEffort(effort)) return { ok: false, error: { kind: 'bad-args', message: 'Invalid Harness reasoning selection.' } }
       const exactProvider = runtime === 'hosted' ? provider as HarnessHostedProvider : null
       return { ok: true, value: await harnessProfile.setReasoning(runtime as 'hosted' | HarnessRuntimeId, exactProvider, model, effort) }
     },
@@ -398,6 +399,7 @@ async function registerHandlers(): Promise<void> {
     'metrora:harnessListConversations',
     'metrora:harnessGetConversation',
     'metrora:harnessCreateConversation',
+    'metrora:harnessSelectModelForSession',
     'metrora:harnessSendMessage',
     'metrora:harnessCancel',
     'metrora:harnessApprove',

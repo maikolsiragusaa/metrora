@@ -55,7 +55,7 @@ describe('Metrora local provider adapter', () => {
     expect(calls[1]?.url).toBe('http://127.0.0.1:11434/api/chat')
     const body = JSON.parse(String(calls[1]?.init?.body)) as Record<string, unknown>
     expect(body.model).toBe('llama3.2')
-    expect(body.think).toBe(true)
+    expect(body.think).toBe('high')
   })
 
   it('uses one validated custom loopback endpoint for llama.cpp discovery and actual chat', async () => {

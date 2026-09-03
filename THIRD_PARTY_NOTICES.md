@@ -17,6 +17,29 @@ bounded subagent substrate.
 
 Source repository: `https://github.com/deepseek-ai/deepseek-harness`
 
+## DeepSeek Harness web UI reference
+
+The Metrora Harness web surface substantially adapts the pinned DeepSeek
+Harness client UI snapshot at commit
+`76fda729799fe9b3848dbe2c211d4b231032b81e`. Adapted patterns and CSS include
+the session rail, model/variant picker, composer card, permission/mode control,
+turn/process disclosure, reasoning row and tool summary rows. The runtime
+authority remains the separate pinned `49a606bc5b5934603f22a26957a07dc799ab0291`
+substrate above; the newer UI snapshot is not used to upgrade runtime packages.
+
+Source files/packages adapted into Metrora's local Harness surface:
+
+| DeepSeek Harness source | Metrora destination |
+| --- | --- |
+| `packages/client/ui-sidebar/src/client/SidebarRoot.module.css` | `app/renderer/styles/harness-v3.css` session rail |
+| `packages/client/ui-model-selection/src/client/ModelSelect.tsx` and `.module.css` | `app/renderer/sections/Harness.tsx` and picker styles |
+| `packages/client/ui-conversation/src/client/skeleton/InputBar.module.css` and `PermissionSelect.module.css` | `app/renderer/sections/Harness.tsx` composer and mode picker |
+| `packages/client/ui-chat/src/client/chat/TurnProcessNodeView.module.css`, `ReasoningRow.module.css` and `MessageItem.module.css` | `app/renderer/styles/harness-v3.css` process, reasoning and message styles |
+
+The source repository is MIT licensed. The complete original notice and
+license text are preserved in
+[`LICENSES/DEEPSEEK-HARNESS-MIT.txt`](LICENSES/DEEPSEEK-HARNESS-MIT.txt).
+
 ## Incorporated MIT component
 
 Portions of Metrora were derived from an upstream source snapshot at commit

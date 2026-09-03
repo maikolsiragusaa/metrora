@@ -24,4 +24,17 @@ describe('Metrora Harness Shield Git policy', () => {
     expect(authority.decide({ name: 'bash', arguments: { command: 'git push origin main' } }, context).kind).toBe('ask')
     expect(authority.decide({ name: 'bash', arguments: { command: 'git clean -fdx' } }, context).kind).toBe('ask')
   })
+
+  it('keeps Plan mode strictly read-only', () => {
+    const authority = createMetroraHarnessAuthority()
+    const context = { mode: 'plan' as const, workspaceRoot: 'C:\\workspace' }
+    expect(authority.decide({ name: 'write', arguments: { path: 'notes.md' } }, context)).toEqual({
+      kind: 'deny',
+      reason: 'Plan mode is read-only; state-changing actions are not permitted.',
+    })
+    expect(authority.decide({ name: 'bash', arguments: { command: 'git push origin main' } }, context)).toEqual({
+      kind: 'deny',
+      reason: 'Plan mode is read-only; state-changing actions are not permitted.',
+    })
+  })
 })

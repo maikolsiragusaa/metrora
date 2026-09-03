@@ -41,6 +41,7 @@ import type {
   HarnessMcpServerConfig,
   HarnessMcpServerStatus,
   HarnessRuntimeProfileV1,
+  HarnessReasoningEffort,
   HarnessSendMessageInput,
   HarnessSendMessageResult,
   HarnessWorkspace,
@@ -140,7 +141,7 @@ export interface MetroraBridge extends ProjectBridge {
   harnessProfileSetPort(port: number): Promise<HarnessRuntimeProfileV1>
   harnessProfileSetLocalModel(runtime: 'ollama' | 'lmstudio' | 'llama-server', model: string): Promise<HarnessRuntimeProfileV1>
   harnessProfileSetHostedModel(provider: HarnessHostedProvider, model: string): Promise<HarnessRuntimeProfileV1>
-  harnessProfileSetReasoning(runtime: 'ollama' | 'lmstudio' | 'llama-server' | 'hosted', provider: HarnessHostedProvider | null, model: string, effort: 'min' | 'low' | 'medium' | 'high' | 'max'): Promise<HarnessRuntimeProfileV1>
+  harnessProfileSetReasoning(runtime: 'ollama' | 'lmstudio' | 'llama-server' | 'hosted', provider: HarnessHostedProvider | null, model: string, effort: HarnessReasoningEffort): Promise<HarnessRuntimeProfileV1>
   harnessProfileSetConsent(provider: HarnessHostedProvider, state: 'unknown' | 'accepted' | 'declined'): Promise<HarnessRuntimeProfileV1>
   harnessMcpGet(): Promise<HarnessMcpServerStatus[]>
   harnessMcpSetServers(servers: HarnessMcpServerConfig[]): Promise<{ profile: HarnessRuntimeProfileV1; statuses: HarnessMcpServerStatus[] }>
@@ -169,6 +170,7 @@ export interface MetroraBridge extends ProjectBridge {
   harnessListConversations(): Promise<HarnessConversationSummary[]>
   harnessGetConversation(conversationId: string): Promise<HarnessConversation | null>
   harnessCreateConversation(input: HarnessConversationInput): Promise<HarnessConversation>
+  harnessSelectModelForSession(input: HarnessConversationInput): Promise<HarnessConversation | null>
   harnessSendMessage(input: HarnessSendMessageInput): Promise<HarnessSendMessageResult>
   harnessCancel(conversationId: string): Promise<boolean>
   onHarnessRuntimeEvent(cb: (event: MetroraHarnessRuntimeEvent) => void): () => void

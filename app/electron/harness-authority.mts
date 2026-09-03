@@ -79,7 +79,7 @@ export function createMetroraHarnessAuthority(): HarnessAuthority {
       }
       if (risk === 'read-only') return { kind: 'allow' }
       if (mode === 'ask') return { kind: 'deny', reason: 'Ask mode is read-only. Switch to Edit or Build for state-changing actions.' }
-      if (mode === 'plan') return { kind: 'ask', reason: 'Plan mode requested a state-changing action; approve it explicitly to continue.' }
+      if (mode === 'plan') return { kind: 'deny', reason: 'Plan mode is read-only; state-changing actions are not permitted.' }
       if (mode === 'edit' && risk === 'process') return { kind: 'ask', reason: 'Run a bounded command in the selected Workspace.' }
       if (risk === 'git-remote' || risk === 'git-destructive') return { kind: 'ask', reason: 'This Git operation changes remote state or history.' }
       if (risk === 'workspace-mutation' || risk === 'git-local' || risk === 'process') return { kind: 'ask', reason: 'Metrora Shield requires approval before this Workspace action.' }

@@ -137,6 +137,28 @@ describe('Metrora DSH Harness runtime', () => {
     }
   })
 
+  it('guards duplicate factual Tool calls within one DSH turn while preserving the final answer', async () => {
+    const root = await tempRoot()
+    const fixture = sourceFixture()
+    const adapter = new ScriptedAdapter(options => options.messages.some(message => message.role === 'assistant' && message.content.some(block => block.type === 'tool-call'))
+      ? textResponse('The single factual result is sufficient.')
+      : toolResponse([
+          { id: 'duplicate-overview-1', name: 'get_overview_snapshot' },
+          { id: 'duplicate-overview-2', name: 'get_overview_snapshot' },
+        ]))
+    const host = new MetroraHarnessHost({ sessionRoot: root, toolRegistry: canonicalToolRegistry, llmAdapter: adapter, toolSource: fixture.source })
+
+    try {
+      const result = await host.sendMessage({ conversationId: 'guard-duplicate', runtime: 'ollama', model: 'local', question: 'Read the overview once.', scope })
+      expect(result.message.text).toContain('single factual result')
+      expect(fixture.reads.overview).toBe(1)
+      expect(adapter.calls).toHaveLength(2)
+    } finally {
+      await host.shutdown()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   it('persists the DSH session and resumes it after a cold host restart', async () => {
     const root = await tempRoot()
     const first = sourceFixture()
@@ -196,6 +218,32 @@ describe('Metrora DSH Harness runtime', () => {
       }
     } finally {
       await firstHost.shutdown()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('applies an explicit model selection through the live DSH Session operation', async () => {
+    const root = await tempRoot()
+    const fixture = sourceFixture()
+    const adapter = new ScriptedAdapter((_options, call) => textResponse(`Answer ${call}`))
+    const host = new MetroraHarnessHost({ sessionRoot: root, toolRegistry: canonicalToolRegistry, llmAdapter: adapter, toolSource: fixture.source })
+
+    try {
+      await host.sendMessage({ conversationId: 'select-me', runtime: 'ollama', model: 'model-a', question: 'first', scope })
+      const selected = await host.selectModelForSession({ conversationId: 'select-me', runtime: 'lmstudio', model: 'model-b', mode: 'plan', reasoningEffort: null, scope })
+      expect(selected).toMatchObject({ id: 'select-me', runtime: 'lmstudio', model: 'model-b', mode: 'plan' })
+      expect(selected?.messages.map(message => message.text)).toEqual(['first', 'Answer 1'])
+
+      // The durable Session selection is canonical; callers do not need to
+      // echo mode/reasoning back through every subsequent request.
+      await host.sendMessage({ conversationId: 'select-me', runtime: 'lmstudio', model: 'model-b', question: 'second', scope })
+      expect(adapter.calls.map(call => ({ provider: call.provider, model: call.model }))).toEqual([
+        { provider: 'metrora-local-ollama', model: 'model-a' },
+        { provider: 'metrora-local-lmstudio', model: 'model-b' },
+      ])
+      expect((await host.getConversation('select-me'))?.messages.map(message => message.text)).toEqual(['first', 'Answer 1', 'second', 'Answer 2'])
+    } finally {
+      await host.shutdown()
       await rm(root, { recursive: true, force: true })
     }
   })
@@ -365,8 +413,8 @@ describe('Metrora DSH Harness runtime', () => {
       ])
       expect(fixture.overviewScopes).toHaveLength(2)
       expect(fixture.overviewScopes.map(item => ({ period: item.period, projectId: item.projectId, model: item.model }))).toEqual(expect.arrayContaining([
-        { period: 'week', projectId: 'project-a', model: 'model-a' },
-        { period: '30days', projectId: 'project-b', model: 'model-b' },
+        { period: 'week', projectId: 'project-a', model: null },
+        { period: '30days', projectId: 'project-b', model: null },
       ]))
     } finally {
       await host.shutdown()
@@ -389,7 +437,7 @@ describe('Metrora DSH Harness runtime', () => {
       const result = await host.sendMessage({ conversationId: 'delegate-me', runtime: 'ollama', model: 'parent-model', question: 'Use a bounded read delegate.', scope: parentScope })
       expect(result.message.text).toContain('Bounded child read complete')
       expect(adapter.calls).toHaveLength(3)
-      expect(fixture.overviewScopes).toEqual([expect.objectContaining({ period: 'week', projectId: 'parent-project', projectName: 'Parent project', model: 'parent-model' })])
+      expect(fixture.overviewScopes).toEqual([expect.objectContaining({ period: 'week', projectId: 'parent-project', projectName: 'Parent project', model: null })])
     } finally {
       await host.shutdown()
       await rm(root, { recursive: true, force: true })

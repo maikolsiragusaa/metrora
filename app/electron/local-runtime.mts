@@ -222,7 +222,9 @@ export async function probeOllamaMain(fetchImpl: FetchLike = fetch, parent?: Abo
 
 export async function chatOllamaMain(fetchImpl: FetchLike, payload: LocalRuntimeChatPayload, parent?: AbortSignal, onDelta?: (text: string) => void, onReasoning?: (text: string) => void): Promise<LocalRuntimeChatResult> {
   validatePayload(payload)
-  const body: Record<string, unknown> = { model: payload.model, messages: preserveCallIds(payload.messages), ...(payload.tools.length ? { tools: payload.tools } : {}), stream: payload.stream, ...(payload.reasoningEffort ? { think: true } : {}) }
+  // Ollama's native wire field accepts the provider-declared thinking id. Do
+  // not collapse an exact capability into a generic boolean.
+  const body: Record<string, unknown> = { model: payload.model, messages: preserveCallIds(payload.messages), ...(payload.tools.length ? { tools: payload.tools } : {}), stream: payload.stream, ...(payload.reasoningEffort ? { think: payload.reasoningEffort } : {}) }
   const encoded = JSON.stringify(body)
   if (byteLength(encoded) > MAX_RESPONSE_BYTES) throw new Error('Local Harness request exceeded the safety limit.')
   return request(fetchImpl, OLLAMA_ENDPOINT + '/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: encoded }, parent, CHAT_TIMEOUT_MS, async response => {

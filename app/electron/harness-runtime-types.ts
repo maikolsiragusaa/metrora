@@ -11,9 +11,21 @@ export type HarnessRuntimeId = 'ollama' | 'lmstudio' | 'llama-server'
 export type HarnessHostedProvider = 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'opencode-zen'
 export type HarnessRuntimeChoice = HarnessRuntimeId | 'hosted'
 export type HarnessMode = 'ask' | 'plan' | 'edit' | 'build'
-export type HarnessReasoningEffort = 'min' | 'low' | 'medium' | 'high' | 'max'
+/**
+ * Provider/model-owned reasoning identifier. DSH deliberately treats this as
+ * opaque; Harness must preserve the exact capability id instead of imposing a
+ * universal min/low/medium/high/max vocabulary.
+ */
+export type HarnessReasoningEffort = string
 
-const HARNESS_REASONING_EFFORTS: readonly HarnessReasoningEffort[] = ['min', 'low', 'medium', 'high', 'max']
+const REASONING_EFFORT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,80}$/u
+const INVALID_REASONING_IDS = new Set(['invalid', 'unknown', 'unsupported', 'unavailable'])
+
+export function isHarnessReasoningEffort(value: unknown): value is HarnessReasoningEffort {
+  return typeof value === 'string'
+    && REASONING_EFFORT_PATTERN.test(value)
+    && !INVALID_REASONING_IDS.has(value.toLowerCase())
+}
 
 const HARNESS_PROVIDER_ROUTES: Record<HarnessRuntimeId, string> = {
   ollama: 'metrora-local-ollama',
@@ -219,6 +231,22 @@ export type HarnessScopeInput = {
   model: string | null
 }
 
+/**
+ * The Harness Agent is authorized against the whole available Metrora
+ * evidence surface. Dashboard filters are presentation state, not Agent
+ * state; an Agent model is therefore never copied into this scope by default.
+ */
+export function createHarnessEvidenceScope(): HarnessScopeInput {
+  return {
+    period: 'all',
+    range: null,
+    provider: 'all',
+    projectId: 'all',
+    projectName: 'All projects',
+    model: null,
+  }
+}
+
 export type HarnessConversationInput = {
   conversationId?: string
   runtime: HarnessRuntimeChoice
@@ -276,7 +304,7 @@ export function exactReasoningEfforts(value: unknown): HarnessReasoningEffort[] 
         : item && typeof item === 'object' && !Array.isArray(item) && typeof (item as { id?: unknown }).id === 'string'
           ? (item as { id: string }).id
           : ''
-      return HARNESS_REASONING_EFFORTS.includes(raw as HarnessReasoningEffort) ? [raw as HarnessReasoningEffort] : []
+      return isHarnessReasoningEffort(raw) ? [raw] : []
     })
     return [...new Set(values)]
   }

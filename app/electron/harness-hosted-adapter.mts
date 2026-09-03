@@ -38,6 +38,8 @@ const MAX_BYTES = 2 * 1024 * 1024
 const MAX_CALLS = 16
 const PROBE_TIMEOUT_MS = 5_000
 const MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,160}$/u
+const ANTHROPIC_REASONING_BUDGETS: Readonly<Record<string, number>> = Object.freeze({ min: 1_024, minimal: 1_024, low: 2_048, medium: 4_096, high: 8_192, xhigh: 16_384, max: 32_768 })
+const GEMINI_REASONING_BUDGETS: Readonly<Record<string, number>> = Object.freeze({ min: 512, minimal: 512, low: 1_024, medium: 2_048, high: 4_096, xhigh: 8_192, max: 8_192 })
 
 function isRecord(value: unknown): value is RecordValue { return Boolean(value && typeof value === 'object' && !Array.isArray(value)) }
 function textBlocks(blocks: readonly ContentBlock[]): string { return blocks.flatMap(block => block.type === 'text' ? [block.text] : []).join('') }
@@ -162,6 +164,30 @@ function providerError(error: unknown): unknown {
 }
 function errorStatus(status: number): Error { const error = new Error('Hosted provider returned HTTP ' + status + '.'); (error as Error & { status?: number }).status = status; return error }
 
+function numericReasoningBudget(effort: string): number | null {
+  const match = /(?:budget|thinking[-_:./]?budget|tokens?)[^0-9]*(\d{2,6})$/iu.exec(effort) ?? /^(\d{2,6})$/u.exec(effort)
+  if (!match) return null
+  const budget = Number(match[1])
+  return Number.isSafeInteger(budget) && budget >= 256 && budget <= 1_000_000 ? budget : null
+}
+
+/** Translate one opaque DSH effort id at the provider boundary. OpenAI
+ * compatible routes preserve the id verbatim; Anthropic and Gemini expose a
+ * token budget instead, so only provider-declared budget ids or explicit
+ * provider adapter aliases are accepted. Unknown ids fail closed rather than
+ * silently becoming a different level of reasoning. */
+export function hostedReasoningConfig(provider: HarnessHostedProvider, effort: string | null | undefined): Record<string, unknown> | undefined {
+  if (!effort) return undefined
+  if (provider === 'openai' || provider === 'openrouter' || provider === 'opencode-zen') return { reasoning_effort: effort }
+  if (effort.toLowerCase() === 'none') return provider === 'gemini' ? { thinkingConfig: { thinkingBudget: 0 } } : undefined
+  const aliases = provider === 'anthropic' ? ANTHROPIC_REASONING_BUDGETS : GEMINI_REASONING_BUDGETS
+  const budget = numericReasoningBudget(effort) ?? aliases[effort.toLowerCase()]
+  if (budget === undefined) throw new Error(`The selected ${provider} reasoning capability "${effort}" has no supported provider wire translation.`)
+  return provider === 'anthropic'
+    ? { thinking: { type: 'enabled', budget_tokens: budget } }
+    : { thinkingConfig: { thinkingBudget: budget } }
+}
+
 export function hostedProviderRoute(provider: HarnessHostedProvider): string { return ROUTES[provider] }
 export function hostedProviderFromRoute(route: string): HarnessHostedProvider | null { return (Object.keys(ROUTES) as HarnessHostedProvider[]).find(provider => ROUTES[provider] === route) ?? null }
 
@@ -245,7 +271,7 @@ export class MetroraHostedLlmAdapter extends LlmAdapter {
 
   private async openAiCompatible(secret: string, provider: HarnessHostedProvider, options: GenerateOptions): Promise<ParsedHostedResult> {
     const endpoint = provider === 'openrouter' ? `${ORIGINS[provider]}/api/v1/chat/completions` : provider === 'opencode-zen' ? `${ORIGINS[provider]}/zen/v1/chat/completions` : `${ORIGINS[provider]}/v1/chat/completions`
-    const body = JSON.stringify({ model: options.model, messages: providerMessages(options), ...(options.tools?.length ? { tools: toolSchemas(options.tools) } : {}), stream: true, ...(options.reasoningEffort ? { reasoning_effort: options.reasoningEffort } : {}) })
+    const body = JSON.stringify({ model: options.model, messages: providerMessages(options), ...(options.tools?.length ? { tools: toolSchemas(options.tools) } : {}), stream: true, ...hostedReasoningConfig(provider, options.reasoningEffort ? String(options.reasoningEffort) : undefined) })
     boundedText(body, 'Hosted Harness request exceeded the safety limit.')
     const response = await this.fetchImpl(endpoint, { method: 'POST', headers: { Authorization: `Bearer ${secret}`, Accept: 'text/event-stream', 'Content-Type': 'application/json' }, body, redirect: 'error', signal: options.signal })
     if (!response.ok) throw errorStatus(response.status)
@@ -259,7 +285,7 @@ export class MetroraHostedLlmAdapter extends LlmAdapter {
       return { role: message.role, content: message.content }
     })
     const system = providerMessages(options).find(message => message.role === 'system')?.content
-    const body = JSON.stringify({ model: options.model, max_tokens: options.maxTokens ?? 4096, ...(system ? { system } : {}), messages, ...(options.tools?.length ? { tools: (options.tools ?? []).slice(0, 32).map(tool => ({ name: tool.name, description: tool.description, input_schema: tool.parameters })) } : {}), stream: true })
+    const body = JSON.stringify({ model: options.model, max_tokens: options.maxTokens ?? 4096, ...(system ? { system } : {}), messages, ...(options.tools?.length ? { tools: (options.tools ?? []).slice(0, 32).map(tool => ({ name: tool.name, description: tool.description, input_schema: tool.parameters })) } : {}), stream: true, ...hostedReasoningConfig('anthropic', options.reasoningEffort ? String(options.reasoningEffort) : undefined) })
     boundedText(body, 'Hosted Harness request exceeded the safety limit.')
     const response = await this.fetchImpl(`${ORIGINS.anthropic}/v1/messages`, { method: 'POST', headers: { 'x-api-key': secret, 'anthropic-version': '2023-06-01', Accept: 'text/event-stream', 'Content-Type': 'application/json' }, body, redirect: 'error', signal: options.signal })
     if (!response.ok) throw errorStatus(response.status)
@@ -270,7 +296,8 @@ export class MetroraHostedLlmAdapter extends LlmAdapter {
     const converted = providerMessages(options)
     const system = converted.find(message => message.role === 'system')?.content
     const contents = geminiContents(options)
-    const body = JSON.stringify({ ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}), contents, ...(options.tools?.length ? { tools: [{ functionDeclarations: (options.tools ?? []).slice(0, 32).map(tool => ({ name: tool.name, description: tool.description, parameters: tool.parameters })) }] } : {}), generationConfig: options.reasoningEffort ? { thinkingConfig: { thinkingBudget: options.reasoningEffort === 'max' ? 8192 : options.reasoningEffort === 'high' ? 4096 : options.reasoningEffort === 'medium' ? 2048 : 512 } } : undefined })
+    const reasoning = hostedReasoningConfig('gemini', options.reasoningEffort ? String(options.reasoningEffort) : undefined)
+    const body = JSON.stringify({ ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}), contents, ...(options.tools?.length ? { tools: [{ functionDeclarations: (options.tools ?? []).slice(0, 32).map(tool => ({ name: tool.name, description: tool.description, parameters: tool.parameters })) }] } : {}), ...(reasoning ? { generationConfig: reasoning } : {}) })
     boundedText(body, 'Hosted Harness request exceeded the safety limit.')
     const response = await this.fetchImpl(`${ORIGINS.gemini}/v1beta/models/${encodeURIComponent(options.model.replace(/^models\//u, ''))}:streamGenerateContent?alt=sse`, { method: 'POST', headers: { 'x-goog-api-key': secret, Accept: 'text/event-stream', 'Content-Type': 'application/json' }, body, redirect: 'error', signal: options.signal })
     if (!response.ok) throw errorStatus(response.status)

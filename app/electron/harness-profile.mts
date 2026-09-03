@@ -10,7 +10,7 @@ import type {
   HarnessRuntimeId,
   HarnessRuntimeProfileV1,
 } from './harness-runtime-types.js'
-import { reasoningProfileKey } from './harness-runtime-types.js'
+import { isHarnessReasoningEffort, reasoningProfileKey } from './harness-runtime-types.js'
 import { parseHarnessMcpServers, validateHarnessMcpServers } from './harness-mcp.mjs'
 
 export const HARNESS_PROFILE_VERSION = 1 as const
@@ -20,7 +20,6 @@ export const HARNESS_PROFILE_FILENAME = 'profile.json'
 const RUNTIMES: readonly HarnessRuntimeId[] = ['ollama', 'lmstudio', 'llama-server']
 const PROVIDERS: readonly HarnessHostedProvider[] = ['openai', 'anthropic', 'gemini', 'openrouter', 'opencode-zen']
 const MODES: readonly HarnessMode[] = ['ask', 'plan', 'edit', 'build']
-const EFFORTS: readonly HarnessReasoningEffort[] = ['min', 'low', 'medium', 'high', 'max']
 const MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,160}$/u
 
 export function validLlamaServerPort(value: unknown): value is number {
@@ -56,8 +55,8 @@ function boundedModelMap(value: unknown): Record<string, HarnessReasoningEffort>
   const result: Record<string, HarnessReasoningEffort> = {}
   for (const [model, effort] of Object.entries(value)) {
     if (Object.keys(result).length >= 128) break
-    if (validReasoningKey(model) && typeof effort === 'string' && (EFFORTS as readonly string[]).includes(effort)) {
-      result[model] = effort as HarnessReasoningEffort
+    if (validReasoningKey(model) && isHarnessReasoningEffort(effort)) {
+      result[model] = effort
     }
   }
   return result
@@ -201,7 +200,7 @@ export class HarnessRuntimeProfileStore {
   }
 
   async setReasoning(runtime: HarnessRuntimeChoice, provider: HarnessHostedProvider | null, model: string, effort: HarnessReasoningEffort): Promise<HarnessRuntimeProfileV1> {
-    if (!validModel(model) || !EFFORTS.includes(effort)) throw new Error('Harness reasoning preference is invalid.')
+    if (!validModel(model) || !isHarnessReasoningEffort(effort)) throw new Error('Harness reasoning preference is invalid.')
     return this.update({ reasoningByModel: { ...this.current.reasoningByModel, [reasoningProfileKey(runtime, provider, model)]: effort } })
   }
 

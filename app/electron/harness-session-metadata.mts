@@ -10,6 +10,7 @@ import type {
   HarnessRuntimeChoice,
   HarnessWorkspace,
 } from './harness-runtime-types.js'
+import { isHarnessReasoningEffort } from './harness-runtime-types.js'
 
 export const HARNESS_SESSION_METADATA_VERSION = 1 as const
 
@@ -32,7 +33,6 @@ type MetadataFile = { version: 1; sessions: Record<string, HarnessSessionMetadat
 const RUNTIMES: readonly HarnessRuntimeChoice[] = ['ollama', 'lmstudio', 'llama-server', 'hosted']
 const PROVIDERS: readonly HarnessHostedProvider[] = ['openai', 'anthropic', 'gemini', 'openrouter', 'opencode-zen']
 const MODES: readonly HarnessMode[] = ['ask', 'plan', 'edit', 'build']
-const EFFORTS: readonly HarnessReasoningEffort[] = ['min', 'low', 'medium', 'high', 'max']
 const MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,160}$/u
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u
 const MAX_SESSIONS = 512
@@ -86,7 +86,7 @@ function parseEntry(id: string, value: unknown): HarnessSessionMetadata | null {
     provider: PROVIDERS.includes(row.provider as HarnessHostedProvider) ? row.provider as HarnessHostedProvider : null,
     model: row.model,
     mode: MODES.includes(row.mode as HarnessMode) ? row.mode as HarnessMode : 'ask',
-    reasoningEffort: EFFORTS.includes(row.reasoningEffort as HarnessReasoningEffort) ? row.reasoningEffort as HarnessReasoningEffort : null,
+    reasoningEffort: isHarnessReasoningEffort(row.reasoningEffort) ? row.reasoningEffort : null,
     workspace: parseWorkspace(row.workspace),
     createdAt: validDate(row.createdAt, now),
     updatedAt: validDate(row.updatedAt, now),
@@ -140,7 +140,7 @@ export class HarnessSessionMetadataStore {
         provider: PROVIDERS.includes(patch.provider as HarnessHostedProvider) ? patch.provider as HarnessHostedProvider : patch.provider === null ? null : previous?.provider ?? null,
         model: patch.model,
         mode: MODES.includes(patch.mode as HarnessMode) ? patch.mode as HarnessMode : previous?.mode ?? 'ask',
-        reasoningEffort: EFFORTS.includes(patch.reasoningEffort as HarnessReasoningEffort) ? patch.reasoningEffort as HarnessReasoningEffort : patch.reasoningEffort === null ? null : previous?.reasoningEffort ?? null,
+        reasoningEffort: isHarnessReasoningEffort(patch.reasoningEffort) ? patch.reasoningEffort : patch.reasoningEffort === null ? null : previous?.reasoningEffort ?? null,
         workspace: patch.workspace === undefined ? previous?.workspace ?? null : patch.workspace,
         createdAt: previous?.createdAt ?? patch.createdAt ?? now,
         updatedAt: patch.updatedAt ?? now,
