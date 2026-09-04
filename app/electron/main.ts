@@ -28,6 +28,20 @@ let updateChecker: UpdateChecker | null = null
 // lazily with the rest of the IPC handlers and survives Code section changes.
 let openCodeViewManager: OpenCodeViewManager | null = null
 
+// The upstream Web UI keeps its project registry in browser storage. Keep
+// that storage stable across Metrora launches without sharing it with any
+// other application surface.
+export const OPENCODE_WEB_PARTITION = 'persist:metrora-opencode'
+
+export function createOpenCodeWebPreferences() {
+  return {
+    contextIsolation: true,
+    nodeIntegration: false,
+    sandbox: true,
+    partition: OPENCODE_WEB_PARTITION,
+  } as const
+}
+
 type QuitTelemetry = Pick<Telemetry, 'trackClose' | 'flush'>
 type BeforeQuitEvent = { preventDefault: () => void }
 type BeforeQuitDeps = {
@@ -208,16 +222,7 @@ function registerHandlers(): void {
   })
   openCodeViewManager = new OpenCodeViewManager(openCodeRuntime, {
     app: app as unknown as OpenCodeApp,
-    createView: () => new WebContentsView({
-      webPreferences: {
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-        // A non-persistent partition keeps per-launch auth state in memory;
-        // the OpenCode server remains the authority for its own session data.
-        partition: `opencode-metrora-${process.pid}`,
-      },
-    }) as unknown as OpenCodeView,
+    createView: () => new WebContentsView({ webPreferences: createOpenCodeWebPreferences() }) as unknown as OpenCodeView,
   })
   const handlers = createBridgeHandlers({
     spawnCli,

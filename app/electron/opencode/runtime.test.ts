@@ -186,6 +186,41 @@ describe('OpenCode upstream sidecar runtime', () => {
     await runtime.stop()
   })
 
+  it('generates different Basic Auth credentials for separate launches', async () => {
+    const root = tempDirectory()
+    const userData = join(root, 'user-data')
+    const executable = join(root, 'opencode.exe')
+    writeFileSync(executable, 'official binary placeholder')
+    const authorizations: string[] = []
+    let port = 43131
+    const runtime = new OpenCodeRuntime({
+      appPath: root,
+      resourcesPath: root,
+      userDataPath: userData,
+      isPackaged: false,
+      executableOverride: executable,
+      acquirePort: async () => port++,
+      spawnProcess: () => fakeChild(),
+      fetchImpl: async (url, init) => {
+        authorizations.push(init?.headers?.Authorization ?? '')
+        return url.endsWith('/global/health')
+          ? jsonResponse({ healthy: true, version: OPENCODE_VERSION })
+          : jsonResponse([OPENCODE_CUSTOM_TOOL_ID])
+      },
+      healthTimeoutMs: 500,
+      pollIntervalMs: 1,
+    })
+
+    await expect(runtime.start()).resolves.toMatchObject({ state: 'ready' })
+    await runtime.stop()
+    await expect(runtime.start()).resolves.toMatchObject({ state: 'ready' })
+
+    expect(authorizations).toHaveLength(4)
+    expect(authorizations[0]).toBe(authorizations[1])
+    expect(authorizations[2]).toBe(authorizations[3])
+    expect(authorizations[0]).not.toBe(authorizations[2])
+  })
+
   it('fails closed when the healthy server reports a different version', async () => {
     const root = tempDirectory()
     const executable = join(root, 'opencode')

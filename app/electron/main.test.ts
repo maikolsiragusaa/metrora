@@ -14,7 +14,7 @@ vi.mock('electron', () => ({
   shell: { openExternal: vi.fn() },
 }))
 
-import { createApplicationMenuTemplate, createBeforeQuitHandler, createBridgeHandlers, projectAdvisorHostedEvent, shouldInstallApplicationMenu } from './main'
+import { createApplicationMenuTemplate, createBeforeQuitHandler, createBridgeHandlers, createOpenCodeWebPreferences, OPENCODE_WEB_PARTITION, projectAdvisorHostedEvent, shouldInstallApplicationMenu } from './main'
 import { CliError } from './cli'
 import type { DesktopShareRuntime, DesktopShareStatus } from './share-runtime'
 import { Telemetry } from './telemetry'
@@ -31,6 +31,20 @@ function fakeSpawn(result: unknown = { current: { cost: 12.34 } }) {
   })
   return { spawnCli, spawnCliAction, calls }
 }
+
+describe('OpenCode WebContentsView configuration', () => {
+  it('uses a stable persistent partition without weakening isolation or exposing credentials', () => {
+    const preferences = createOpenCodeWebPreferences()
+
+    expect(OPENCODE_WEB_PARTITION).toBe('persist:metrora-opencode')
+    expect(preferences.partition).toBe(OPENCODE_WEB_PARTITION)
+    expect(preferences.partition).toMatch(/^persist:/u)
+    expect(preferences.partition).not.toContain(String(process.pid))
+    expect(preferences).toMatchObject({ contextIsolation: true, nodeIntegration: false, sandbox: true })
+    expect(preferences).not.toHaveProperty('preload')
+    expect(JSON.stringify(preferences)).not.toMatch(/username|password|credential/iu)
+  })
+})
 
 describe('hosted Advisor renderer event boundary', () => {
   it('drops provider text, deltas, tool arguments, and raw tool calls', () => {
