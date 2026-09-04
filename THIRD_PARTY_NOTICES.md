@@ -24,14 +24,14 @@ Source repository: `https://github.com/steipete/CodexBar`
 
 ## llama.cpp runtime and benchmark provenance
 
-Metrora does not bundle or build llama.cpp. The local runtime adapter and native
-Performance adapter integrate with executables supplied by the user from the
-upstream `ggml-org/llama.cpp` project. The upstream project is MIT
-licensed; the applicable notice is preserved in
+Metrora does not bundle or build llama.cpp. The native Performance adapter
+integrates with executables supplied by the user from the upstream
+`ggml-org/llama.cpp` project. The upstream project is MIT licensed; the
+applicable notice is preserved in
 [LICENSES/LLAMA-CPP-MIT.txt](LICENSES/LLAMA-CPP-MIT.txt).
 
-The adapter contracts were characterized against the upstream server and
-`llama-bench` documentation at the inspected master commit
+The adapter contract was characterized against the upstream `llama-bench`
+documentation at the inspected master commit
 `9723942adc518b43c4b95dc4dce6906903eb5e09` and release tag `b10516`
 (`b95502ba9aa0eb73a2f4fc8878d7fbe6a847a0b9`). The selected executable
 remains the authority for its actual build/runtime identity; Metrora retains
@@ -39,6 +39,17 @@ reported identity fields when available and does not claim that every
 llama.cpp build supports every optional capability.
 
 Source repository: `https://github.com/ggml-org/llama.cpp`
+
+## OpenCode upstream runtime
+
+Metrora packages the official `anomalyco/opencode` `v1.18.27` release binary,
+source commit `b04697366f05419e9bd7a92f841813dd976161c9`, for the bounded Code
+surface. The binary is served unchanged by `opencode serve`; Metrora does not
+fork or copy the upstream Web UI. The upstream project is MIT licensed and its
+complete notice is preserved in
+[`LICENSES/OPENCODE-MIT.txt`](LICENSES/OPENCODE-MIT.txt).
+
+Source repository: `https://github.com/anomalyco/opencode`
 
 ## OpenHands Agent Canvas UI primitives
 
@@ -66,8 +77,8 @@ semantic token vocabulary was independently reimplemented in
 `app/renderer/ui/tokens.css`. Metrora removed Tailwind, HeroUI, OpenHands
 router/store/client/backend, telemetry, fonts, logos and other product assets.
 The adapted primitives expose Metrora-owned contracts and can be removed or
-replaced without changing Metrora facts, navigation state, ACT, Shield,
-Harness semantics or evidence authority.
+replaced without changing Metrora facts, navigation state, ACT, Shield, product
+semantics or evidence authority.
 
 ## RFC 8785 canonicalization
 

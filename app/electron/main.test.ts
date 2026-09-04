@@ -14,7 +14,7 @@ vi.mock('electron', () => ({
   shell: { openExternal: vi.fn() },
 }))
 
-import { createApplicationMenuTemplate, createBeforeQuitHandler, createBridgeHandlers, projectAdvisorHostedEvent, shouldInstallApplicationMenu } from './main'
+import { createApplicationMenuTemplate, createBeforeQuitHandler, createBridgeHandlers, createOpenCodeWebPreferences, OPENCODE_WEB_PARTITION, shouldInstallApplicationMenu } from './main'
 import { CliError } from './cli'
 import type { DesktopShareRuntime, DesktopShareStatus } from './share-runtime'
 import { Telemetry } from './telemetry'
@@ -32,16 +32,17 @@ function fakeSpawn(result: unknown = { current: { cost: 12.34 } }) {
   return { spawnCli, spawnCliAction, calls }
 }
 
-describe('hosted Advisor renderer event boundary', () => {
-  it('drops provider text, deltas, tool arguments, and raw tool calls', () => {
-    const projected = projectAdvisorHostedEvent({
-      requestId: 'request-1', provider: 'openai', model: 'model/name', kind: 'tool-call-complete',
-      text: 'raw provider response', callId: 'call-1', name: 'get_spend_snapshot', delta: 'raw delta', arguments: '{"secret":"no"}',
-      toolCalls: [{ id: 'call-1', name: 'get_spend_snapshot', arguments: '{"secret":"no"}' }], usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 }, streamed: true,
-    })
-    expect(projected).toEqual({ requestId: 'request-1', provider: 'openai', model: 'model/name', kind: 'tool-call-complete', usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 }, streamed: true })
-    expect(JSON.stringify(projected)).not.toContain('raw provider response')
-    expect(JSON.stringify(projected)).not.toContain('secret')
+describe('OpenCode WebContentsView configuration', () => {
+  it('uses a stable persistent partition without weakening isolation or exposing credentials', () => {
+    const preferences = createOpenCodeWebPreferences()
+
+    expect(OPENCODE_WEB_PARTITION).toBe('persist:metrora-opencode')
+    expect(preferences.partition).toBe(OPENCODE_WEB_PARTITION)
+    expect(preferences.partition).toMatch(/^persist:/u)
+    expect(preferences.partition).not.toContain(String(process.pid))
+    expect(preferences).toMatchObject({ contextIsolation: true, nodeIntegration: false, sandbox: true })
+    expect(preferences).not.toHaveProperty('preload')
+    expect(JSON.stringify(preferences)).not.toMatch(/username|password|credential/iu)
   })
 })
 
@@ -92,9 +93,6 @@ const CHANNELS = [
   'metrora:telemetryOnboarded',
   'metrora:telemetryTrack',
   'metrora:getUpdateStatus',
-  'metrora:advisorProbe',
-  'metrora:advisorChat',
-  'metrora:advisorCancel',
   'metrora:getBenchHistory',
   'metrora:getBenchModelDiscovery',
   'metrora:getBenchComparison',
@@ -423,13 +421,15 @@ describe('createBeforeQuitHandler', () => {
 
       const quit = vi.fn()
       const killChildren = vi.fn()
-      const handler = createBeforeQuitHandler({ getTelemetry: () => telemetry, killAll: killChildren, quit })
+      const stopOpenCode = vi.fn(async () => undefined)
+      const handler = createBeforeQuitHandler({ getTelemetry: () => telemetry, killAll: killChildren, stopOpenCode, quit })
       const firstEvent = { preventDefault: vi.fn() }
       handler(firstEvent)
 
       expect(firstEvent.preventDefault).toHaveBeenCalledOnce()
       await vi.waitFor(() => expect(quit).toHaveBeenCalledOnce())
       expect(killChildren).toHaveBeenCalledOnce()
+      expect(stopOpenCode).toHaveBeenCalledOnce()
       expect(fetchFn).not.toHaveBeenCalled()
       expect(telemetry.queueLength).toBe(0)
 

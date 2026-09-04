@@ -8,7 +8,8 @@
 // from resources/cli.asar; no loose node_modules tree is shipped.
 
 const { createPackage } = require('@electron/asar')
-const { existsSync, mkdirSync, rmSync, writeFileSync } = require('node:fs')
+const { createHash } = require('node:crypto')
+const { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } = require('node:fs')
 const { join } = require('node:path')
 
 exports.default = async function afterPack(context) {
@@ -47,4 +48,29 @@ exports.default = async function afterPack(context) {
   )
 
   console.log(`after-pack: staged CLI sealed -> ${archive}`)
+
+  const opencodeSrc = join(__dirname, '..', 'build', 'opencode', '1.18.27')
+  const opencodeDest = join(resources, 'opencode', '1.18.27')
+  if (!existsSync(opencodeSrc)) throw new Error(`after-pack: ${opencodeSrc} is missing — run "npm run stage-opencode" first`)
+  rmSync(opencodeDest, { recursive: true, force: true })
+  let copiedOpenCodeTargets = 0
+  for (const target of readdirSync(opencodeSrc)) {
+    const sourceDir = join(opencodeSrc, target)
+    if (!statSync(sourceDir).isDirectory()) continue
+    const identityPath = join(sourceDir, 'identity.json')
+    if (!existsSync(identityPath)) throw new Error(`after-pack: OpenCode identity is missing for ${target}`)
+    const identity = JSON.parse(readFileSync(identityPath, 'utf8'))
+    const binaryName = target.startsWith('win32-') ? 'opencode.exe' : 'opencode'
+    const sourceBinary = join(sourceDir, binaryName)
+    if (identity.version !== '1.18.27' || identity.source !== 'b04697366f05419e9bd7a92f841813dd976161c9' || identity.binarySha256 !== createHash('sha256').update(readFileSync(sourceBinary)).digest('hex')) {
+      throw new Error(`after-pack: OpenCode staged identity mismatch for ${target}`)
+    }
+    const targetDir = join(opencodeDest, target)
+    mkdirSync(targetDir, { recursive: true })
+    copyFileSync(sourceBinary, join(targetDir, binaryName))
+    copyFileSync(identityPath, join(targetDir, 'identity.json'))
+    copiedOpenCodeTargets += 1
+  }
+  if (copiedOpenCodeTargets === 0) throw new Error('after-pack: no verified OpenCode target was staged')
+  console.log(`after-pack: staged OpenCode ${copiedOpenCodeTargets} target(s) -> ${opencodeDest}`)
 }

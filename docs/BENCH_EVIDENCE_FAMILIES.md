@@ -16,7 +16,7 @@ Bench
 ├─ Performance                 # primary product direction
 ├─ Compatibility / Runtime Health
 ├─ Coding Evaluation           # future
-└─ Agent / Harness Evaluation  # future, later
+└─ Agent Evaluation            # future, later
 ```
 
 ## Performance — primary direction
@@ -63,9 +63,9 @@ material declared/observed mismatch, and stores Performance history separately
 from Core Compatibility history.
 
 The factual aggregation is owned by the transport-neutral `src/bench` source.
-Desktop Harness and read-only MCP project the same retained records,
-comparisons and state; neither adapter recomputes truth and MCP has no Bench
-execution path.
+Desktop Bench and read-only MCP project the same retained records, comparisons
+and state; neither adapter recomputes truth and MCP has no Bench execution
+path.
 
 This is local existing-binary support, not a bundled llama.cpp distribution. The executable's reported build identity remains part of the evidence where available, and the exact llama.cpp provenance/licence boundary is documented in [Local runtime and Performance Wave 001](LOCAL_RUNTIME_PERFORMANCE_WAVE_001.md).
 
@@ -104,13 +104,13 @@ Any future implementation needs separate review for:
 - scoring semantics;
 - clear separation from Performance.
 
-## Agent / Harness Evaluation — future
+## Agent Evaluation — future
 
-Agent evaluation measures a complete agent/harness workflow, not only a foundation model.
+Agent evaluation measures a complete agent workflow, not only a foundation model.
 
 It becomes relevant only after Metrora has real, separately authorized agent/Swarm execution to evaluate.
 
-No Agent/Harness Evaluation implementation is shipped today.
+No Agent Evaluation implementation is shipped today.
 
 Any future implementation requires stronger container/sandbox, repository, network, secret, cost and action-authority controls.
 
@@ -141,23 +141,14 @@ It is separate from observed real-world Metrora Usage/Activity.
 
 Do not mix benchmark tokens/latency/cost with normal user Session totals merely because both involve model calls.
 
-## Relationship to Harness
+## Relationship to consumers
 
-Metrora Harness may:
-
-- read Bench evidence;
-- explain what a result measures;
-- compare compatible runs;
-- describe observed speed/memory trade-offs;
-- later prepare a bounded run proposal.
-
-Harness may not:
-
-- change canonical Bench values;
-- turn Compatibility into Coding quality;
-- turn Performance into reasoning quality;
-- silently compare incompatible runs;
-- start a state-changing run without the accepted action authority for that workflow.
+Desktop Bench and read-only MCP may read the canonical evidence, explain what a
+result measures, compare compatible runs and describe observed trade-offs. No
+consumer may change canonical Bench values, turn Compatibility into Coding
+quality, turn Performance into reasoning quality, silently compare incompatible
+runs or start state-changing work without the accepted action authority for that
+workflow.
 
 ## Privacy
 
@@ -175,6 +166,6 @@ Model-weight licences remain independent of benchmark-engine licences.
 | Compatibility / Runtime Health | **Shipped:** Core Compatibility v1 |
 | Broader hardware Performance | **Shipped:** native llama.cpp/`llama-bench` adapter |
 | Coding Evaluation | **Future / not shipped** |
-| Agent / Harness Evaluation | **Future / not shipped** |
+| Agent Evaluation | **Future / not shipped** |
 
 No current Bench family establishes a universal `best model` ranking.

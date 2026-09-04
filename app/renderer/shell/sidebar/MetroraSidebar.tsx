@@ -45,7 +45,7 @@ const NAV_ICONS: Record<Section, ReactNode> = {
   compare: (
     <svg viewBox="0 0 24 24"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="M16 21l4-4-4-4"/><path d="M20 17H4"/></svg>
   ),
-  advisor: (
+  code: (
     <svg viewBox="0 0 24 24"><path d="M5 5.5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-6l-4 3v-3H5a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2Z"/><path d="M8 11h8M8 14h5"/></svg>
   ),
   bench: (
