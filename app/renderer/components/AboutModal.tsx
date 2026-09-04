@@ -68,6 +68,7 @@ export function AboutModal({ socials, onClose }: { socials: SocialLink[]; onClos
       </div>
       <div className="about-modal-credit">
         Metrora · Published by Vensent
+        <span className="about-modal-powered-by">Powered by OpenCode v1.18.27 for the coding engine. Metrora is not affiliated with or endorsed by the OpenCode maintainers.</span>
       </div>
     </MetroraDialog>
   )

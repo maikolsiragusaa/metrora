@@ -26,6 +26,7 @@ The packaged application ships its required command-line runtime under Electron 
 The main process owns:
 
 - runtime resolution and execution;
+- the pinned OpenCode coding-engine executable, loopback lifecycle and typed SDK boundary;
 - local filesystem and OS-vault access;
 - bounded IPC handlers;
 - Workspace identity, lifecycle, inspection and recovery authority;
@@ -51,6 +52,7 @@ Current desktop surfaces include:
 - session, project, tool, model, cost and token analysis;
 - optimization and model-comparison views;
 - plans, pricing overrides and exports;
+- OpenCode sessions, provider/model selection, reasoning variants, tools and workspace coding;
 - local device and identity foundations;
 - the local personal Workspace with truthful evidence inspection, production lifecycle, batching, export and recovery.
 

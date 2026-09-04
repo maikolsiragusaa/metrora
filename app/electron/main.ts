@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, safeStorage, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell } from 'electron'
 import { writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
@@ -10,9 +10,8 @@ import { initializeDesktopShareRuntime, stopDesktopShareRuntime } from './share-
 import { Telemetry } from './telemetry'
 import { createUpdateChecker, type UpdateChecker, type UpdateStatus } from './updates'
 import { createBridgeHandlers, NO_UPDATE_STATUS } from './bridge-handlers'
-import { AdvisorCredentialStore } from './advisor-credentials'
-import { createAdvisorHostedHandlers, type AdvisorHostedEvent } from './advisor-provider'
-import { createHarnessActHandlers, type HarnessActionEvent } from './act-bridge'
+import { createOpenCodeBridgeHandlers, OpenCodeEngine } from './opencode'
+import type { OpenCodeRendererEvent } from './opencode-types'
 
 export { createApplicationMenuTemplate } from './menu'
 export { createBridgeHandlers, makeProgressReader } from './bridge-handlers'
@@ -22,6 +21,7 @@ export type { Envelope, TelemetryBridge } from './bridge-handlers'
 let telemetryInstance: Telemetry | null = null
 // The once-per-launch + 24h update-availability checker. Null under tests.
 let updateChecker: UpdateChecker | null = null
+let openCodeEngineInstance: OpenCodeEngine | null = null
 
 type QuitTelemetry = Pick<Telemetry, 'trackClose' | 'flush'>
 type BeforeQuitEvent = { preventDefault: () => void }
@@ -29,6 +29,7 @@ type BeforeQuitDeps = {
   getTelemetry: () => QuitTelemetry | null
   killAll: () => void
   stopShare?: () => Promise<unknown>
+  stopOpenCode?: () => Promise<unknown>
   quit: () => void
   timeoutMs?: number
 }
@@ -53,6 +54,7 @@ export function createBeforeQuitHandler(deps: BeforeQuitDeps): (event: BeforeQui
         try { deps.killAll() } catch { /* child cleanup must not wedge quit */ }
 
         const stopShare = deps.stopShare ? Promise.resolve().then(deps.stopShare).catch(() => false) : Promise.resolve(false)
+        const stopOpenCode = deps.stopOpenCode ? Promise.resolve().then(deps.stopOpenCode).catch(() => false) : Promise.resolve(false)
 
         let telemetry: QuitTelemetry | null = null
         try { telemetry = deps.getTelemetry() } catch { /* telemetry lookup is best-effort */ }
@@ -69,7 +71,7 @@ export function createBeforeQuitHandler(deps: BeforeQuitDeps): (event: BeforeQui
         const timeout = new Promise<void>(resolve => {
           timer = setTimeout(resolve, deps.timeoutMs ?? QUIT_FLUSH_TIMEOUT_MS)
         })
-        await Promise.race([Promise.all([flush.catch(() => false), stopShare.catch(() => false)]), timeout])
+        await Promise.race([Promise.all([flush.catch(() => false), stopShare.catch(() => false), stopOpenCode.catch(() => false)]), timeout])
       } finally {
         if (timer !== undefined) clearTimeout(timer)
         allowQuit = true
@@ -83,11 +85,8 @@ export function createBeforeQuitHandler(deps: BeforeQuitDeps): (event: BeforeQui
 export const PROGRESS_CHANNEL = 'metrora:progress'
 // IPC channel pushing update-availability status to open windows (launch + 24h).
 export const UPDATE_CHANNEL = 'metrora:update'
-// Local conversational text only. Planning JSON, tool output, provider text,
-// and evidence payloads never use this channel.
-export const ADVISOR_DELTA_CHANNEL = 'metrora:advisorDelta'
-// Renderer-safe lifecycle projection for the single accepted Harness action.
-export const HARNESS_ACTION_EVENT_CHANNEL = 'metrora:harnessActionEvent'
+// Renderer-safe projections of the official OpenCode event stream.
+export const OPENCODE_EVENT_CHANNEL = 'metrora:opencodeEvent'
 
 function broadcastProgress(event: unknown): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -95,56 +94,17 @@ function broadcastProgress(event: unknown): void {
     win.webContents.send(PROGRESS_CHANNEL, event)
   }
 }
-function projectAdvisorDelta(event: { requestId: string; text: string }): { requestId: string; text: string } {
-  const requestId = event.requestId.replace(/[^A-Za-z0-9._:-]/gu, '').slice(0, 128)
-  const text = event.text
-    .replace(/[\u0000-\u001f\u007f]/gu, ' ')
-    .replace(/(?:\b[A-Za-z]:[\\/][^\s"'<>|]+|\b(?:file|vscode-file):\/\/[^\s"'<>|]+)/giu, '[redacted]')
-    .replace(/\b(?:api[-_ ]?key|access[-_ ]?token|auth(?:entication)?[-_ ]?token|client[-_ ]?secret|private[-_ ]?key|password|credential|token)\b\s*(?:=|:)\s*[^\s,;]+/giu, '[redacted]')
-    .replace(/\bbearer\s+[^\s,;]+/giu, '[redacted]')
-    .replace(/(?<![\p{L}\p{N}])(?:raw[_ -]?(?:prompt|response|source)|source[_ -]?(?:code|snippet|content))(?![\p{L}\p{N}])/giu, '[redacted]')
-    .slice(0, 4_000)
-  return { requestId, text }
-}
-function broadcastAdvisorDelta(event: { requestId: string; text: string }): void {
-  const projected = projectAdvisorDelta(event)
+
+function broadcastOpenCodeEvent(event: OpenCodeRendererEvent): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue
-    win.webContents.send(ADVISOR_DELTA_CHANNEL, projected)
+    win.webContents.send(OPENCODE_EVENT_CHANNEL, event)
   }
 }
-
-function broadcastHarnessActionEvent(event: HarnessActionEvent): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (win.isDestroyed()) continue
-    win.webContents.send(HARNESS_ACTION_EVENT_CHANNEL, event)
-  }
-}
-
 function broadcastUpdateStatus(status: UpdateStatus): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue
     win.webContents.send(UPDATE_CHANNEL, status)
-  }
-}
-
-export const ADVISOR_HOSTED_EVENT_CHANNEL = 'metrora:advisorHostedEvent'
-type AdvisorHostedRendererEvent = Pick<AdvisorHostedEvent, 'requestId' | 'provider' | 'model' | 'kind' | 'usage' | 'streamed' | 'code'>
-export function projectAdvisorHostedEvent(event: AdvisorHostedEvent): AdvisorHostedRendererEvent {
-  return {
-    requestId: event.requestId.slice(0, 120),
-    provider: event.provider,
-    model: event.model.replace(/[^A-Za-z0-9._:/-]/gu, '').slice(0, 160),
-    kind: event.kind,
-    ...(event.usage ? { usage: { inputTokens: event.usage.inputTokens, outputTokens: event.usage.outputTokens, totalTokens: event.usage.totalTokens } } : {}),
-    ...(event.streamed !== undefined ? { streamed: event.streamed } : {}),
-    ...(event.code ? { code: event.code.replace(/[^A-Za-z0-9._:-]/gu, '').slice(0, 80) } : {}),
-  }
-}
-function broadcastAdvisorHostedEvent(event: AdvisorHostedEvent): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (win.isDestroyed()) continue
-    win.webContents.send(ADVISOR_HOSTED_EVENT_CHANNEL, projectAdvisorHostedEvent(event))
   }
 }
 
@@ -167,55 +127,34 @@ function registerHandlers(): void {
     // invokes provider endpoints itself.
     getCapacity: () => getQuota(),
   })
-  const advisorCredentials = new AdvisorCredentialStore({
-    userDataPath: app.getPath('userData'),
-    platform: process.platform,
-    safeStorage: {
-      isAsyncEncryptionAvailable: async () => safeStorage.isEncryptionAvailable(),
-      encryptStringAsync: plaintext => safeStorage.encryptStringAsync(plaintext),
-      decryptStringAsync: ciphertext => safeStorage.decryptStringAsync(ciphertext),
-      getSelectedStorageBackend: () => safeStorage.getSelectedStorageBackend(),
-    },
-  })
-  const advisorHostedHandlers = createAdvisorHostedHandlers({
-    credentialStatus: provider => advisorCredentials.status(provider),
-    readCredential: provider => advisorCredentials.readSecret(provider),
-    emitEvent: broadcastAdvisorHostedEvent,
-  })
-  const harnessActHandlers = createHarnessActHandlers({
-    isPackaged: app.isPackaged,
-    resourcesPath: process.resourcesPath,
+  const openCodeEngine = new OpenCodeEngine({
     appPath: app.getAppPath(),
-    emit: broadcastHarnessActionEvent,
+    resourcesPath: process.resourcesPath,
+    userDataPath: app.getPath('userData'),
+    isPackaged: app.isPackaged,
+    workspacePath: app.isPackaged ? null : process.cwd(),
+    readUsageSnapshot: async () => spawnCli([
+      'status', '--format', 'menubar-json', '--period', 'week', '--no-timeline',
+    ], { extraEnv: { METRORA_READ_MODE: 'snapshot' } }),
   })
+  openCodeEngineInstance = openCodeEngine
+  openCodeEngine.onEvent(broadcastOpenCodeEvent)
   const handlers = createBridgeHandlers({
     spawnCli,
     spawnCliAction,
     resolveMetroraPath,
     getQuota,
     emitProgress: broadcastProgress,
-    emitAdvisorDelta: broadcastAdvisorDelta,
     telemetry: telemetryInstance,
     getUpdateStatus: () => updateChecker ? updateChecker.getStatus() : Promise.resolve(NO_UPDATE_STATUS),
     share,
-    advisorCredentials,
-    advisorHostedHandlers,
-    harnessActHandlers,
   })
+  const openCodeHandlers = createOpenCodeBridgeHandlers(openCodeEngine)
   const trustedRendererIpcChannels = new Set([
-    'metrora:advisorHostedProbe',
-    'metrora:advisorHostedChat',
-    'metrora:advisorHostedCancel',
-    'metrora:advisorCredentialStatus',
-    'metrora:advisorCredentialSet',
-    'metrora:advisorCredentialClear',
-    'metrora:harnessProposeCoreCompatibility',
-    'metrora:harnessApproveCoreCompatibility',
-    'metrora:harnessCancelCoreCompatibility',
-    'metrora:harnessReadCoreCompatibility',
     'metrora:runPerformanceBench',
     'metrora:cancelPerformanceBench',
     'metrora:chooseFile',
+    ...Object.keys(openCodeHandlers),
   ])
   function isTrustedRendererSender(event: { senderFrame?: { url?: string } | null }): boolean {
     const frameUrl = event.senderFrame?.url
@@ -229,7 +168,7 @@ function registerHandlers(): void {
       return false
     }
   }
-  for (const [channel, handler] of Object.entries(handlers)) {
+  for (const [channel, handler] of Object.entries({ ...handlers, ...openCodeHandlers })) {
     for (const alias of ipcChannelAliases(channel)) {
       ipcMain.handle(alias, (event, ...args) => {
         if (trustedRendererIpcChannels.has(channel) && !isTrustedRendererSender(event)) {
@@ -239,6 +178,9 @@ function registerHandlers(): void {
       })
     }
   }
+  // The engine starts in the main process, not in the renderer. Renderer calls
+  // still go through the same idempotent start path if startup is unavailable.
+  void openCodeEngine.start()
   ipcMain.handle('metrora:saveShareCardPng', async (event, suggestedName: string, pngDataUrl: string) => {
     if (!isTrustedRendererSender(event)) {
       return { ok: false, error: { kind: 'unauthorized', message: 'Share card export request is not from the trusted renderer.' } }
@@ -362,6 +304,7 @@ function bootstrap(): void {
     getTelemetry: () => telemetryInstance,
     killAll: shutdownCli,
     stopShare: stopDesktopShareRuntime,
+    stopOpenCode: () => openCodeEngineInstance?.stop() ?? Promise.resolve(),
     quit: () => app.quit(),
   }))
 

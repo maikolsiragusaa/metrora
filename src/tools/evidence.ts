@@ -387,7 +387,7 @@ export function buildMetroraUnknownEvidence(question: string, scope: MetroraTool
     question,
     scope,
     refs: [],
-    coverage: { level: 'unavailable', state: 'UNSUPPORTED', label: 'Question needs a supported category', detail: 'Harness currently answers measured spend, observed cost per call, provider quota, and controlled Bench questions.' },
+    coverage: { level: 'unavailable', state: 'UNSUPPORTED', label: 'Question needs a supported category', detail: 'Metrora currently answers measured spend, observed cost per call, provider quota, and controlled Bench questions.' },
     assumptions: [],
     unknown: ['No deterministic Metrora evidence tool is mapped to this question yet.'],
     nextInvestigations: ['Ask about a spend change or cost driver.', 'Ask which model has the lowest observed cost per call.', 'Ask what provider quota remains or when it resets.', 'Ask how a controlled Bench run performed.'],

@@ -10,8 +10,6 @@ import type { DesktopShareRuntime } from './share-runtime'
 import { Telemetry } from './telemetry'
 import type { UpdateStatus } from './updates'
 import { createProjectBridgeHandlers, validateProjectScope } from './project-bridge'
-import { createAdvisorRuntimeHandlers } from './advisor-runtime'
-import { AdvisorCredentialStore, type AdvisorCredentialProvider } from './advisor-credentials'
 
 export type Envelope<T = unknown> = { ok: true; value: T } | { ok: false; error: { kind: string; message: string } }
 export type TelemetryBridge = Pick<Telemetry, 'status' | 'setEnabled' | 'completeOnboarding' | 'track'>
@@ -30,12 +28,6 @@ type Deps = {
   /** Cached update-availability status; absent under tests unless injected. */
   getUpdateStatus?: () => Promise<UpdateStatus>
   share?: DesktopShareRuntime | null
-  advisorCredentials?: Pick<AdvisorCredentialStore, 'status' | 'set' | 'clear'>
-  advisorHostedHandlers?: Record<string, Handler>
-  /** Trusted host handlers for the one accepted Harness action kind. */
-  harnessActHandlers?: Record<string, Handler>
-  /** Main-process projection for local conversational text deltas only. */
-  emitAdvisorDelta?: (event: { requestId: string; text: string }) => void
 }
 
 export const NO_UPDATE_STATUS: UpdateStatus = { currentVersion: '', latestVersion: null, updateAvailable: false, tag: null }
@@ -337,31 +329,6 @@ export function createBridgeHandlers(deps: Deps): Record<string, Handler> {
     }
   }
 
-  const credentialProvider = (value: unknown): AdvisorCredentialProvider | null => {
-    return value === 'openai' || value === 'anthropic' || value === 'gemini' || value === 'openrouter' || value === 'opencode-zen' ? value : null
-  }
-  const credentialStatus = async (value: unknown): Promise<Envelope> => {
-    const provider = credentialProvider(value)
-    if (!provider) return { ok: false, error: { kind: 'bad-args', message: 'invalid Advisor credential provider' } }
-    if (!deps.advisorCredentials) return { ok: true, value: { provider, state: 'locked-unavailable' } }
-    try { return { ok: true, value: await deps.advisorCredentials.status(provider) } }
-    catch { return { ok: true, value: { provider, state: 'locked-unavailable' } } }
-  }
-  const credentialSet = async (value: unknown, secret: unknown): Promise<Envelope> => {
-    const provider = credentialProvider(value)
-    if (!provider) return { ok: false, error: { kind: 'bad-args', message: 'invalid Advisor credential provider' } }
-    if (!deps.advisorCredentials) return { ok: true, value: { provider, state: 'locked-unavailable' } }
-    if (typeof secret !== 'string' || secret.length === 0 || secret.length > 16 * 1024) return { ok: true, value: { provider, state: 'invalid' } }
-    try { return { ok: true, value: await deps.advisorCredentials.set(provider, secret) } }
-    catch { return { ok: true, value: { provider, state: 'needs-reentry' } } }
-  }
-  const credentialClear = async (value: unknown): Promise<Envelope> => {
-    const provider = credentialProvider(value)
-    if (!provider) return { ok: false, error: { kind: 'bad-args', message: 'invalid Advisor credential provider' } }
-    if (!deps.advisorCredentials) return { ok: true, value: { provider, state: 'locked-unavailable' } }
-    try { return { ok: true, value: await deps.advisorCredentials.clear(provider) } }
-    catch { return { ok: true, value: { provider, state: 'needs-reentry' } } }
-  }
   return {
     'metrora:getQuota': async (force?: boolean) => {
       try { return { ok: true, value: sanitizeQuotaProviders(await readQuota({ force: Boolean(force) })) } }
@@ -369,14 +336,6 @@ export function createBridgeHandlers(deps: Deps): Record<string, Handler> {
     },
     'metrora:getOverview': getOverview,
     ...createProjectBridgeHandlers({ spawnCli: deps.spawnCli, spawnCliAction: deps.spawnCliAction, snapshotEnv }),
-    ...createAdvisorRuntimeHandlers(fetch, deps.emitAdvisorDelta),
-    ...(deps.advisorHostedHandlers ?? {}),
-    ...(deps.harnessActHandlers ?? {}),
-    ...(deps.advisorCredentials ? {
-      'metrora:advisorCredentialStatus': credentialStatus,
-      'metrora:advisorCredentialSet': credentialSet,
-      'metrora:advisorCredentialClear': credentialClear,
-    } : {}),
     'metrora:getBenchHistory': run(() => ['bench', 'history', '--format', 'json', '--limit', '50']),
     'metrora:getBenchModelDiscovery': run(() => ['bench', 'models', '--format', 'json']),
     'metrora:getBenchComparison': run((leftRunId: string, rightRunId: string) => ['bench', 'compare', vToken(leftRunId), vToken(rightRunId), '--format', 'json']),

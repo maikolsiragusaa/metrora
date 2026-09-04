@@ -92,8 +92,8 @@ function performanceState(history: PerformanceRunV1[], invalidCount: number, com
 }
 
 /**
- * Canonical factual aggregation for both local Bench families. Electron
- * Harness and MCP adapters consume this source; neither transport recomputes
+ * Canonical factual aggregation for both local Bench families. Electron Bench
+ * and MCP adapters consume this source; neither transport recomputes
  * scope, latest/previous selection, or comparisons.
  */
 export async function readCanonicalBenchEvidenceV1(options: CanonicalBenchEvidenceOptionsV1 = {}): Promise<CanonicalBenchEvidenceV1> {

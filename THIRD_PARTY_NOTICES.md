@@ -67,7 +67,24 @@ semantic token vocabulary was independently reimplemented in
 router/store/client/backend, telemetry, fonts, logos and other product assets.
 The adapted primitives expose Metrora-owned contracts and can be removed or
 replaced without changing Metrora facts, navigation state, ACT, Shield,
-Harness semantics or evidence authority.
+coding-engine semantics or evidence authority.
+
+## OpenCode coding engine
+
+Metrora Desktop bundles and invokes the official OpenCode `1.18.27` release
+from upstream commit `b04697366f05419e9bd7a92f841813dd976161c9` through its
+official headless server and JavaScript SDK. OpenCode remains the coding-agent
+engine; Metrora does not fork, patch or redistribute a modified OpenCode core.
+
+The upstream project is MIT licensed. Its complete permission notice is
+preserved in [`LICENSES/OPENCODE-MIT.txt`](LICENSES/OPENCODE-MIT.txt).
+
+Source repository: `https://github.com/anomalyco/opencode`
+
+Metrora is an independent project and is not affiliated with or endorsed by
+the OpenCode maintainers. The Metrora integration adds only an Electron
+loopback/lifecycle boundary and one read-only `metrora_usage_snapshot` custom
+tool backed by Metrora's canonical status projection.
 
 ## RFC 8785 canonicalization
 

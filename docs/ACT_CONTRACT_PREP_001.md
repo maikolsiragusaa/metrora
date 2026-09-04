@@ -1,5 +1,10 @@
 # ACT Contract Preparation 001
 
+> Historical CLI analytics/optimization contract. The former Desktop Advisor,
+> Harness action bridge and Swarm path are removed; Desktop coding now runs
+> through OpenCode. See [OpenCode Engine Spike 001](OPENCODE_ENGINE_SPIKE_001.md)
+> for the current coding-engine architecture.
+
 **Status:** current-main-native ACT foundation v2 contract and implementation note; the bounded first executor is implemented on this branch for review.
 
 ## Purpose

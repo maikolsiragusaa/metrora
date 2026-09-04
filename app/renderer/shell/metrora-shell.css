@@ -623,10 +623,6 @@
   color: var(--metrora-text-primary);
 }
 
-.metrora-shell .bar .ask-advisor-button {
-  color: var(--metrora-accent-text);
-}
-
 .metrora-shell .bar .refresh-button:disabled { opacity: .65; }
 
 .metrora-shell .body {

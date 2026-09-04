@@ -2,11 +2,10 @@
 
 **Status:** implemented in this branch; validate the final packaged artifact separately before release.
 
-This wave adds two bounded local capabilities while preserving Metrora's existing
-Harness, Tools and ACT boundaries:
+This wave adds two bounded local capabilities while preserving Metrora's
+analytics, Tools and local-runtime boundaries:
 
-- an existing-binary-only llama.cpp `llama-server` adapter in the shared Harness
-  conversation loop;
+- an existing-binary-only llama.cpp `llama-server` connection adapter;
 - a native llama.cpp `llama-bench` Performance adapter, separate from Core
   Compatibility / Runtime Health.
 
@@ -21,7 +20,7 @@ host spellings are `127.0.0.1`, `localhost` and `::1`. Credentials,
 paths, queries, fragments, arbitrary hostnames/IPs and remote URLs are rejected.
 
 The adapter uses bounded `GET /health` and `GET /v1/models` discovery, then the
-OpenAI-compatible `/v1/chat/completions` endpoint through the existing Harness
+OpenAI-compatible `/v1/chat/completions` endpoint through its existing local
 conversation transport. It supports normal and SSE streaming, bounded model
 metadata, explicit malformed/loading/unavailable outcomes and request abort
 cancellation. Tool-call capability is reported as unknown unless a future
@@ -31,7 +30,7 @@ compatibility.
 Upstream model identifiers are treated as host-only routing data. When a
 `/v1/models` response exposes a filesystem path, Electron keeps the exact raw
 identifier only in its in-process route table so chat can address the selected
-model. Renderer, Harness, capabilities and diagnostics receive only a bounded
+model. Renderer, capabilities and diagnostics receive only a bounded
 opaque handle plus a safe basename-style label; Windows paths, Unix paths,
 relative traversal and other raw identifiers never cross that boundary.
 
@@ -99,24 +98,20 @@ Model identity may differ; if the comparison is not valid, the UI and CLI
 return the material identities, a reason and no invented delta.
 
 `bench evidence` is the canonical factual aggregation for both local Bench
-families. The Desktop Harness adapter and the read-only MCP adapter consume
-that same transport-neutral source for scope, latest/previous selection,
-comparison and state. MCP exposes retained evidence only; it cannot start a
-Performance run or grant execution authority.
+families. The read-only MCP adapter consumes that same transport-neutral source
+for scope, latest/previous selection, comparison and state. MCP exposes
+retained evidence only; it cannot start a Performance run.
 
-## Harness and privacy boundary
+## Privacy boundary
 
-Harness can read completed Performance evidence through the existing
-`get_bench_evidence` path and explain observed throughput/timing/setup facts,
-including bounded observed configuration. MCP uses the same retained fixture
-and canonical source through its read-only `get_bench_evidence` tool.
-That read is side-effect free. Harness does not start `llama-bench`, and this
-wave adds no `run-performance` ACT kind. Core Compatibility remains the only
-existing ACT operation.
+Metrora's read-only analytical and MCP surfaces can read completed Performance
+evidence through the canonical `get_bench_evidence` path and explain observed
+throughput/timing/setup facts. OpenCode does not start `llama-bench` through its
+custom usage tool.
 
 The full Desktop Bench history may retain technical identity needed for local
-comparison. Renderer and Harness content-minimal projections omit executable
-and model paths, credentials, machine/user identifiers and raw process output.
+comparison. Renderer and external projections omit executable and model paths,
+credentials, machine/user identifiers and raw process output.
 The server adapter never accepts a credential field or remote endpoint.
 
 Failure states are explicit: loading/unavailable server, unavailable executable,
@@ -139,7 +134,7 @@ the actual local binary. The upstream license notice is
 
 ## Acceptance
 
-Use the [Founder Harness acceptance checklist](FOUNDER_HARNESS_ACCEPTANCE_CHECKLIST.md)
-for the manual runtime, Performance, privacy, cancellation and comparison
-checks. The checklist is a procedure, not a claim that packaged release
-acceptance has already been completed.
+Use the [OpenCode Engine Spike 001](OPENCODE_ENGINE_SPIKE_001.md) procedure
+for the current Desktop coding-engine acceptance. The llama.cpp server and
+Performance paths remain separately testable local capabilities; this link is
+not a claim that their packaged release acceptance is complete.

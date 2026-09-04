@@ -13,7 +13,7 @@ const full: DesktopSectionCapabilities = {
   globalRefresh: true,
 }
 
-function renderTopBar(capabilities: DesktopSectionCapabilities, onAskAdvisor?: () => void, onRefresh?: () => void) {
+function renderTopBar(capabilities: DesktopSectionCapabilities, onRefresh?: () => void) {
   render(
     <TopBar
       title="Workspace"
@@ -33,7 +33,6 @@ function renderTopBar(capabilities: DesktopSectionCapabilities, onAskAdvisor?: (
       configSource={null}
       onConfigSelect={vi.fn()}
       capabilities={capabilities}
-      onAskAdvisor={onAskAdvisor}
       onRefresh={onRefresh}
     />,
   )
@@ -50,7 +49,7 @@ describe('TopBar scope capabilities', () => {
 
   it('wires the visible Refresh control only when the section exposes it', () => {
     const onRefresh = vi.fn()
-    renderTopBar(full, undefined, onRefresh)
+    renderTopBar(full, onRefresh)
 
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
 
@@ -71,13 +70,4 @@ describe('TopBar scope capabilities', () => {
     expect(screen.queryByLabelText('Claude config source')).not.toBeInTheDocument()
   })
 
-  it('renders one page-level Ask Harness action without adding card-level advice controls', () => {
-    const onAskAdvisor = vi.fn()
-    renderTopBar(full, onAskAdvisor)
-
-    fireEvent.click(screen.getByRole('button', { name: 'Ask Harness' }))
-
-    expect(onAskAdvisor).toHaveBeenCalledTimes(1)
-    expect(screen.getAllByRole('button', { name: 'Ask Harness' })).toHaveLength(1)
-  })
 })

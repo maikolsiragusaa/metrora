@@ -16,7 +16,7 @@ describe('MetroraSidebar', () => {
     expect(screen.getByRole('navigation', { name: 'Metrora navigation' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Collapse sidebar' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Settings/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Harness/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /OpenCode/ })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /Spend/ }))
     expect(onNavigate).toHaveBeenCalledWith('spend')

@@ -1,9 +1,8 @@
 # Metrora ecosystem surfaces
 
-**Status:** public product direction and implementation-status guide  
-**Decision revision:** 2026-08-30  
-**Authority reviewed:** `maikolsiragusaa/metrora@7aef30742153a190a59bcec2b13d8635feb5b9db`
-**Productization slice:** `feat/harness-productization-v2-tools-boundary`
+**Status:** historical ecosystem map updated for the OpenCode engine spike
+**Decision revision:** 2026-09-04
+**Current implementation:** `feat/opencode-harness-engine-001`
 
 Metrora is a local-first control and intelligence system for AI-assisted development. Its product surfaces should compose around shared facts and contracts rather than grow into separate products that each calculate their own version of the truth.
 
@@ -14,30 +13,20 @@ This page distinguishes what exists now from what is being built or remains plan
 ```text
 Usage · Activity · Models · Capacity · Projects
                   ↓
-             Metrora Tools
-        ┌─────────┼───────────┐
-        ↓         ↓           ↓
-     Harness     MCP      integrations
-        │
-        └─ state-changing request
-                  ↓
-             proposal only
-                  ↓
-                 ACT
-                  ↓
-          bounded execution
+             Metrora evidence
+             ┌─────────┼───────────┐
+             ↓         ↓           ↓
+          OpenCode    MCP      integrations
+       coding engine  read-only
 
 Bench   = methodology-bound test/evidence system
 Widgets = shareable presentation of canonical evidence
 Wrapped = recap/share experience built on canonical evidence + Widgets
-Swarm   = future coordinated Harness capability behind trusted authority
 ```
 
 Canonical rule:
 
-> **Tools expose capability. Harness and MCP consume capability. ACT grants execution authority.**
-
-ACT is not a chat mode and an MCP client is not trusted execution authority simply because it can discover a Metrora tool.
+> **OpenCode owns coding behavior. Metrora owns factual evidence. MCP exposes read-only Metrora projections.**
 
 ## Current status
 
@@ -45,14 +34,12 @@ ACT is not a chat mode and an MCP client is not trusted execution authority simp
 | --- | --- | --- |
 | **Usage / Activity / Models / Capacity** | Factual local evidence, history, economics and provider-reported capacity | **Available** |
 | **Projects** | User-controlled context and scope across relevant evidence | **Available** |
-| **Tools** | Typed factual access to Metrora evidence | **Available** — canonical registry/contract/evidence/privacy layer with `Advisor*` compatibility adapter |
-| **Harness** | Chat-first investigation, reasoning and Metrora-aware tool use | **Available in this slice** — product-facing Desktop surface, bounded Tool activity and one proposal-only Core Compatibility path |
+| **Tools** | Typed factual access to Metrora evidence | **Available** — canonical registry/contract/evidence/privacy layer for CLI and MCP |
+| **OpenCode** | Normal coding/agent sessions over the local Workspace | **Ready for Founder spike test** — pinned upstream server/SDK, thin Electron lifecycle boundary and one read-only Metrora custom tool |
 | **Bench** | Performance-first testing plus separate Compatibility / Runtime Health evidence | **Available** — native llama.cpp/`llama-bench` Performance and Core Compatibility are separate bounded paths |
-| **ACT** | Trusted authorization/lifecycle for bounded state-changing operations | **Available** — `metrora.action.v1`, `run-core-compatibility`, and the trusted Desktop bridge; not a user-facing mode |
 | **MCP** | Standard external access to canonical Metrora Tools | **Available** — local read-only MCP Server V1 |
 | **Widgets** | Shareable visual/statistical presentation of canonical evidence | **Foundation exists through Share Card; broader Widgets family planned** |
 | **Wrapped** | Periodic recap/share experience using canonical evidence and Widgets | **Planned** |
-| **Swarm** | Coordinated multi-agent Harness capability | **Planned** |
 
 Status labels are intentionally conservative. A public direction is not presented as shipped until working product authority exists.
 
@@ -69,36 +56,37 @@ Metrora already has typed read-only capabilities for questions such as:
 - coverage information;
 - Bench evidence.
 
-The reusable implementation now lives in `src/tools`. The renderer's `Advisor*` files retain only compatibility adapters and stable contract names; the factual registry is not owned by one UI.
+The reusable implementation now lives in `src/tools` for the existing CLI and
+local MCP boundary. The OpenCode Desktop integration has one separate
+`metrora_usage_snapshot` custom tool; it does not expose the entire Metrora
+tool registry to the coding engine.
 
-This matters because the same factual capability is reused by Harness, the Local MCP Server V1 and other bounded Metrora integrations without implementing parallel evidence paths.
+This keeps factual evidence canonical without making Metrora a second coding
+agent or provider runtime.
 
 A tool result remains evidence. A caller or model may explain it, but cannot silently replace Metrora's canonical measurement, scope or unavailable-state semantics.
 
-## Harness
+## OpenCode
 
-**Metrora Harness** is the product-facing conversational and operational AI surface.
+OpenCode is the product-facing Desktop coding engine. It owns the normal
+session, transcript, provider/model, reasoning, tool, filesystem, shell, git,
+permission, plan/build, subagent, retry, cancellation, MCP, ACP, LSP and
+formatter behavior.
 
-The shipped Harness slice is a capable normal chat experience. Metrora-specific facts are read through typed Tools only when needed. Observable Tool activity is compact and bounded without exposing private chain-of-thought, prompts, secrets or paths.
+Metrora launches the exact pinned upstream executable on loopback, forwards
+typed renderer-safe projections, and provides one read-only
+`metrora_usage_snapshot` custom tool backed by canonical Metrora status. It
+does not authorize or execute a second Metrora action runtime.
 
-For state-changing requests, the conversational layer may understand the request and prepare a bounded proposal, but it does not authorize itself. The only accepted operation in this slice is Core Compatibility; confirmation is canonicalized and executed by the trusted host/ACT path.
-
-```text
-conversation
-→ optional factual Tools
-→ explanation
-→ action proposal when requested
-→ explicit trusted approval
-→ ACT
-```
-
-The older `Advisor` product name is being retired. Existing `Advisor*` implementation identifiers may survive temporarily while responsibilities are migrated to the correct Harness, Tools, provider/runtime or evidence modules.
+See [OpenCode Engine Spike 001](OPENCODE_ENGINE_SPIKE_001.md) for the precise
+version, packaging, privacy and validation boundary.
 
 ## MCP
 
 Metrora adopts the Model Context Protocol as an interoperability direction.
 
-The shipped first product is a **local, read-only Metrora MCP Server V1** that exposes the same canonical factual Tools used by Harness.
+The shipped first product is a **local, read-only Metrora MCP Server V1** that
+exposes canonical factual Tools independently of the OpenCode coding engine.
 
 A compatible external AI client could then ask a question such as:
 
@@ -120,19 +108,9 @@ A future hosted MCP surface may be offered separately for managed remote access 
 
 ### Future actions through MCP
 
-External AI clients may later be able to **propose** bounded Metrora actions. They do not gain direct ACT or Swarm authority.
-
-```text
-external AI
-→ MCP
-→ bounded proposal
-→ Metrora trusted authority
-→ explicit user approval
-→ ACT
-→ bounded execution
-```
-
-Any future Swarm capability follows the same authority rule.
+The current MCP server remains read-only. Any future mutation path would need
+an explicitly reviewed Metrora authority; OpenCode permissions are not reused
+as a Metrora accounting or Workspace authorization layer.
 
 ## Bench
 
@@ -146,9 +124,9 @@ Separate evidence families:
 
 - **Compatibility / Runtime Health** — including the current deterministic `core-v1` checks;
 - **Coding Evaluation** — future, separately versioned and methodology/licence gated;
-- **Agent / Harness Evaluation** — later, once real coordinated execution exists.
+- **Agent Evaluation** — later, with a separately versioned methodology.
 
-ACT may invoke a supported Bench operation, but Bench remains the canonical owner of Bench evidence/history.
+Bench remains the canonical owner of Bench evidence/history.
 
 ## Widgets and Wrapped
 
@@ -175,17 +153,16 @@ Ordinary pages stay concise:
 
 Systems with an independent interaction model or authority can carry a branded name when useful:
 
-- **Metrora Harness**;
+- **OpenCode** for the Desktop coding engine;
 - **Metrora Bench**;
 - **Metrora MCP Server** on first/external mention.
 
 Within an established Metrora context, prefer:
 
-`Harness · Tools · MCP · Bench · Projects · Widgets`
+`OpenCode · Tools · MCP · Bench · Projects · Widgets`
 
 rather than repeating “Metrora” before every noun.
 
-`ACT` remains an execution authority, not a primary navigation item. `Swarm` remains future functionality until it actually ships.
 
 ## Public README direction
 
@@ -224,16 +201,15 @@ Required upstream provenance and licence notices remain governed by `THIRD_PARTY
 
 This is a dependency-oriented direction, not a rigid roadmap gate:
 
-1. **Harness Productization** — establish Harness as the product identity, extract canonical Tools and connect action requests only through proposal → ACT.
-2. **Local MCP Server V1** — shipped in Interoperability Foundation Wave 001; expose the same factual Tools read-only through MCP.
+1. **OpenCode Engine Spike 001** — validate the pinned upstream coding engine through the thin Desktop boundary.
+2. **Local MCP Server V1** — keep the canonical Metrora factual tools read-only through MCP.
 3. **README / asset refresh** — simplify the repository story and replace stale inherited marketing imagery with original Metrora visuals.
 4. **Widgets V1** — evolve Share Card into reusable static, privacy-aware Widgets.
 5. Maintain the independent **llama.cpp runtime / Performance Bench** path with focused compatibility, provenance and acceptance work.
-6. External action proposals and **Swarm** remain later, separately authorized capability work.
 
 See also:
 
-- [`HARNESS_PUBLIC_FOUNDATION.md`](HARNESS_PUBLIC_FOUNDATION.md)
+- [`OPENCODE_ENGINE_SPIKE_001.md`](OPENCODE_ENGINE_SPIKE_001.md)
 - [`BENCH_EVIDENCE_FAMILIES.md`](BENCH_EVIDENCE_FAMILIES.md)
 - [`PRODUCT_PRINCIPLES.md`](PRODUCT_PRINCIPLES.md)
 - [`PUBLIC_CONTRACTS_V1.md`](PUBLIC_CONTRACTS_V1.md)

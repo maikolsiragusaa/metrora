@@ -46,5 +46,11 @@ exports.default = async function afterPack(context) {
     ].join('\n'),
   )
 
-  console.log(`after-pack: staged CLI sealed -> ${archive}`)
+  const opencodeSrc = join(__dirname, '..', 'build', 'opencode')
+  if (!existsSync(opencodeSrc)) throw new Error('after-pack: bundled OpenCode is missing — run "npm run stage-opencode" first')
+  const opencodeDest = join(resources, 'opencode')
+  rmSync(opencodeDest, { recursive: true, force: true })
+  require('node:fs').cpSync(opencodeSrc, opencodeDest, { recursive: true })
+
+  console.log(`after-pack: staged CLI sealed -> ${archive}; OpenCode copied -> ${opencodeDest}`)
 }

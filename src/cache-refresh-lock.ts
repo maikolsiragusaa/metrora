@@ -364,7 +364,19 @@ export async function acquireCacheRefreshLock(options: RefreshLockOptions = {}):
         const guard = await observe(takeoverPath)
         if (guard === 'unavailable') { leave(); return { outcome: 'unavailable' } }
         if (guard === 'changing') { await sleep(pollMs); continue }
-        if (guard === 'missing') { leave(); return { outcome: 'completed-by-other' } }
+        if (guard === 'missing') {
+          // A stale taker can finish the guarded unlink/create sequence between
+          // the two observations. Confirm the primary and guard are both still
+          // absent before classifying this as a clean completion; otherwise a
+          // contender can incorrectly stop waiting while the successor is
+          // about to become visible on a busy filesystem.
+          await sleep(pollMs)
+          const retry = await observe(lockPath)
+          if (retry !== 'missing') continue
+          const retryGuard = await observe(takeoverPath)
+          if (retryGuard !== 'missing') continue
+          leave(); return { outcome: 'completed-by-other' }
+        }
         await sleep(pollMs)
         continue
       }

@@ -192,6 +192,7 @@ body { overflow: hidden; background: var(--bg); color: var(--ink); }
   padding: 13px 18px; border-top: 1px solid var(--line2); color: var(--mut2);
   font-size: 10.5px; text-align: center;
 }
+.about-modal-powered-by { display: block; margin-top: 5px; color: var(--mut); font-size: 10px; line-height: 1.4; }
 
 @media (max-width: 680px) {
   .about-modal-grid { grid-template-columns: 1fr; }

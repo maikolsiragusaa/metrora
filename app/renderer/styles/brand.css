@@ -105,11 +105,6 @@ body {
   color: var(--accent-control-ink);
   box-shadow: 0 2px 12px color-mix(in srgb, var(--accent) 28%, transparent), inset 0 1px 0 rgba(255,255,255,.22);
 }
-.ask-advisor-button {
-  border-color: color-mix(in srgb, var(--accent) 42%, var(--line2));
-  color: var(--accent-text);
-}
-.ask-advisor-button span { margin-left: 3px; }
 .tglon { box-shadow: 0 1px 8px color-mix(in srgb, var(--accent) 28%, transparent); }
 
 .metrora-mark {

@@ -1,13 +1,22 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 import type { Envelope } from './main'
-import type { HarnessActionEvent } from './act-bridge'
+import type {
+  OpenCodeAgent,
+  OpenCodeConversationMessage,
+  OpenCodeEngineStatus,
+  OpenCodeLocalProviderConfig,
+  OpenCodeMcpServer,
+  OpenCodeProvider,
+  OpenCodeRendererEvent,
+  OpenCodeSession,
+  OpenCodeTools,
+  OpenCodeWorkspaceInfo,
+} from './opencode-types'
 
 type DateRange = { from: string; to: string }
 type PriceRates = { input?: number; output?: number; cacheRead?: number; cacheCreation?: number }
 type CreateWorkspaceInput = { displayName: string; slug?: string; endpointDisplayName: string }
-type AdvisorHostedProvider = 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'opencode-zen'
-type AdvisorHostedRendererEvent = { requestId: string; provider: AdvisorHostedProvider; model: string; kind: string; usage?: { inputTokens: number | null; outputTokens: number | null; totalTokens: number | null } | null; streamed?: boolean; code?: string }
 type PerformanceBenchRequest = {
   executablePath: string
   modelPath: string
@@ -36,15 +45,6 @@ async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
 // immediately, while old windows/integrations can keep using window.metrora.
 const bridge = {
   getQuota: (force?: boolean) => invoke('metrora:getQuota', force),
-  advisorProbe: (runtime: 'ollama' | 'lmstudio' | 'llama-server' = 'ollama') => invoke('metrora:advisorProbe', runtime),
-  advisorChat: (requestId: string, payload: Record<string, unknown>, runtime: 'ollama' | 'lmstudio' | 'llama-server' = 'ollama') => invoke('metrora:advisorChat', requestId, payload, runtime),
-  advisorCancel: (requestId: string) => invoke('metrora:advisorCancel', requestId),
-  advisorCredentialStatus: (provider: AdvisorHostedProvider) => invoke('metrora:advisorCredentialStatus', provider),
-  advisorCredentialSet: (provider: AdvisorHostedProvider, secret: string) => invoke('metrora:advisorCredentialSet', provider, secret),
-  advisorCredentialClear: (provider: AdvisorHostedProvider) => invoke('metrora:advisorCredentialClear', provider),
-  advisorHostedProbe: (provider: AdvisorHostedProvider, requestId?: string) => invoke('metrora:advisorHostedProbe', provider, requestId),
-  advisorHostedChat: (requestId: string, payload: Record<string, unknown>) => invoke('metrora:advisorHostedChat', requestId, payload),
-  advisorHostedCancel: (requestId: string) => invoke('metrora:advisorHostedCancel', requestId),
   getBenchHistory: () => invoke('metrora:getBenchHistory'),
   getBenchModelDiscovery: () => invoke('metrora:getBenchModelDiscovery'),
   getBenchComparison: (leftRunId: string, rightRunId: string) => invoke('metrora:getBenchComparison', leftRunId, rightRunId),
@@ -96,6 +96,23 @@ const bridge = {
   chooseFile: (kind: 'llama-bench' | 'gguf') => invoke('metrora:chooseFile', kind),
   cliStatus: () => invoke('metrora:cliStatus'),
 
+  opencodeStatus: () => invoke<OpenCodeEngineStatus>('metrora:opencodeStatus'),
+  opencodeStart: () => invoke<OpenCodeEngineStatus>('metrora:opencodeStart'),
+  opencodeRestart: () => invoke<OpenCodeEngineStatus>('metrora:opencodeRestart'),
+  opencodeSetWorkspace: (workspace: string) => invoke<OpenCodeEngineStatus>('metrora:opencodeSetWorkspace', workspace),
+  opencodeListSessions: () => invoke<OpenCodeSession[]>('metrora:opencodeListSessions'),
+  opencodeCreateSession: (title?: string) => invoke<OpenCodeSession>('metrora:opencodeCreateSession', title),
+  opencodeGetMessages: (sessionId: string) => invoke<OpenCodeConversationMessage[]>('metrora:opencodeGetMessages', sessionId),
+  opencodePrompt: (request: Record<string, unknown>) => invoke<OpenCodeConversationMessage | null>('metrora:opencodePrompt', request),
+  opencodeCancel: (requestId: string) => invoke<boolean>('metrora:opencodeCancel', requestId),
+  opencodeListProviders: () => invoke<OpenCodeProvider[]>('metrora:opencodeListProviders'),
+  opencodeListAgents: () => invoke<OpenCodeAgent[]>('metrora:opencodeListAgents'),
+  opencodeListTools: () => invoke<OpenCodeTools>('metrora:opencodeListTools'),
+  opencodeGetWorkspace: () => invoke<OpenCodeWorkspaceInfo>('metrora:opencodeGetWorkspace'),
+  opencodeGetMcp: () => invoke<OpenCodeMcpServer[]>('metrora:opencodeGetMcp'),
+  opencodePermissionReply: (sessionId: string, permissionId: string, response: 'once' | 'always' | 'reject') => invoke<boolean>('metrora:opencodePermissionReply', sessionId, permissionId, response),
+  opencodeConfigureLocal: (config: OpenCodeLocalProviderConfig) => invoke<OpenCodeEngineStatus>('metrora:opencodeConfigureLocal', config),
+
   getWorkspaceStatus: () => invoke('metrora:getWorkspaceStatus'),
   retryWorkspaceStatus: () => invoke('metrora:retryWorkspaceStatus'),
   inspectWorkspaceStatus: () => invoke('metrora:inspectWorkspaceStatus'),
@@ -125,24 +142,10 @@ const bridge = {
     ipcRenderer.on('metrora:update', listener)
     return () => { ipcRenderer.removeListener('metrora:update', listener) }
   },
-  onAdvisorDelta: (cb: (event: { requestId: string; text: string }) => void) => {
-    const listener = (_event: unknown, event: { requestId: string; text: string }) => cb(event)
-    ipcRenderer.on('metrora:advisorDelta', listener)
-    return () => { ipcRenderer.removeListener('metrora:advisorDelta', listener) }
-  },
-  onAdvisorHostedEvent: (cb: (event: AdvisorHostedRendererEvent) => void) => {
-    const listener = (_event: unknown, event: AdvisorHostedRendererEvent) => cb(event)
-    ipcRenderer.on('metrora:advisorHostedEvent', listener)
-    return () => { ipcRenderer.removeListener('metrora:advisorHostedEvent', listener) }
-  },
-  harnessProposeCoreCompatibility: (model: string) => invoke('metrora:harnessProposeCoreCompatibility', model) as Promise<HarnessActionEvent>,
-  harnessApproveCoreCompatibility: (actionId: string, proposalDigest: string) => invoke('metrora:harnessApproveCoreCompatibility', actionId, proposalDigest) as Promise<HarnessActionEvent>,
-  harnessCancelCoreCompatibility: (actionId: string) => invoke('metrora:harnessCancelCoreCompatibility', actionId) as Promise<HarnessActionEvent | null>,
-  harnessReadCoreCompatibility: (actionId: string) => invoke('metrora:harnessReadCoreCompatibility', actionId) as Promise<HarnessActionEvent | null>,
-  onHarnessActionEvent: (cb: (event: HarnessActionEvent) => void) => {
-    const listener = (_event: unknown, event: HarnessActionEvent) => cb(event)
-    ipcRenderer.on('metrora:harnessActionEvent', listener)
-    return () => { ipcRenderer.removeListener('metrora:harnessActionEvent', listener) }
+  onOpenCodeEvent: (cb: (event: OpenCodeRendererEvent) => void) => {
+    const listener = (_event: unknown, event: OpenCodeRendererEvent) => cb(event)
+    ipcRenderer.on('metrora:opencodeEvent', listener)
+    return () => { ipcRenderer.removeListener('metrora:opencodeEvent', listener) }
   },
   platform: process.platform,
   arch: process.arch,

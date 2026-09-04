@@ -3,7 +3,7 @@
 **Evidence family:** bounded runtime-performance evidence  
 **Current status:** shipped public local contract  
 
-See [Bench evidence families](BENCH_EVIDENCE_FAMILIES.md) for the distinction between Performance, Compatibility, future Coding Evaluation and future Agent/Harness Evaluation.
+See [Bench evidence families](BENCH_EVIDENCE_FAMILIES.md) for the distinction between Performance, Compatibility, future Coding Evaluation and future Agent Evaluation.
 
 BenchRunV1 is Metrora's first small public timing/runtime evidence slice. It records bounded local runtime evidence for one explicitly selected Ollama model using a fixed versioned synthetic workload.
 

@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Section } from '../components/Sidebar'
 import { useDesktopShortcuts } from './useDesktopShortcuts'
 
-function Harness({
+function ShortcutProbe({
   platform,
   navigate,
   refresh,
@@ -22,7 +22,7 @@ describe('useDesktopShortcuts', () => {
   it('uses Control on Windows', () => {
     const navigate = vi.fn()
     const refresh = vi.fn()
-    render(<Harness platform="windows" navigate={navigate} refresh={refresh} />)
+    render(<ShortcutProbe platform="windows" navigate={navigate} refresh={refresh} />)
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: '1', ctrlKey: true, cancelable: true }))
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', ctrlKey: true, cancelable: true }))
@@ -36,7 +36,7 @@ describe('useDesktopShortcuts', () => {
   it('uses Command on macOS', () => {
     const navigate = vi.fn()
     const refresh = vi.fn()
-    render(<Harness platform="macos" navigate={navigate} refresh={refresh} />)
+    render(<ShortcutProbe platform="macos" navigate={navigate} refresh={refresh} />)
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: ',', metaKey: true, cancelable: true }))
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', ctrlKey: true, cancelable: true }))

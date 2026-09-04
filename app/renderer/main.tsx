@@ -13,7 +13,7 @@ import './styles/workspace.css'
 import './styles/workspace-guidance.css'
 import './ui/tokens.css'
 import './shell/metrora-shell.css'
-import './styles/harness-v3.css'
+import './styles/opencode.css'
 
 const root = document.getElementById('root')
 if (!root) throw new Error('#root not found')

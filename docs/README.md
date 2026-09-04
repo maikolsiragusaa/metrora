@@ -2,7 +2,9 @@
 
 Metrora is the local-first control center for AI-assisted development. Start with the product surfaces that let you observe Usage, Cost, Models, Projects and Activity; compare evidence; investigate through the current conversational surface; and manage provider Capacity and explicit local controls without requiring a mandatory Metrora account or AI-traffic gateway.
 
-The product-facing conversational/operational surface is **Metrora Harness**. Stable `Advisor` / `Advisor*` identifiers remain only where they are technical compatibility contracts or adapters.
+The product-facing coding surface is **OpenCode**. Metrora integrates the
+official pinned OpenCode engine through a thin Electron boundary and does not
+maintain a competing agent runtime.
 
 This index separates user guidance, current product guarantees, public contracts and contributor-facing technical references.
 
@@ -10,8 +12,8 @@ This index separates user guidance, current product guarantees, public contracts
 
 - [Getting started](GETTING_STARTED.md) — install or build Metrora, run the first reports and understand the current distribution boundary.
 - [CLI reference](CLI_REFERENCE.md) — public commands grouped by task.
-- [Bench evidence families](BENCH_EVIDENCE_FAMILIES.md) — public distinction between shipped Performance, Compatibility/Runtime Health, future Coding Evaluation and future Agent/Harness Evaluation.
-- [Local runtime and Performance Wave 001](LOCAL_RUNTIME_PERFORMANCE_WAVE_001.md) — shipped existing-binary-only llama.cpp server/Harness integration, native `llama-bench` setup, evidence, safety bounds and acceptance path.
+- [Bench evidence families](BENCH_EVIDENCE_FAMILIES.md) — public distinction between shipped Performance, Compatibility/Runtime Health, future Coding Evaluation and future Agent Evaluation.
+- [Local runtime and Performance Wave 001](LOCAL_RUNTIME_PERFORMANCE_WAVE_001.md) — shipped existing-binary-only llama.cpp server integration, native `llama-bench` setup, evidence, safety bounds and acceptance path.
 - [BenchRunV1 local Ollama](BENCHRUN_V1_OLLAMA_LOCAL.md) — shipped bounded runtime-timing evidence from an explicitly selected local Ollama model.
 - [Bench Core Compatibility / Runtime Health v1](BENCH_TASK_PACK_V1.md) — shipped bounded local compatibility checks, model discovery, private history and factual comparison for Ollama.
 - [Supported tools](SUPPORTED_TOOLS.md) — local collector coverage and evidence boundaries.
@@ -28,11 +30,8 @@ This index separates user guidance, current product guarantees, public contracts
 
 - [Product principles](PRODUCT_PRINCIPLES.md) — stable local-first, privacy, evidence and portability commitments.
 - [Architecture](architecture.md) — current responsibility and authority map for the public codebase.
-- [Metrora Harness public foundation](HARNESS_PUBLIC_FOUNDATION.md) — product-facing chat/tools/ACT/Swarm direction grounded in the current read-only public foundation, with explicit shipped/planned boundaries.
-- [Advisor implementation compatibility](ADVISOR_PUBLIC_FOUNDATION.md) — exact stable `Advisor*` conversational/tool/runtime/privacy contracts behind Harness, plus license provenance.
-- [ACT contract preparation 001](ACT_CONTRACT_PREP_001.md) — trusted-action design, the current-main-native Core Compatibility first action, and its bounded implementation limits.
-- [Harness contextual integration v1](ADVISOR_CONTEXT_INTEGRATION_V1.md) — current factual-surface → Ask Harness → contextual investigation scope handoff across supported Desktop surfaces.
-- [Founder Harness acceptance checklist](FOUNDER_HARNESS_ACCEPTANCE_CHECKLIST.md) — manual acceptance path for chat, Tools, privacy, bounded loops and the proposal-only Core Compatibility bridge.
+- [OpenCode Engine Spike 001](OPENCODE_ENGINE_SPIKE_001.md) — pinned upstream engine, thin Electron boundary, one read-only Metrora tool, packaging, privacy and validation limits.
+- [ACT contract preparation 001](ACT_CONTRACT_PREP_001.md) — historical Metrora analytics/optimization action contract; it is not an OpenCode agent runtime.
 - [Provider quota authority](provider-quota-authority.md) — canonical provider-reported Capacity semantics, freshness and separation from measured local usage or budgets.
 - [Canonical history read projection v1](CANONICAL_HISTORY_READ_PROJECTION_V1.md) — shadow observation/activity identity and trusted daily-history boundary.
 - [Canonical history shadow store v1](CANONICAL_HISTORY_SHADOW_STORE_V1.md) — removable content-addressed persistence and cross-refresh reconciliation.
@@ -46,13 +45,17 @@ This index separates user guidance, current product guarantees, public contracts
 - [Public contracts v1](PUBLIC_CONTRACTS_V1.md) — public schemas, signed-data behavior and compatibility commitments.
 - [Technical identity compatibility](TECHNICAL_IDENTITY_COMPATIBILITY.md) — identifiers retained to protect local state and integrations.
 
-## Harness naming and current implementation
+## OpenCode naming and current implementation
 
-The public product direction uses **Metrora Harness** for the conversational/operational surface.
+The user-facing Desktop coding surface is **OpenCode**. OpenCode owns sessions,
+transcripts, providers/models, reasoning variants, agents/subagents, tools,
+permissions, edits, git/workspace behavior, MCP and the agent loop.
 
-The current implementation uses stable technical names such as `AdvisorKernel`, `AdvisorToolV1`, `AdvisorActionProposalV1`, existing route/file names and compatibility schemas. The user-facing Desktop surface is `Ask Harness`; the technical names remain for compatibility and are not a second product.
-
-Do not treat the documentation name as proof that a runtime/UI rename or Swarm mode already ships. The separately documented llama.cpp adapter is existing-binary-only and does not imply a bundled distribution.
+Metrora owns the bundled executable and SDK version, loopback lifecycle and
+authentication, renderer-safe projections, canonical usage snapshot, and one
+read-only `metrora_usage_snapshot` custom tool. The old Advisor/Harness/Swarm
+desktop implementation is superseded; the remaining `src/act/` modules are
+analytics/optimization CLI code and are not called by OpenCode.
 
 ## Bench status
 
@@ -64,7 +67,7 @@ Current public Bench evidence is intentionally separated:
 | Compatibility / Runtime Health | **Shipped:** Core Compatibility v1 |
 | broader hardware Performance | **Shipped in this wave:** native llama.cpp/`llama-bench` adapter with separate history and factual comparison |
 | Coding Evaluation | **Future / not shipped** |
-| Agent/Harness Evaluation | **Future / not shipped** |
+| Agent Evaluation | **Future / not shipped** |
 
 No current Bench result is a universal model-quality ranking.
 

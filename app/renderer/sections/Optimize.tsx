@@ -48,8 +48,8 @@ export function OptimizeContent({
   ready?: boolean
 }) {
   // Deterministic findings remain the evidence engine. This surface presents
-  // them as prioritized insights today; a future conversational Advisor can
-  // consume the same evidence without duplicating or replacing its authority.
+  // them as prioritized insights; the separate OpenCode coding engine does
+  // not replace or reinterpret this analytics authority.
   const optimizeReport = usePolled<OptimizeJsonReport>(
     () => range ? metrora.getOptimizeReport(period, provider, range) : metrora.getOptimizeReport(period, provider),
     [period, provider, range?.from, range?.to, refreshToken],
