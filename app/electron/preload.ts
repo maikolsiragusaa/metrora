@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 import type { Envelope } from './main'
 import type { HarnessActionEvent } from './act-bridge'
+import type { OpenCodeRuntimeStatus } from './opencode/types'
 
 type DateRange = { from: string; to: string }
 type PriceRates = { input?: number; output?: number; cacheRead?: number; cacheCreation?: number }
@@ -24,6 +25,7 @@ type PerformanceBenchRequest = {
   warmup?: boolean
   timeoutMs?: number
 }
+type OpenCodeBounds = { x: number; y: number; width: number; height: number }
 
 async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
   const res = (await ipcRenderer.invoke(channel, ...args)) as Envelope<T>
@@ -95,6 +97,9 @@ const bridge = {
   chooseDirectory: () => invoke('metrora:chooseDirectory'),
   chooseFile: (kind: 'llama-bench' | 'gguf') => invoke('metrora:chooseFile', kind),
   cliStatus: () => invoke('metrora:cliStatus'),
+  opencodeActivate: (bounds: OpenCodeBounds) => invoke('metrora:opencodeActivate', bounds) as Promise<OpenCodeRuntimeStatus>,
+  opencodeUpdateBounds: (bounds: OpenCodeBounds) => invoke('metrora:opencodeBounds', bounds) as Promise<boolean>,
+  opencodeDeactivate: () => invoke('metrora:opencodeDeactivate') as Promise<boolean>,
 
   getWorkspaceStatus: () => invoke('metrora:getWorkspaceStatus'),
   retryWorkspaceStatus: () => invoke('metrora:retryWorkspaceStatus'),

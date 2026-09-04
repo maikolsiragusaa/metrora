@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, safeStorage, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, safeStorage, shell, WebContentsView } from 'electron'
 import { writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
@@ -13,6 +13,8 @@ import { createBridgeHandlers, NO_UPDATE_STATUS } from './bridge-handlers'
 import { AdvisorCredentialStore } from './advisor-credentials'
 import { createAdvisorHostedHandlers, type AdvisorHostedEvent } from './advisor-provider'
 import { createHarnessActHandlers, type HarnessActionEvent } from './act-bridge'
+import { OpenCodeRuntime } from './opencode/runtime'
+import { OpenCodeViewManager, normalizeOpenCodeBounds, type OpenCodeApp, type OpenCodeView, type OpenCodeWindow } from './opencode/view'
 
 export { createApplicationMenuTemplate } from './menu'
 export { createBridgeHandlers, makeProgressReader } from './bridge-handlers'
@@ -22,6 +24,9 @@ export type { Envelope, TelemetryBridge } from './bridge-handlers'
 let telemetryInstance: Telemetry | null = null
 // The once-per-launch + 24h update-availability checker. Null under tests.
 let updateChecker: UpdateChecker | null = null
+// Application-owned OpenCode sidecar + WebContentsView host. It is initialized
+// lazily with the rest of the IPC handlers and survives Code section changes.
+let openCodeViewManager: OpenCodeViewManager | null = null
 
 type QuitTelemetry = Pick<Telemetry, 'trackClose' | 'flush'>
 type BeforeQuitEvent = { preventDefault: () => void }
@@ -29,6 +34,7 @@ type BeforeQuitDeps = {
   getTelemetry: () => QuitTelemetry | null
   killAll: () => void
   stopShare?: () => Promise<unknown>
+  stopOpenCode?: () => Promise<unknown>
   quit: () => void
   timeoutMs?: number
 }
@@ -53,6 +59,7 @@ export function createBeforeQuitHandler(deps: BeforeQuitDeps): (event: BeforeQui
         try { deps.killAll() } catch { /* child cleanup must not wedge quit */ }
 
         const stopShare = deps.stopShare ? Promise.resolve().then(deps.stopShare).catch(() => false) : Promise.resolve(false)
+        const stopOpenCode = deps.stopOpenCode ? Promise.resolve().then(deps.stopOpenCode).catch(() => false) : Promise.resolve(false)
 
         let telemetry: QuitTelemetry | null = null
         try { telemetry = deps.getTelemetry() } catch { /* telemetry lookup is best-effort */ }
@@ -69,7 +76,7 @@ export function createBeforeQuitHandler(deps: BeforeQuitDeps): (event: BeforeQui
         const timeout = new Promise<void>(resolve => {
           timer = setTimeout(resolve, deps.timeoutMs ?? QUIT_FLUSH_TIMEOUT_MS)
         })
-        await Promise.race([Promise.all([flush.catch(() => false), stopShare.catch(() => false)]), timeout])
+        await Promise.race([Promise.all([flush.catch(() => false), stopShare.catch(() => false), stopOpenCode.catch(() => false)]), timeout])
       } finally {
         if (timer !== undefined) clearTimeout(timer)
         allowQuit = true
@@ -188,6 +195,30 @@ function registerHandlers(): void {
     appPath: app.getAppPath(),
     emit: broadcastHarnessActionEvent,
   })
+  const openCodeRuntime = new OpenCodeRuntime({
+    appPath: app.getAppPath(),
+    resourcesPath: process.resourcesPath,
+    userDataPath: app.getPath('userData'),
+    isPackaged: app.isPackaged,
+    workingDirectory: process.cwd(),
+    readUsageSnapshot: () => spawnCli(
+      ['status', '--format', 'menubar-json', '--period', 'today', '--no-timeline', '--no-optimize'],
+      { extraEnv: { METRORA_READ_MODE: 'snapshot' }, priority: 'background' },
+    ),
+  })
+  openCodeViewManager = new OpenCodeViewManager(openCodeRuntime, {
+    app: app as unknown as OpenCodeApp,
+    createView: () => new WebContentsView({
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        // A non-persistent partition keeps per-launch auth state in memory;
+        // the OpenCode server remains the authority for its own session data.
+        partition: `opencode-metrora-${process.pid}`,
+      },
+    }) as unknown as OpenCodeView,
+  })
   const handlers = createBridgeHandlers({
     spawnCli,
     spawnCliAction,
@@ -216,6 +247,9 @@ function registerHandlers(): void {
     'metrora:runPerformanceBench',
     'metrora:cancelPerformanceBench',
     'metrora:chooseFile',
+    'metrora:opencodeActivate',
+    'metrora:opencodeBounds',
+    'metrora:opencodeDeactivate',
   ])
   function isTrustedRendererSender(event: { senderFrame?: { url?: string } | null }): boolean {
     const frameUrl = event.senderFrame?.url
@@ -269,6 +303,27 @@ function registerHandlers(): void {
     const res = await dialog.showOpenDialog({ properties: ['openFile'], filters })
     return { ok: true, value: res.canceled ? null : (res.filePaths[0] ?? null) }
   })
+  ipcMain.handle('metrora:opencodeActivate', async (event, value: unknown) => {
+    if (!isTrustedRendererSender(event)) return { ok: false, error: { kind: 'unauthorized', message: 'Trusted Metrora renderer required.' } }
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const bounds = normalizeOpenCodeBounds(value)
+    if (!win || !bounds) return { ok: false, error: { kind: 'bad-args', message: 'OpenCode view bounds are invalid.' } }
+    if (!openCodeViewManager) return { ok: false, error: { kind: 'unavailable', message: 'OpenCode is unavailable.' } }
+    return { ok: true, value: await openCodeViewManager.activate(win as unknown as OpenCodeWindow, bounds) }
+  })
+  ipcMain.handle('metrora:opencodeBounds', (event, value: unknown) => {
+    if (!isTrustedRendererSender(event)) return { ok: false, error: { kind: 'unauthorized', message: 'Trusted Metrora renderer required.' } }
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const bounds = normalizeOpenCodeBounds(value)
+    if (!win || !bounds || !openCodeViewManager) return { ok: false, error: { kind: 'bad-args', message: 'OpenCode view bounds are invalid.' } }
+    return { ok: true, value: openCodeViewManager.updateBounds(win as unknown as OpenCodeWindow, bounds) }
+  })
+  ipcMain.handle('metrora:opencodeDeactivate', (event) => {
+    if (!isTrustedRendererSender(event)) return { ok: false, error: { kind: 'unauthorized', message: 'Trusted Metrora renderer required.' } }
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (win && openCodeViewManager) openCodeViewManager.deactivate(win as unknown as OpenCodeWindow)
+    return { ok: true, value: true }
+  })
   ipcMain.handle('open-external', (_event, url: string) => {
     try {
       const { protocol } = new URL(url)
@@ -319,6 +374,7 @@ function createWindow(): BrowserWindow {
   win.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
     console.error(`Renderer failed to load (${errorCode}): ${errorDescription}`)
   })
+  win.once('closed', () => openCodeViewManager?.disposeWindow(win as unknown as OpenCodeWindow))
 
   const devUrl = process.env.VITE_DEV_SERVER_URL
   if (devUrl) {
@@ -362,6 +418,7 @@ function bootstrap(): void {
     getTelemetry: () => telemetryInstance,
     killAll: shutdownCli,
     stopShare: stopDesktopShareRuntime,
+    stopOpenCode: () => openCodeViewManager?.shutdown() ?? Promise.resolve(),
     quit: () => app.quit(),
   }))
 

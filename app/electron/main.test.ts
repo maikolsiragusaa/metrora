@@ -423,13 +423,15 @@ describe('createBeforeQuitHandler', () => {
 
       const quit = vi.fn()
       const killChildren = vi.fn()
-      const handler = createBeforeQuitHandler({ getTelemetry: () => telemetry, killAll: killChildren, quit })
+      const stopOpenCode = vi.fn(async () => undefined)
+      const handler = createBeforeQuitHandler({ getTelemetry: () => telemetry, killAll: killChildren, stopOpenCode, quit })
       const firstEvent = { preventDefault: vi.fn() }
       handler(firstEvent)
 
       expect(firstEvent.preventDefault).toHaveBeenCalledOnce()
       await vi.waitFor(() => expect(quit).toHaveBeenCalledOnce())
       expect(killChildren).toHaveBeenCalledOnce()
+      expect(stopOpenCode).toHaveBeenCalledOnce()
       expect(fetchFn).not.toHaveBeenCalled()
       expect(telemetry.queueLength).toBe(0)
 

@@ -40,6 +40,17 @@ llama.cpp build supports every optional capability.
 
 Source repository: `https://github.com/ggml-org/llama.cpp`
 
+## OpenCode upstream runtime
+
+Metrora packages the official `anomalyco/opencode` `v1.18.27` release binary,
+source commit `b04697366f05419e9bd7a92f841813dd976161c9`, for the bounded Code
+surface. The binary is served unchanged by `opencode serve`; Metrora does not
+fork or copy the upstream Web UI. The upstream project is MIT licensed and its
+complete notice is preserved in
+[`LICENSES/OPENCODE-MIT.txt`](LICENSES/OPENCODE-MIT.txt).
+
+Source repository: `https://github.com/anomalyco/opencode`
+
 ## OpenHands Agent Canvas UI primitives
 
 Metrora Wave 001 adapts small, generic UI mechanics from

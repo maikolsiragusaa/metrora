@@ -13,7 +13,7 @@ const full: DesktopSectionCapabilities = {
   globalRefresh: true,
 }
 
-function renderTopBar(capabilities: DesktopSectionCapabilities, onAskAdvisor?: () => void, onRefresh?: () => void) {
+function renderTopBar(capabilities: DesktopSectionCapabilities, onOpenCode?: () => void, onRefresh?: () => void) {
   render(
     <TopBar
       title="Workspace"
@@ -33,7 +33,7 @@ function renderTopBar(capabilities: DesktopSectionCapabilities, onAskAdvisor?: (
       configSource={null}
       onConfigSelect={vi.fn()}
       capabilities={capabilities}
-      onAskAdvisor={onAskAdvisor}
+      onOpenCode={onOpenCode}
       onRefresh={onRefresh}
     />,
   )
@@ -71,13 +71,13 @@ describe('TopBar scope capabilities', () => {
     expect(screen.queryByLabelText('Claude config source')).not.toBeInTheDocument()
   })
 
-  it('renders one page-level Ask Harness action without adding card-level advice controls', () => {
-    const onAskAdvisor = vi.fn()
-    renderTopBar(full, onAskAdvisor)
+  it('renders one page-level Open Code action without adding card-level advice controls', () => {
+    const onOpenCode = vi.fn()
+    renderTopBar(full, onOpenCode)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Ask Harness' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open Code' }))
 
-    expect(onAskAdvisor).toHaveBeenCalledTimes(1)
-    expect(screen.getAllByRole('button', { name: 'Ask Harness' })).toHaveLength(1)
+    expect(onOpenCode).toHaveBeenCalledTimes(1)
+    expect(screen.getAllByRole('button', { name: 'Open Code' })).toHaveLength(1)
   })
 })

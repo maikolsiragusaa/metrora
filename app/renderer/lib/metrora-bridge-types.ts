@@ -31,6 +31,7 @@ import type { HarnessActionEvent } from '../../electron/act-bridge'
 import type { PerformanceRunV1 } from '../../../src/bench/performance-contract-v1'
 import type { PerformanceComparisonV1 } from '../../../src/bench/performance-compare-v1'
 import type { CanonicalBenchEvidenceV1 } from '../../../src/bench/evidence-contract-v1'
+import type { OpenCodeRuntimeStatus } from '../../electron/opencode/types'
 
 export type AdvisorCredentialProvider = 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'opencode-zen'
 export type AdvisorCredentialState = 'not-configured' | 'ready' | 'locked-unavailable' | 'invalid' | 'needs-reentry'
@@ -47,6 +48,7 @@ export type AdvisorHostedEvent = { requestId: string; provider: AdvisorCredentia
 /** Renderer-safe lifecycle projection; provider text and tool arguments never cross into renderer event listeners. */
 export type AdvisorHostedRendererEvent = { requestId: string; provider: AdvisorCredentialProvider; model: string; kind: AdvisorHostedEventKind; usage?: AdvisorHostedUsage | null; streamed?: boolean; code?: string }
 export type MetroraHarnessActionEvent = HarnessActionEvent
+export type OpenCodeViewBounds = { x: number; y: number; width: number; height: number }
 export type AdvisorHostedChatResult = { provider: AdvisorCredentialProvider; model: string; message: { content: string; tool_calls: AdvisorHostedToolCall[] }; usage: AdvisorHostedUsage | null; streamed: boolean }
 export type BenchTaskResult = {
   taskId: string
@@ -191,6 +193,9 @@ export interface MetroraBridge extends ProjectBridge {
   chooseDirectory(): Promise<string | null>
   chooseFile(kind: 'llama-bench' | 'gguf'): Promise<string | null>
   cliStatus(): Promise<{ found: boolean; path: string | null; error?: string }>
+  opencodeActivate(bounds: OpenCodeViewBounds): Promise<OpenCodeRuntimeStatus>
+  opencodeUpdateBounds(bounds: OpenCodeViewBounds): Promise<boolean>
+  opencodeDeactivate(): Promise<boolean>
   telemetryStatus(): Promise<TelemetryStatus | null>
   setTelemetryEnabled(enabled: boolean): Promise<TelemetryStatus | null>
   completeOnboarding(enabled: boolean): Promise<TelemetryStatus | null>

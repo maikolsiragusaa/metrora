@@ -23,7 +23,7 @@ describe('Sidebar', () => {
       'Insights⌘5',
       'Models⌘6',
       'Compare⌘7',
-      'Harness',
+      'Code',
       'Bench',
     ])
     expect(within(control).getAllByRole('button').map(item => item.textContent)).toEqual(['Capacity', 'Workspace⌘8'])
