@@ -46,8 +46,8 @@ export type OpenCodeView = {
 
 export type OpenCodeWindow = {
   contentView: {
-    addView: (view: OpenCodeView) => void
-    removeView: (view: OpenCodeView) => void
+    addChildView: (view: OpenCodeView) => void
+    removeChildView: (view: OpenCodeView) => void
   }
 }
 
@@ -102,7 +102,7 @@ export class OpenCodeViewManager {
     if (!record) {
       record = this.createRecord(window, connection)
       this.records.add(record)
-      window.contentView.addView(record.view)
+      window.contentView.addChildView(record.view)
     }
 
     record.view.setBounds(bounds)
@@ -163,7 +163,7 @@ export class OpenCodeViewManager {
   private disposeRecord(record: ViewRecord): void {
     this.records.delete(record)
     record.view.setVisible(false)
-    try { record.window.contentView.removeView(record.view) } catch { /* already detached */ }
+    try { record.window.contentView.removeChildView(record.view) } catch { /* already detached */ }
     for (const item of record.navigationListeners) record.view.webContents.removeListener?.(item.event, item.listener)
     if (record.view.webContents.destroy) record.view.webContents.destroy()
     else record.view.webContents.close?.()

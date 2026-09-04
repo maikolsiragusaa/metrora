@@ -146,6 +146,46 @@ describe('OpenCode upstream sidecar runtime', () => {
     expect(runtime.status()).toMatchObject({ state: 'idle', customToolRegistered: null })
   })
 
+  it('does not block OpenCode startup on a slow usage snapshot refresh', async () => {
+    const root = tempDirectory()
+    const userData = join(root, 'user-data')
+    const executable = join(root, 'opencode.exe')
+    writeFileSync(executable, 'official binary placeholder')
+    const child = fakeChild()
+    const spawnProcess = vi.fn(() => child)
+    let releaseSnapshot!: (value: unknown) => void
+    const snapshotRefresh = new Promise<unknown>(resolve => { releaseSnapshot = resolve })
+    const runtime = new OpenCodeRuntime({
+      appPath: root,
+      resourcesPath: root,
+      userDataPath: userData,
+      isPackaged: false,
+      executableOverride: executable,
+      acquirePort: async () => 43130,
+      randomPassword: () => 'p'.repeat(64),
+      spawnProcess,
+      fetchImpl: async url => url.endsWith('/global/health')
+        ? jsonResponse({ healthy: true, version: OPENCODE_VERSION })
+        : jsonResponse([OPENCODE_CUSTOM_TOOL_ID]),
+      readUsageSnapshot: async () => snapshotRefresh,
+      healthTimeoutMs: 500,
+      pollIntervalMs: 1,
+    })
+
+    const startPromise = runtime.start()
+    const startResult = await Promise.race([
+      startPromise,
+      new Promise<'timed-out'>(resolve => setTimeout(() => resolve('timed-out'), 1_000)),
+    ])
+    expect(startResult).not.toBe('timed-out')
+    expect(spawnProcess).toHaveBeenCalledOnce()
+    expect(JSON.parse(readFileSync(runtimePaths(userData).snapshotPath, 'utf8'))).toMatchObject({ available: false })
+
+    releaseSnapshot({ generated: '2026-09-04T10:00:00.000Z', current: { cost: 1, calls: 1, sessions: 1 } })
+    await expect(startPromise).resolves.toMatchObject({ state: 'ready' })
+    await runtime.stop()
+  })
+
   it('fails closed when the healthy server reports a different version', async () => {
     const root = tempDirectory()
     const executable = join(root, 'opencode')

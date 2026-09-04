@@ -45,8 +45,8 @@ function fakeWindow() {
     removed: [],
     attached: new Set(),
     contentView: {
-      addView: view => { window.added.push(view); window.attached.add(view) },
-      removeView: view => { window.removed.push(view); window.attached.delete(view) },
+      addChildView: view => { window.added.push(view); window.attached.add(view) },
+      removeChildView: view => { window.removed.push(view); window.attached.delete(view) },
     },
   }
   return window

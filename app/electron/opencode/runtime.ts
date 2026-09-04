@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { spawn } from 'node:child_process'
+import { access } from 'node:fs/promises'
 import { statSync } from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
@@ -129,6 +130,14 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
+async function ensureInitialSnapshot(paths: OpenCodeRuntimePaths): Promise<void> {
+  try {
+    await access(paths.snapshotPath)
+  } catch {
+    try { await writeUsageSnapshot(paths, sanitizeUsageSnapshot(undefined, new Date())) } catch { /* best effort; the tool reports unavailable */ }
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value))
 }
@@ -227,7 +236,10 @@ export class OpenCodeRuntime {
       if (!executable) throw new OpenCodeError('not-staged', `OpenCode ${OPENCODE_VERSION} is not staged for this platform.`)
 
       await writeRuntimeFiles(paths)
-      await this.refreshSnapshot(paths)
+      await ensureInitialSnapshot(paths)
+      // Usage reconciliation can be slow and is not needed to launch the
+      // bundled OpenCode UI. Keep it off the activation critical path.
+      void this.refreshSnapshot(paths).catch(() => {})
       const port = this.options.acquirePort ? await this.options.acquirePort() : await freeLoopbackPort()
       const args = buildOpenCodeServerArgs(port)
       const password = this.options.randomPassword?.() ?? randomBytes(32).toString('hex')
