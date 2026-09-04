@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { runtimePaths } from './config'
+import { readPreferredOpenCodePort, runtimePaths } from './config'
 import { buildOpenCodeServerArgs, createLaunchEnvironment, OpenCodeRuntime, resolveOpenCodeExecutable, type OpenCodeFetch, type SpawnedOpenCodeProcess } from './runtime'
 import { OPENCODE_COMMIT, OPENCODE_CUSTOM_TOOL_ID, OPENCODE_VERSION } from './types'
 
@@ -183,6 +183,102 @@ describe('OpenCode upstream sidecar runtime', () => {
 
     releaseSnapshot({ generated: '2026-09-04T10:00:00.000Z', current: { cost: 1, calls: 1, sessions: 1 } })
     await expect(startPromise).resolves.toMatchObject({ state: 'ready' })
+    await runtime.stop()
+  })
+
+  it('reuses a preferred loopback port across launches while rotating auth', async () => {
+    const root = tempDirectory()
+    const userData = join(root, 'user-data')
+    const executable = join(root, 'opencode.exe')
+    writeFileSync(executable, 'official binary placeholder')
+    const children: Array<SpawnedOpenCodeProcess & { killed: boolean }> = []
+    const spawnProcess = vi.fn((..._args: unknown[]) => {
+      const child = fakeChild()
+      children.push(child)
+      return child
+    })
+    const acquirePort = vi.fn(async () => 43141)
+    const isLoopbackPortAvailable = vi.fn(async () => true)
+    const authorizations: string[] = []
+    const runtime = new OpenCodeRuntime({
+      appPath: root,
+      resourcesPath: root,
+      userDataPath: userData,
+      isPackaged: false,
+      executableOverride: executable,
+      acquirePort,
+      isLoopbackPortAvailable,
+      spawnProcess,
+      fetchImpl: async (url, init) => {
+        authorizations.push(init?.headers?.Authorization ?? '')
+        return url.endsWith('/global/health')
+          ? jsonResponse({ healthy: true, version: OPENCODE_VERSION })
+          : jsonResponse([OPENCODE_CUSTOM_TOOL_ID])
+      },
+      healthTimeoutMs: 500,
+      pollIntervalMs: 1,
+    })
+
+    await expect(runtime.start()).resolves.toMatchObject({ state: 'ready' })
+    const firstConnection = runtime.getConnection()
+    await runtime.stop()
+    await expect(runtime.start()).resolves.toMatchObject({ state: 'ready' })
+    const secondConnection = runtime.getConnection()
+
+    expect(acquirePort).toHaveBeenCalledOnce()
+    expect(spawnProcess).toHaveBeenCalledTimes(2)
+    expect(spawnProcess.mock.calls[0]?.[1]).toEqual(['serve', '--hostname', '127.0.0.1', '--port', '43141'])
+    expect(spawnProcess.mock.calls[1]?.[1]).toEqual(['serve', '--hostname', '127.0.0.1', '--port', '43141'])
+    expect(firstConnection?.origin).toBe('http://127.0.0.1:43141')
+    expect(secondConnection?.origin).toBe(firstConnection?.origin)
+    expect(firstConnection?.password).not.toBe(secondConnection?.password)
+    expect(authorizations[0]).toBe(authorizations[1])
+    expect(authorizations[2]).toBe(authorizations[3])
+    expect(authorizations[0]).not.toBe(authorizations[2])
+    expect(await readPreferredOpenCodePort(runtimePaths(userData).webSurfacePath)).toBe(43141)
+    expect(children.every(child => child.killed || child === children.at(-1))).toBe(true)
+
+    await runtime.stop()
+  })
+
+  it('reselects and persists a free port when the preferred port is occupied or malformed', async () => {
+    const root = tempDirectory()
+    const userData = join(root, 'user-data')
+    const executable = join(root, 'opencode.exe')
+    const paths = runtimePaths(userData)
+    mkdirSync(join(userData, 'opencode'), { recursive: true })
+    writeFileSync(paths.webSurfacePath, JSON.stringify({ preferredPort: 'not-a-port' }))
+    writeFileSync(executable, 'official binary placeholder')
+    const acquirePort = vi.fn(async () => 43152)
+    const isLoopbackPortAvailable = vi.fn(async (port: number) => port === 43152)
+    const runtime = new OpenCodeRuntime({
+      appPath: root,
+      resourcesPath: root,
+      userDataPath: userData,
+      isPackaged: false,
+      executableOverride: executable,
+      acquirePort,
+      isLoopbackPortAvailable,
+      spawnProcess: () => fakeChild(),
+      fetchImpl: async url => url.endsWith('/global/health')
+        ? jsonResponse({ healthy: true, version: OPENCODE_VERSION })
+        : jsonResponse([OPENCODE_CUSTOM_TOOL_ID]),
+      healthTimeoutMs: 500,
+      pollIntervalMs: 1,
+    })
+
+    await expect(runtime.start()).resolves.toMatchObject({ state: 'ready' })
+    expect(acquirePort).toHaveBeenCalledOnce()
+    expect(isLoopbackPortAvailable).toHaveBeenCalledWith(43152)
+    expect(JSON.parse(readFileSync(paths.webSurfacePath, 'utf8'))).toEqual({ preferredPort: 43152 })
+
+    await runtime.stop()
+    writeFileSync(paths.webSurfacePath, JSON.stringify({ preferredPort: 43151 }))
+    await expect(runtime.start()).resolves.toMatchObject({ state: 'ready' })
+    expect(acquirePort).toHaveBeenCalledTimes(2)
+    expect(isLoopbackPortAvailable).toHaveBeenNthCalledWith(2, 43151)
+    expect(isLoopbackPortAvailable).toHaveBeenNthCalledWith(3, 43152)
+    expect(JSON.parse(readFileSync(paths.webSurfacePath, 'utf8'))).toEqual({ preferredPort: 43152 })
     await runtime.stop()
   })
 

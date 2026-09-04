@@ -6,13 +6,16 @@ import type { OpenCodeRuntimeStatus } from './types'
 
 const status: OpenCodeRuntimeStatus = { state: 'ready', version: '1.18.27', commit: 'b04697366f05419e9bd7a92f841813dd976161c9', customToolRegistered: true, detail: null }
 
-type FakeWebContents = OpenCodeWebContents & { opened: string[]; popupHandler?: () => { action: 'deny' }; destroyed: boolean; focused: boolean }
+type FakeWebContents = OpenCodeWebContents & { opened: string[]; scripts: string[]; storage: string | null; url: string; popupHandler?: () => { action: 'deny' }; destroyed: boolean; focused: boolean }
 type FakeView = OpenCodeView & { webContents: FakeWebContents; visible: boolean; bounds: { x: number; y: number; width: number; height: number }; emit: (event: string, ...args: any[]) => void }
 
-function fakeView(): FakeView {
+function fakeView(reportedUrl?: string): FakeView {
   const listeners = new Map<string, Set<(...args: any[]) => void>>()
   const webContents: FakeWebContents = {
     opened: [],
+    scripts: [],
+    storage: null,
+    url: '',
     destroyed: false,
     focused: false,
     on(event, listener) {
@@ -24,7 +27,13 @@ function fakeView(): FakeView {
       listeners.get(event)?.delete(listener)
     },
     setWindowOpenHandler(handler) { webContents.popupHandler = handler },
-    loadURL: async url => { webContents.opened.push(url) },
+    loadURL: async url => { webContents.opened.push(url); webContents.url = reportedUrl ?? url },
+    executeJavaScript: async code => {
+      webContents.scripts.push(code)
+      if (code.includes('localStorage.getItem')) return webContents.storage
+      return true
+    },
+    getURL: () => webContents.url,
     focus: () => { webContents.focused = true },
     destroy: () => { webContents.destroyed = true },
   }
@@ -141,5 +150,78 @@ describe('OpenCode WebContentsView boundary', () => {
     expect(runtime.stop).toHaveBeenCalledOnce()
     expect(app.removeListener).toHaveBeenCalledOnce()
     expect(appListeners.has('login')).toBe(false)
+  })
+
+  it('prewarms a hidden view, seeds upstream project storage, reveals only after load, and keeps the runtime alive on navigation', async () => {
+    const app: OpenCodeApp = { on: vi.fn(), removeListener: vi.fn() }
+    const connection = { origin: 'http://127.0.0.1:43127', username: 'metrora', password: 'secret-password' }
+    const runtime = {
+      start: vi.fn(async () => status),
+      stop: vi.fn(async () => undefined),
+      status: vi.fn(() => status),
+      getConnection: vi.fn(() => connection),
+    }
+    const view = fakeView()
+    const window = fakeWindow()
+    const manager = new OpenCodeViewManager(runtime, {
+      app,
+      createView: () => view,
+      platform: 'win32',
+      readDesktopProjects: async () => ({ projects: [{ worktree: 'C:/Repo/DesktopOnly', expanded: true }] }),
+    })
+
+    const prewarm = manager.prewarm(window)
+    const activate = manager.activate(window, { x: 4, y: 5, width: 900, height: 600 })
+    expect(view.visible).toBe(false)
+    await expect(Promise.all([prewarm, activate])).resolves.toEqual([status, status])
+
+    expect(runtime.start).toHaveBeenCalledOnce()
+    expect(window.added).toHaveLength(1)
+    expect(window.attached).toEqual(new Set([view]))
+    expect(view.webContents.opened).toHaveLength(2)
+    expect(view.webContents.scripts.some(script => script.includes('localStorage.setItem'))).toBe(true)
+    expect(view.webContents.scripts.some(script => script.includes('C:/Repo/DesktopOnly'))).toBe(true)
+    expect(view.visible).toBe(true)
+    expect(view.webContents.focused).toBe(true)
+
+    manager.deactivate(window)
+    expect(window.attached).toEqual(new Set([view]))
+    expect(view.visible).toBe(false)
+    await manager.activate(window, { x: 8, y: 9, width: 700, height: 500 })
+    expect(window.added).toHaveLength(1)
+    expect(view.webContents.opened).toHaveLength(2)
+    expect(view.visible).toBe(true)
+
+    manager.disposeWindow(window)
+    expect(window.removed).toEqual([view])
+    expect(window.attached).toEqual(new Set())
+    expect(view.webContents.destroyed).toBe(true)
+    expect(runtime.stop).not.toHaveBeenCalled()
+    await manager.shutdown()
+    expect(runtime.stop).toHaveBeenCalledOnce()
+  })
+
+  it('fails closed before seeding when the loaded URL is not the expected loopback origin', async () => {
+    const app: OpenCodeApp = { on: vi.fn(), removeListener: vi.fn() }
+    const connection = { origin: 'http://127.0.0.1:43127', username: 'metrora', password: 'secret-password' }
+    const runtime = {
+      start: vi.fn(async () => status),
+      stop: vi.fn(async () => undefined),
+      status: vi.fn(() => status),
+      getConnection: vi.fn(() => connection),
+    }
+    const view = fakeView('https://example.com/')
+    const window = fakeWindow()
+    const manager = new OpenCodeViewManager(runtime, {
+      app,
+      createView: () => view,
+      readDesktopProjects: async () => ({ projects: [{ worktree: 'C:/Repo/DesktopOnly', expanded: true }] }),
+      platform: 'win32',
+    })
+
+    await expect(manager.activate(window, { x: 0, y: 0, width: 900, height: 600 })).resolves.toMatchObject({ state: 'unavailable' })
+    expect(view.webContents.scripts).toEqual([])
+    expect(view.visible).toBe(false)
+    expect(window.attached).toEqual(new Set())
   })
 })

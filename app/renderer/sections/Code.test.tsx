@@ -21,7 +21,9 @@ describe('Code upstream surface', () => {
 
     expect(screen.getByRole('region', { name: 'Code' })).toBeInTheDocument()
     expect(screen.getByTestId('opencode-web-contents-host')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Preparing OpenCode')
     await waitFor(() => expect(bridge.opencodeActivate).toHaveBeenCalledWith({ x: 4, y: 5, width: 800, height: 600 }))
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
     expect(bridge.opencodeUpdateBounds).not.toHaveBeenCalled()
 
     rendered.unmount()

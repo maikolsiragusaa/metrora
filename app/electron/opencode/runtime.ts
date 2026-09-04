@@ -5,7 +5,7 @@ import { statSync } from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
 
-import { runtimePaths, writeRuntimeFiles, writeUsageSnapshot, type OpenCodeRuntimePaths } from './config'
+import { readPreferredOpenCodePort, runtimePaths, writePreferredOpenCodePort, writeRuntimeFiles, writeUsageSnapshot, type OpenCodeRuntimePaths } from './config'
 import { sanitizeUsageSnapshot } from './snapshot'
 import {
   OPENCODE_COMMIT,
@@ -53,6 +53,7 @@ export type OpenCodeRuntimeOptions = {
   spawnProcess?: (file: string, args: string[], options: OpenCodeSpawnOptions) => SpawnedOpenCodeProcess
   fetchImpl?: OpenCodeFetch
   acquirePort?: () => Promise<number>
+  isLoopbackPortAvailable?: (port: number) => Promise<boolean>
   readUsageSnapshot?: () => Promise<unknown>
   now?: () => number
   randomPassword?: () => string
@@ -114,6 +115,23 @@ export async function freeLoopbackPort(): Promise<number> {
       const address = server.address()
       const port = typeof address === 'object' && address ? address.port : 0
       server.close(error => error ? reject(error) : resolve(port))
+    })
+  })
+}
+
+export async function isLoopbackPortAvailable(port: number): Promise<boolean> {
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) return false
+  return await new Promise<boolean>(resolve => {
+    const server = net.createServer()
+    let settled = false
+    const finish = (available: boolean) => {
+      if (settled) return
+      settled = true
+      resolve(available)
+    }
+    server.once('error', () => finish(false))
+    server.listen(port, OPENCODE_LOOPBACK_HOST, () => {
+      server.close(error => finish(!error))
     })
   })
 }
@@ -240,7 +258,7 @@ export class OpenCodeRuntime {
       // Usage reconciliation can be slow and is not needed to launch the
       // bundled OpenCode UI. Keep it off the activation critical path.
       void this.refreshSnapshot(paths).catch(() => {})
-      const port = this.options.acquirePort ? await this.options.acquirePort() : await freeLoopbackPort()
+      const port = await this.acquireServerPort(paths)
       const args = buildOpenCodeServerArgs(port)
       const password = this.options.randomPassword?.() ?? randomBytes(32).toString('hex')
       if (!password || password.length < 32) throw new OpenCodeError('auth', 'OpenCode launch credentials could not be generated.')
@@ -333,6 +351,21 @@ export class OpenCodeRuntime {
     const value = await responseJson(response)
     if (!Array.isArray(value)) throw new OpenCodeError('custom-tool', 'OpenCode tool discovery returned an invalid response.')
     return value.slice(0, 1_000).every(item => typeof item === 'string') && value.includes(OPENCODE_CUSTOM_TOOL_ID)
+  }
+
+  private async acquireServerPort(paths: OpenCodeRuntimePaths): Promise<number> {
+    const isAvailable = this.options.isLoopbackPortAvailable ?? isLoopbackPortAvailable
+    const preferred = await readPreferredOpenCodePort(paths.webSurfacePath)
+    if (preferred !== null && await isAvailable(preferred)) return preferred
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const candidate = this.options.acquirePort ? await this.options.acquirePort() : await freeLoopbackPort()
+      if (!Number.isInteger(candidate) || candidate < 1 || candidate > 65_535) continue
+      if (!await isAvailable(candidate)) continue
+      await writePreferredOpenCodePort(paths.webSurfacePath, candidate)
+      return candidate
+    }
+    throw new OpenCodeError('port', 'OpenCode could not acquire an available loopback port.')
   }
 
   private async refreshSnapshot(paths: OpenCodeRuntimePaths): Promise<void> {

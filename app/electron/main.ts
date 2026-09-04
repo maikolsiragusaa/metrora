@@ -14,6 +14,7 @@ import { AdvisorCredentialStore } from './advisor-credentials'
 import { createAdvisorHostedHandlers, type AdvisorHostedEvent } from './advisor-provider'
 import { createHarnessActHandlers, type HarnessActionEvent } from './act-bridge'
 import { OpenCodeRuntime } from './opencode/runtime'
+import { readOpenCodeDesktopProjects, resolveOpenCodeDesktopGlobalStorePath } from './opencode/project-import'
 import { OpenCodeViewManager, normalizeOpenCodeBounds, type OpenCodeApp, type OpenCodeView, type OpenCodeWindow } from './opencode/view'
 
 export { createApplicationMenuTemplate } from './menu'
@@ -220,9 +221,12 @@ function registerHandlers(): void {
       { extraEnv: { METRORA_READ_MODE: 'snapshot' }, priority: 'background' },
     ),
   })
+  const openCodeDesktopGlobalStorePath = resolveOpenCodeDesktopGlobalStorePath(app.getPath('appData'))
   openCodeViewManager = new OpenCodeViewManager(openCodeRuntime, {
     app: app as unknown as OpenCodeApp,
     createView: () => new WebContentsView({ webPreferences: createOpenCodeWebPreferences() }) as unknown as OpenCodeView,
+    readDesktopProjects: () => readOpenCodeDesktopProjects(openCodeDesktopGlobalStorePath, process.platform),
+    platform: process.platform,
   })
   const handlers = createBridgeHandlers({
     spawnCli,
@@ -370,7 +374,17 @@ function createWindow(): BrowserWindow {
     },
   })
 
-  win.once('ready-to-show', () => win.show())
+  let prewarmScheduled = false
+  const scheduleOpenCodePrewarm = () => {
+    if (prewarmScheduled) return
+    prewarmScheduled = true
+    setTimeout(() => { void openCodeViewManager?.prewarm(win as unknown as OpenCodeWindow).catch(() => {}) }, 250)
+  }
+  win.once('ready-to-show', () => {
+    win.show()
+    scheduleOpenCodePrewarm()
+  })
+  win.webContents.once('did-finish-load', scheduleOpenCodePrewarm)
 
   // This window only ever renders the bundled renderer; block in-page navigation
   // and popups so a hijacked link can't turn it into a browser.

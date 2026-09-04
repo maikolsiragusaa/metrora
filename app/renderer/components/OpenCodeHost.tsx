@@ -12,7 +12,7 @@ function readBounds(element: HTMLDivElement): OpenCodeViewBounds | null {
 /** Empty renderer host only: the actual Code surface is a main-process View. */
 export function OpenCodeHost() {
   const hostRef = useRef<HTMLDivElement>(null)
-  const [unavailable, setUnavailable] = useState(false)
+  const [state, setState] = useState<'loading' | 'ready' | 'unavailable'>('loading')
 
   useLayoutEffect(() => {
     const host = hostRef.current
@@ -28,9 +28,9 @@ export function OpenCodeHost() {
       if (!value) return
       try {
         const status = await metrora.opencodeActivate(value)
-        if (active && status.state !== 'ready') setUnavailable(true)
+        if (active) setState(status.state === 'ready' ? 'ready' : 'unavailable')
       } catch {
-        if (active) setUnavailable(true)
+        if (active) setState('unavailable')
       }
     }
     void activate()
@@ -48,7 +48,8 @@ export function OpenCodeHost() {
 
   return (
     <div ref={hostRef} className="code-view-host" data-testid="opencode-web-contents-host" aria-label="OpenCode upstream surface">
-      {unavailable ? <div className="code-view-unavailable" role="alert">Code is unavailable on this device.</div> : null}
+      {state === 'loading' ? <div className="code-view-loading" role="status" aria-live="polite"><span className="code-view-spinner" aria-hidden="true" />Preparing OpenCode…</div> : null}
+      {state === 'unavailable' ? <div className="code-view-unavailable" role="alert">Code is unavailable on this device.</div> : null}
     </div>
   )
 }

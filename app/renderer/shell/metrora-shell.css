@@ -583,6 +583,29 @@
   background: var(--metrora-surface-app);
 }
 
+.metrora-shell .code-view-loading {
+  align-items: center;
+  align-self: center;
+  display: flex;
+  gap: 9px;
+  margin: auto;
+  color: var(--metrora-text-muted);
+  font-size: 13px;
+}
+
+.metrora-shell .code-view-spinner {
+  width: 12px;
+  height: 12px;
+  border: 1px solid var(--metrora-border);
+  border-top-color: var(--metrora-text-muted);
+  border-radius: 50%;
+  animation: metrora-code-spin .8s linear infinite;
+}
+
+@keyframes metrora-code-spin {
+  to { transform: rotate(360deg); }
+}
+
 .metrora-shell .code-view-unavailable {
   align-self: center;
   margin: auto;

@@ -1,4 +1,4 @@
-import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
 import { OPENCODE_CUSTOM_TOOL_ID, OPENCODE_VERSION } from './types'
@@ -6,12 +6,19 @@ import { OPENCODE_USAGE_TOOL_SOURCE } from './tool'
 import type { MetroraUsageSnapshot } from './snapshot'
 
 export const LOOPBACK_HOST = '127.0.0.1' as const
+export const OPENCODE_WEB_SURFACE_STATE_FILENAME = 'web-surface.json' as const
+export const OPENCODE_WEB_SURFACE_STATE_MAX_BYTES = 16 * 1024
+
+export type OpenCodeWebSurfaceState = {
+  preferredPort: number
+}
 
 export type OpenCodeRuntimePaths = {
   runtimeDir: string
   configPath: string
   toolsDir: string
   snapshotPath: string
+  webSurfacePath: string
 }
 
 export function runtimePaths(userDataPath: string): OpenCodeRuntimePaths {
@@ -21,7 +28,36 @@ export function runtimePaths(userDataPath: string): OpenCodeRuntimePaths {
     configPath: path.join(runtimeDir, 'opencode.json'),
     toolsDir: path.join(runtimeDir, 'tools'),
     snapshotPath: path.join(runtimeDir, 'metrora-usage-snapshot.json'),
+    webSurfacePath: path.join(userDataPath, 'opencode', OPENCODE_WEB_SURFACE_STATE_FILENAME),
   }
+}
+
+export function parsePreferredOpenCodePort(value: unknown): number | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const preferredPort = (value as { preferredPort?: unknown }).preferredPort
+  return typeof preferredPort === 'number' && Number.isInteger(preferredPort) && preferredPort >= 1 && preferredPort <= 65_535
+    ? preferredPort
+    : null
+}
+
+/** Read only the tiny Metrora-owned origin hint; never stores auth or project data. */
+export async function readPreferredOpenCodePort(filePath: string): Promise<number | null> {
+  try {
+    const info = await stat(filePath)
+    if (!info.isFile() || info.size > OPENCODE_WEB_SURFACE_STATE_MAX_BYTES) return null
+    const raw = await readFile(filePath, 'utf8')
+    if (Buffer.byteLength(raw, 'utf8') > OPENCODE_WEB_SURFACE_STATE_MAX_BYTES) return null
+    return parsePreferredOpenCodePort(JSON.parse(raw) as unknown)
+  } catch {
+    return null
+  }
+}
+
+export async function writePreferredOpenCodePort(filePath: string, preferredPort: number): Promise<void> {
+  if (parsePreferredOpenCodePort({ preferredPort }) === null) throw new Error('OpenCode preferred port is invalid.')
+  await mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 })
+  await writeFile(filePath, JSON.stringify({ preferredPort }), { encoding: 'utf8', mode: 0o600 })
+  await restrictPermissions(filePath, 0o600)
 }
 
 async function loadRuntimeConfig(filePath: string): Promise<Record<string, unknown>> {
