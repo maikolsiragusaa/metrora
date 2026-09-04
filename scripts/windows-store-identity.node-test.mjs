@@ -30,14 +30,14 @@ const expected = Object.freeze({
 
 assert.equal(
   desktopPackage.scripts?.['package:store'],
-  'npm run stage-cli && npm run build && electron-builder --win appx --x64 --publish never',
+  'npm run stage-cli && npm run stage-opencode && npm run build && electron-builder --win appx --x64 --publish never',
   'the Store build must remain an explicit non-publishing x64 AppX target',
 )
 
 assert.equal(
   desktopPackage.scripts?.['package:win'],
-  'npm run stage-cli && npm run build && electron-builder --win',
-  'the existing Windows packaging command must remain unchanged',
+  'npm run stage-cli && npm run stage-opencode && npm run build && electron-builder --win',
+  'the Windows packaging command must stage CLI and OpenCode before electron-builder',
 )
 
 assert.equal(
