@@ -62,15 +62,13 @@ The Electron main process owns privileged work:
 - validation of external URLs and export destinations.
 
 The preload bridge exposes a narrow typed API. The renderer runs with context isolation and no Node integration, consumes public DTOs and must not implement its own parser, pricing engine or evidence authority.
-### Advisor — app/renderer/advisor/
 
-Advisor is a read-only conversational layer over canonical desktop records. Its
-public flow is deterministic evidence tools → Advisor Kernel →
-AdvisorModelRuntime → a local loopback runtime → a session-local UI. Electron
-main owns the local model HTTP boundary; the renderer receives only the typed
-preload bridge. See [ADVISOR_PUBLIC_FOUNDATION.md](ADVISOR_PUBLIC_FOUNDATION.md)
-for the public contract, privacy boundary, runtime capability caveats and
-provenance.
+### Code — embedded upstream surface
+
+The Desktop Code destination hosts the accepted upstream coding surface. Metrora
+owns the privileged host lifecycle, navigation boundary, usage snapshot and
+accounting projection; the upstream UI, sessions and tools remain outside
+Metrora's factual/evidence authority.
 
 State orchestration, domain formatting and presentation are extracted into focused modules before a component or main-process module becomes oversized.
 

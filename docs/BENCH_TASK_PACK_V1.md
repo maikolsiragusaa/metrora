@@ -3,7 +3,7 @@
 **Evidence family:** Compatibility / Runtime Health  
 **Current status:** shipped public local contract  
 
-See [Bench evidence families](BENCH_EVIDENCE_FAMILIES.md) for the distinction between Performance, Compatibility, future Coding Evaluation and future Agent/Harness Evaluation.
+See [Bench evidence families](BENCH_EVIDENCE_FAMILIES.md) for the distinction between Performance, Compatibility, future Coding Evaluation and future Agent Evaluation.
 
 The existing `metrora.bench.core@1.0.0` task pack is a bounded local-first **Compatibility / Runtime Health** surface for checking a selected Ollama runtime/model against a small fixed versioned set of synthetic tasks.
 
@@ -93,10 +93,11 @@ The result digest covers pack, selected/reported model, runtime version and boun
 
 Implementation uses Node's bounded HTTP `fetch` and follows official Ollama `/api/generate`, `/api/version` and streaming semantics. Individual model weights remain subject to their own licences/operator review.
 
-## Harness relationship
+## Consumer relationship
 
-The current public implementation exposes Bench evidence through the existing read-only `AdvisorToolV1` tool contract. Product-facing direction is Metrora Harness; current `Advisor*` names remain compatibility identifiers.
+Desktop Bench and read-only MCP consume the canonical Compatibility records and
+comparisons. Consumers may explain what a result proves, but may not turn Core
+Compatibility into coding quality or a universal model ranking.
 
-Harness may explain what the Compatibility result proves and compare compatible runs. It may not turn Core Compatibility into coding quality or universal model ranking.
-
-Starting a Compatibility run remains separate from the current read-only Harness tool boundary and requires explicit action authority when routed through ACT.
+Starting a Compatibility run remains a bounded Bench/CLI operation. Any future
+state-changing caller requires the explicit action authority defined by ACT.

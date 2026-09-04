@@ -6,20 +6,21 @@
 
 ACT is the explicit trusted boundary for operations that run a controlled workload or change state.
 
-The current conversational implementation remains read-only/proposal-only. Product-facing direction calls that surface **Metrora Harness**; current code/contracts still use `Advisor*` identifiers.
-
-Harness may understand a state-changing request and prepare a proposal. It does **not** authorize itself.
+The former custom conversational and Desktop proposal bridge is no longer
+shipped after the accepted Code surface became the product boundary. ACT still
+defines the trusted contract for any bounded caller and does **not** authorize
+itself from an untrusted request.
 
 Canonical relationship:
 
 ```text
-Harness conversation / product workflow
+bounded caller / product workflow
 → read-only evidence + proposal
 → explicit trusted confirmation
 → ActionContractV1 validation
 → bounded executor
 → lifecycle + canonical result/evidence
-→ Harness explanation
+→ caller-facing result
 ```
 
 ACT is an execution authority underneath product workflows, not a user-facing `Act` chat mode.
@@ -76,9 +77,9 @@ Approval is issued and verified by a trusted process using exact action, proposa
 
 Execution delegates to the existing canonical task-pack runner and history store. ACT persists lifecycle state, bounded progress/counts, digests and references only; task prompts, generated output, credentials, repository paths and shell operations are not persisted or accepted. Orphaned running state is recovered only from exact existing evidence, otherwise it reaches a terminal failure/cancellation without retry.
 
-## Shipped confirmation UX
+## Contract-facing confirmation shape
 
-Before execution the user should see material effects in ordinary language, for example:
+Before execution, a caller should show material effects in ordinary language, for example:
 
 ```text
 Core Compatibility
@@ -91,7 +92,10 @@ Writes      Local Bench history
 [Run] [Cancel]
 ```
 
-The current Harness action card exposes the selected model, pack identity, bounded checks/progress, proposal digest and safe lifecycle state. It does not expose the internal contract or approval token. The renderer sends only the action ID and proposal digest to the trusted Electron host.
+The former custom conversational action card and Desktop ACT bridge are not part
+of the shipped surface. Any future caller must expose only the selected model,
+pack identity, bounded checks/progress, proposal digest and safe lifecycle state;
+the internal contract and approval token stay inside the trusted authority.
 
 The model does not supply the trusted approval token merely by emitting `yes` or a tool call.
 
@@ -108,7 +112,8 @@ proposed
 
 Progress must be tied to actual executed work/result evidence.
 
-Metrora Harness displays the narrow Core Compatibility lifecycle inline in the same observable style as read tools. Tool/action activity remains compact and bounded.
+CLI or other explicitly authorized consumers may display the narrow Core
+Compatibility lifecycle. Tool/action activity remains compact and bounded.
 
 ## Smartphone projection
 
@@ -154,7 +159,7 @@ No dependency is added by this document.
 
 ## Explicitly outside this foundation
 
-- Harness automatic execution;
+- automatic conversational execution;
 - arbitrary shell/repository writes;
 - mobile write/execute routes;
 - managed Bench;
@@ -165,13 +170,14 @@ No dependency is added by this document.
 
 ## Relationship to current Draft implementation work
 
-This branch contains the concrete `metrora.action.v1` implementation around Core Compatibility for review against current `main`. Harness remains proposal-only at the product/model boundary: the renderer cannot authorize, construct or execute the action. A trusted Electron host re-reads the persisted proposal, canonicalizes the sole `ActionContractV1`, requires explicit confirmation, and delegates to ACT. The implementation does not add a second runner, change mobile execution, or introduce MCP.
+This branch contains the concrete `metrora.action.v1` implementation around Core Compatibility for review against current `main`. The core/CLI boundary keeps proposal validation, trusted approval, execution, cancellation, recovery and evidence under one ACT authority. The removed custom renderer bridge is not replaced by a second runner, mobile execution path or MCP action path.
 
-Any acceptance pass must ensure there is one ACT authority rather than separate `AdvisorActionProposal` and ACT execution systems that can diverge.
+Any acceptance pass must ensure there is one ACT authority rather than a
+separate conversational proposal system that can diverge.
 
 ## Ratified public principles
 
-1. Harness may propose; ACT authorizes/executes.
+1. Callers may propose; ACT authorizes/executes.
 2. ACT is not a chat mode.
 3. The first safe action is Core Compatibility, not arbitrary Bench execution.
 4. Mainstream Bench remains Performance-first.

@@ -31,13 +31,10 @@ Security reports are welcome for:
 - Revocable and scoped device pairing.
 - Explicit provenance for analytical values.
 
-## Advisor-specific boundaries
+## Metrora tool boundaries
 
-- Advisor V1 exposes only the versioned, content-minimal `advisor-tool-v1` read contract. Its immutable scope is owned by Metrora; Bench execution, agent launch, routing changes, and policy changes are not Advisor tools.
-- Local Ollama/LM Studio calls use fixed loopback origins from Electron main. Hosted BYOK calls use fixed official provider origins from Electron main after explicit consent; arbitrary endpoints and gateway routing are not accepted.
-- Hosted lifecycle events projected to the renderer contain status/usage metadata only. Provider text, streaming deltas, tool-call arguments, and raw tool-call payloads stay out of renderer event listeners.
-- Provider credentials are accepted through a transient password field, sent to main-process custody, cleared from renderer state, and never returned through the status API. Durable storage uses Electron `safeStorage` when available.
-- Tool-result JSON is bounded and strictly checked for content-minimal privacy before it is sent to a model. Raw prompts, responses, source, unrestricted paths, secrets, and hidden reasoning are not part of the Advisor contract.
+- The versioned, content-minimal `advisor-tool-v1` read contract exposes only bounded Metrora evidence. Bench execution, agent launch, routing changes and policy changes are outside that tool boundary.
+- Tool-result JSON is bounded and strictly checked for content-minimal privacy. Raw prompts, responses, source, unrestricted paths, secrets and hidden reasoning are not part of the Metrora tool contract.
 
 ## Release integrity
 

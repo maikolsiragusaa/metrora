@@ -22,8 +22,8 @@ import type {
   MetroraToolResultEnvelope,
 } from './types.js'
 
-// This is the stable wire identifier already used by the Advisor foundation.
-// The public product name can move to Harness without breaking old transports.
+// This is the stable wire identifier retained for existing transports. The
+// contract name is independent of any product surface that consumes it.
 export const METRORA_TOOL_CONTRACT_VERSION = 'advisor-tool-v1' as const
 export const METRORA_TOOL_SCHEMA_VERSION = 1 as const
 export const METRORA_TOOL_ARGUMENT_MAX_BYTES = 8 * 1024
