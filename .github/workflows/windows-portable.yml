@@ -85,6 +85,9 @@ jobs:
       - name: Stage bundled CLI
         run: npm --prefix app run stage-cli
 
+      - name: Stage bundled OpenCode
+        run: npm --prefix app run stage-opencode
+
       - name: Build desktop application
         run: npm --prefix app run build
 
