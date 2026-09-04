@@ -71,9 +71,9 @@ calls do not start Bench runs, mutate usage history or invoke actions.
 ## Non-goals
 
 This V1 is not a shell, filesystem, repository, credential, provider-proxy,
-model-runner or hosted Metrora service. It does not expose ACT, Swarm,
-approval, execution or agent-management operations. External clients receive
-factual evidence only.
+model-runner or hosted Metrora service. It does not expose coding-agent
+execution, approval, filesystem mutation or agent-management operations.
+External clients receive factual evidence only.
 
 OpenHands and ACP remain characterized as replaceable external-agent/runtime
 boundaries. No production adapter for either is included in this wave.

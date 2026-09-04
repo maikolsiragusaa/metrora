@@ -8,7 +8,7 @@ import { parseAllSessions, setInteractiveScanUI } from './parser.js'
 import { getAllProviders } from './providers/index.js'
 import type { ProjectSummary, DateRange } from './types.js'
 import { patchStdoutForWindows } from './ink-win.js'
-import { recommendModelDefault, type ModelDefaultRecommendation } from './act/model-defaults.js'
+import { recommendModelDefault, type ModelDefaultRecommendation } from './optimization-operations/model-defaults.js'
 
 const ORANGE = '#FF8C42'
 const GREEN = '#5BF5A0'
@@ -143,7 +143,7 @@ function ModelSelector({ models, recommendations, onSelect, onBack }: ModelSelec
               </Text>
               <Text color={DIM}>  Current:  {(rec.currentOneShotRate*100).toFixed(1)}% one-shot over {rec.currentEditTurns} edits, {formatCost(rec.currentCostPerEdit)}/edit</Text>
               <Text color={DIM}>  Candidate: {(rec.candidateOneShotRate*100).toFixed(1)}% one-shot over {rec.candidateEditTurns} edits, {formatCost(rec.candidateCostPerEdit)}/edit</Text>
-              <Text>  To apply: <Text color="#00FFFF">metrora act apply-model {rec.project}</Text></Text>
+              <Text>  To apply: <Text color="#00FFFF">metrora optimization-actions apply-model {rec.project}</Text></Text>
             </Box>
           ))}
         </Box>

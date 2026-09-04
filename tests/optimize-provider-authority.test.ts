@@ -20,7 +20,7 @@ const FAKE_HOME = process.env['METRORA_TEST_OPTIMIZE_AUTHORITY_HOME']!
 const roots = [FAKE_HOME]
 let fixtureNumber = 0
 
-import { runOptimizeApply } from '../src/act/optimize-apply.js'
+import { runOptimizeApply } from '../src/optimization-operations/optimize-apply.js'
 import { buildOptimizeJsonReport, runOptimize, scanAndDetect } from '../src/optimize.js'
 import type { ProjectSummary } from '../src/types.js'
 

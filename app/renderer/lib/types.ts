@@ -435,9 +435,9 @@ export type ScannedDevice = {
 }
 export type DeviceScanResult = { found: ScannedDevice[] }
 
-// ————— src/act/report.ts buildActReportJson —————
+// ————— src/optimization-operations/report.ts buildOptimizationReportJson —————
 
-export type ActReportJson = {
+export type OptimizationReportJson = {
   totals: {
     realizedCostUSD: number
     measuredActions: number

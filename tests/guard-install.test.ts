@@ -3,8 +3,8 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { runAction } from '../src/act/apply.js'
-import { readRecords } from '../src/act/journal.js'
+import { runAction } from '../src/optimization-operations/apply.js'
+import { readRecords } from '../src/optimization-operations/journal.js'
 import {
   buildInstall, buildUninstall, inspectInstall, settingsPathFor,
   GUARD_HOOK_PREFIX, GUARD_STATUSLINE_COMMAND,

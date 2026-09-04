@@ -1,5 +1,5 @@
 import { normalizeOptimizeProvider } from './optimize-cache-key.js'
-import type { ActionKind, ActionPlan } from './act/types.js'
+import type { ActionKind, ActionPlan } from './optimization-operations/types.js'
 import type { FindingId } from './optimize.js'
 
 /** Optimize's transcript/config evidence is currently Claude-specific. */

@@ -14,7 +14,7 @@ import { metrora } from '../lib/ipc'
 import { contiguousDailyWindow, dataStartKey, formatChartDate, localDateKey, sliceDailyToPeriod, sliceDailyToRange } from '../lib/period'
 import { cacheReuseMultiple, formatReuseMultiple } from '../lib/usageMetrics'
 import type {
-  ActReportJson,
+  OptimizationReportJson,
   DailyHistoryEntry,
   DateRange,
   MenubarPayload,
@@ -327,7 +327,7 @@ export function OverviewContent({
   onNavigate?: (section: 'optimize' | 'sessions') => void
   ready?: boolean
 }) {
-  const actReport = usePolled<ActReportJson>(() => metrora.getActReport(), [refreshToken], { enabled: ready, memoKey: 'overview-act' })
+  const optimizationReport = usePolled<OptimizationReportJson>(() => metrora.getOptimizationReport(), [refreshToken], { enabled: ready, memoKey: 'overview-optimization' })
   const yieldReport = usePolled<YieldJsonReport>(() => metrora.getYield(period, provider), [period, provider, refreshToken], { enabled: ready, memoKey: `overview-yield|${period}|${provider}` })
   const [shareOpen, setShareOpen] = useState(false)
   const { data, error } = overview
@@ -357,8 +357,8 @@ export function OverviewContent({
       : aggregateModels(rangeActive ? sliceDailyToRange(data.history.daily, range.from, range.to) : periodDaily)
   )
   const topModel = data.current.topModels[0]
-  const saved = actReport.data?.totals.realizedCostUSD ?? 0
-  const applied = saved > 0 ? (actReport.data?.totals.measuredActions ?? 0) : 0
+  const saved = optimizationReport.data?.totals.realizedCostUSD ?? 0
+  const applied = saved > 0 ? (optimizationReport.data?.totals.measuredActions ?? 0) : 0
   const localSaved = data.current.localModelSavings.totalUSD
   const signals = deriveSignals(data, now, rangeActive)
   const decision = deriveOverviewDecision(data, signals, rangeActive)

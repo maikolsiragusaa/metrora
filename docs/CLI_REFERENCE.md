@@ -110,7 +110,7 @@ Pricing overrides and aliases affect interpretation of local reports. Preserve e
 
 | Command group | Purpose |
 | --- | --- |
-| `metrora act` | Inspect, report and undo journaled configuration changes. |
+| `metrora optimization-actions` | Inspect, report and undo journaled local configuration changes. |
 | `metrora guard` | Install or manage opt-in session budget guardrails where supported. |
 | `metrora sync` | Manage supported local synchronization behavior. |
 

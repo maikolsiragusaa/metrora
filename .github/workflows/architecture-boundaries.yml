@@ -42,3 +42,5 @@ jobs:
         env:
           SOURCE_SIZE_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: node scripts/check-source-size-ratchet.mjs
+      - name: Verify pinned OpenCode staging reuse
+        run: node --test app/scripts/stage-opencode.node-test.mjs

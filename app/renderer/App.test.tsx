@@ -26,7 +26,7 @@ const mocks = vi.hoisted(() => ({
   getCompare: vi.fn(),
   getQuota: vi.fn(),
   getPlans: vi.fn(),
-  getActReport: vi.fn(),
+  getOptimizationReport: vi.fn(),
   getYield: vi.fn(),
   getDevices: vi.fn(),
   getDevicesScan: vi.fn(),
@@ -138,7 +138,7 @@ function installDefaultMocks() {
     { schemaVersion: 1, provider: 'codex', authority: 'provider-reported', availability: 'unavailable', connection: 'disconnected', freshness: 'unavailable', observedAt: null, planLabel: null, windows: [], credits: null, rateLimit: { state: 'clear', retryAt: null } },
   ])
   mocks.getPlans.mockResolvedValue({})
-  mocks.getActReport.mockResolvedValue({ totals: { realizedCostUSD: 0, measuredActions: 0 } })
+  mocks.getOptimizationReport.mockResolvedValue({ totals: { realizedCostUSD: 0, measuredActions: 0 } })
   mocks.getYield.mockResolvedValue({
     period: { label: 'Last 30 days', start: '', end: '' },
     summary: {
@@ -256,11 +256,11 @@ describe('App shortcuts', () => {
 
     expect(await screen.findByText('Most expensive sessions')).toBeInTheDocument()
     await waitFor(() => {
-      expect(mocks.getActReport).toHaveBeenCalled()
+      expect(mocks.getOptimizationReport).toHaveBeenCalled()
       expect(mocks.getYield).toHaveBeenCalled()
     })
     const overviewCalls = mocks.getOverview.mock.calls.length
-    const actCalls = mocks.getActReport.mock.calls.length
+    const optimizationCalls = mocks.getOptimizationReport.mock.calls.length
     const yieldCalls = mocks.getYield.mock.calls.length
 
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
@@ -268,7 +268,7 @@ describe('App shortcuts', () => {
     await waitFor(() => expect(mocks.getOverview.mock.calls.length).toBeGreaterThan(overviewCalls))
     expect(mocks.getOverview.mock.calls.at(-1)?.[5]).toBe(true)
     await waitFor(() => {
-      expect(mocks.getActReport.mock.calls.length).toBeGreaterThan(actCalls)
+      expect(mocks.getOptimizationReport.mock.calls.length).toBeGreaterThan(optimizationCalls)
       expect(mocks.getYield.mock.calls.length).toBeGreaterThan(yieldCalls)
     })
   })
@@ -500,7 +500,7 @@ describe('provider prefetch storm', () => {
   beforeEach(() => {
     for (const mock of Object.values(mocks)) mock.mockReset()
     mocks.getOverview.mockResolvedValue(manyProviderPayload())
-    mocks.getActReport.mockResolvedValue({ totals: { realizedCostUSD: 0, measuredActions: 0 } })
+    mocks.getOptimizationReport.mockResolvedValue({ totals: { realizedCostUSD: 0, measuredActions: 0 } })
     mocks.getYield.mockResolvedValue({
       period: { label: 'Last 30 days', start: '', end: '' },
       summary: {

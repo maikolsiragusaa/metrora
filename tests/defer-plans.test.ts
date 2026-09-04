@@ -6,11 +6,11 @@ import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { PassThrough, Writable } from 'node:stream'
 
-import { planFor, planFindings, type PlanContext } from '../src/act/plans.js'
-import { runOptimizeApply, type ApplyOptions } from '../src/act/optimize-apply.js'
-import { runAction } from '../src/act/apply.js'
-import { undoAction } from '../src/act/undo.js'
-import { readRecords } from '../src/act/journal.js'
+import { planFor, planFindings, type PlanContext } from '../src/optimization-operations/plans.js'
+import { runOptimizeApply, type ApplyOptions } from '../src/optimization-operations/optimize-apply.js'
+import { runAction } from '../src/optimization-operations/apply.js'
+import { undoAction } from '../src/optimization-operations/undo.js'
+import { readRecords } from '../src/optimization-operations/journal.js'
 import type { FindingApply, FindingId, WasteAction, WasteFinding } from '../src/optimize.js'
 
 // Plan-kind tests for the deferral family (defer-enable / defer-alwaysload /

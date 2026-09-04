@@ -3,16 +3,14 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { journalPath } from '../src/act/journal.js'
-import { createCoreCompatibilityAction } from '../src/act/action-contract-v1.js'
-import { initialOperationState, makeRecord } from '../src/act/core-compatibility-state-v1.js'
+import { journalPath } from '../src/optimization-operations/journal.js'
 import {
-  buildActReportJson,
+  buildOptimizationReportJson,
   buildOptimizeAppliedHeader,
-  computeActReport,
-  renderActReport,
-} from '../src/act/report.js'
-import type { ActionRecord } from '../src/act/types.js'
+  computeOptimizationReport,
+  renderOptimizationReport,
+} from '../src/optimization-operations/report.js'
+import type { ActionRecord } from '../src/optimization-operations/types.js'
 import type { ClassifiedTurn, ProjectSummary } from '../src/types.js'
 
 type Session = ProjectSummary['sessions'][number]
@@ -172,7 +170,7 @@ const load = (projects: ProjectSummary[]) => async () => projects
 describe('mcp realized delta', () => {
   it('multiplies baseline tokens-per-session by post-window sessions (exact)', async () => {
     const actionsDir = await writeJournal([mcpRecord()])
-    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(20, daysAgo(5)))]) })
+    const report = await computeOptimizationReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(20, daysAgo(5)))]) })
 
     expect(report.rows).toHaveLength(1)
     const row = report.rows[0]!
@@ -189,7 +187,7 @@ describe('mcp realized delta', () => {
     const actionsDir = await writeJournal([rec])
     const keepers = sessionsAt(5, daysAgo(4), { mcpInventory: ['mcp__brave-search__search'] })
     const cold = sessionsAt(15, daysAgo(5))
-    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([projectOf([...cold, ...keepers])]) })
+    const report = await computeOptimizationReport({ actionsDir, now: NOW, loadProjects: load([projectOf([...cold, ...keepers])]) })
 
     const row = report.rows[0]!
     expect(row.status).toBe('measured')
@@ -200,7 +198,7 @@ describe('mcp realized delta', () => {
   it('reports "reverted" with zero savings when the server reappears in the window', async () => {
     const actionsDir = await writeJournal([mcpRecord()])
     const back = sessionsAt(20, daysAgo(5), { mcpInventory: ['mcp__brave-search__search'] })
-    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([projectOf(back)]) })
+    const report = await computeOptimizationReport({ actionsDir, now: NOW, loadProjects: load([projectOf(back)]) })
 
     const row = report.rows[0]!
     expect(row.status).toBe('reverted')
@@ -215,7 +213,7 @@ describe('model-default quality tripwire', () => {
     const actionsDir = await writeJournal([modelDefaultRecord()])
     const target = modelProject('app', '/tmp/app', 'candidate-model', 20, 10)
     const masking = modelProject('other', '/tmp/other', 'candidate-model', 80, 80)
-    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([target, masking]) })
+    const report = await computeOptimizationReport({ actionsDir, now: NOW, loadProjects: load([target, masking]) })
 
     const row = report.rows[0]!
     expect(row.status).toBe('measured')
@@ -237,20 +235,20 @@ describe('model-default quality tripwire', () => {
     })
     const actionsDir = await writeJournal([rec])
     const target = modelProject('app', '/tmp/app', 'candidate-model', 20, 16)
-    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([target]) })
+    const report = await computeOptimizationReport({ actionsDir, now: NOW, loadProjects: load([target]) })
 
     const row = report.rows[0]!
     expect(row.status).toBe('measured')
     expect(row.confidence).toBe('low')
     expect(row.note).toBe('correlation, not attribution: one-shot rate 75.0% -> 80.0%')
-    expect(renderActReport(report)).toMatch(/Set Claude Code default model to candidate-model for app\s+│\s+-\s+│\s+correlation\s+│/)
+    expect(renderOptimizationReport(report)).toMatch(/Set Claude Code default model to candidate-model for app\s+│\s+-\s+│\s+correlation\s+│/)
   })
 
   it('is not measurable with fewer than 20 candidate edit turns in the target project', async () => {
     const actionsDir = await writeJournal([modelDefaultRecord()])
     const target = modelProject('app', '/tmp/app', 'candidate-model', 19, 19)
     const unrelated = modelProject('other', '/tmp/other', 'candidate-model', 50, 50)
-    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([target, unrelated]) })
+    const report = await computeOptimizationReport({ actionsDir, now: NOW, loadProjects: load([target, unrelated]) })
 
     const row = report.rows[0]!
     expect(row.status).toBe('not-measurable')
@@ -260,7 +258,7 @@ describe('model-default quality tripwire', () => {
   it('reports a missing scoped project separately from insufficient edit turns', async () => {
     const actionsDir = await writeJournal([modelDefaultRecord()])
     const unrelated = modelProject('other', '/tmp/other', 'candidate-model', 50, 50)
-    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([unrelated]) })
+    const report = await computeOptimizationReport({ actionsDir, now: NOW, loadProjects: load([unrelated]) })
 
     const row = report.rows[0]!
     expect(row.status).toBe('not-measurable')
@@ -279,7 +277,7 @@ describe('model-default quality tripwire', () => {
     const actionsDir = await writeJournal([rec])
     const target = modelProject('app', 'C:/work/app', 'candidate-model', 20, 10)
     const masking = modelProject('other', 'C:/work/other', 'candidate-model', 80, 80)
-    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([target, masking]) })
+    const report = await computeOptimizationReport({ actionsDir, now: NOW, loadProjects: load([target, masking]) })
 
     expect(report.rows[0]!.note).toBe('quality regression, consider undo: one-shot rate 90.0% -> 50.0%')
   })
@@ -288,7 +286,7 @@ describe('model-default quality tripwire', () => {
 describe('confidence markers', () => {
   it('marks low when fewer than 20 post-window sessions', async () => {
     const actionsDir = await writeJournal([mcpRecord()])
-    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(10, daysAgo(5)))]) })
+    const report = await computeOptimizationReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(10, daysAgo(5)))]) })
 
     const row = report.rows[0]!
     expect(row.status).toBe('measured')
@@ -301,7 +299,7 @@ describe('confidence markers', () => {
     // 2.5/day against a 1/day baseline (14 sessions / 14 days) -> 2.5x shift.
     const rec = mcpRecord({ baseline: { windowDays: 14, capturedAt: daysAgo(10), estimatedTokens: 56_000, sessions: 14, metrics: { 'brave-search': 2000 } } })
     const actionsDir = await writeJournal([rec])
-    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(25, daysAgo(5)))]) })
+    const report = await computeOptimizationReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(25, daysAgo(5)))]) })
 
     const row = report.rows[0]!
     expect(row.status).toBe('measured')
@@ -310,7 +308,7 @@ describe('confidence markers', () => {
 
   it('stays normal when volume is comparable to baseline', async () => {
     const actionsDir = await writeJournal([mcpRecord()]) // baseline 28/14 = 2/day
-    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(20, daysAgo(5)))]) }) // 20/10 = 2/day
+    const report = await computeOptimizationReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(20, daysAgo(5)))]) }) // 20/10 = 2/day
     expect(report.rows[0]!.confidence).toBe('normal')
   })
 })
@@ -323,7 +321,7 @@ describe('eligibility', () => {
       mcpRecord({ id: 'undone', at: daysAgo(20), status: 'undone' }),
     ]
     const actionsDir = await writeJournal(records)
-    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(20, daysAgo(5)))]) })
+    const report = await computeOptimizationReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(20, daysAgo(5)))]) })
 
     expect(report.rows).toHaveLength(1)
     expect(report.rows[0]!.id).toBe('old')
@@ -344,7 +342,7 @@ describe('read-edit realized delta', () => {
     const actionsDir = await writeJournal([rec])
     const session = makeSession('s0', daysAgo(5), { toolBreakdown: { Read: { calls: 120 }, Edit: { calls: 40 } } })
     const filler = sessionsAt(19, daysAgo(4))
-    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([projectOf([session, ...filler])]) })
+    const report = await computeOptimizationReport({ actionsDir, now: NOW, loadProjects: load([projectOf([session, ...filler])]) })
 
     const row = report.rows[0]!
     expect(row.status).toBe('measured')
@@ -360,7 +358,7 @@ describe('round-down discipline', () => {
   it('floors non-integer mcp products, never rounds up', async () => {
     const rec = mcpRecord({ baseline: { windowDays: 14, capturedAt: daysAgo(10), estimatedTokens: 5000, sessions: 3, metrics: { 'brave-search': 700.7 } } })
     const actionsDir = await writeJournal([rec])
-    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(3, daysAgo(5)))]) })
+    const report = await computeOptimizationReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(3, daysAgo(5)))]) })
 
     const row = report.rows[0]!
     expect(row.status).toBe('measured')
@@ -380,7 +378,7 @@ describe('round-down discipline', () => {
     }
     const actionsDir = await writeJournal([rec])
     const session = makeSession('s0', daysAgo(5), { toolBreakdown: { Read: { calls: 20 }, Edit: { calls: 10 } } })
-    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([projectOf([session])]) })
+    const report = await computeOptimizationReport({ actionsDir, now: NOW, loadProjects: load([projectOf([session])]) })
 
     const row = report.rows[0]!
     expect(row.status).toBe('measured')
@@ -401,7 +399,7 @@ describe('archive realized delta', () => {
       baseline: base,
     }
     const actionsDir = await writeJournal([rec])
-    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(20, daysAgo(5)))]) })
+    const report = await computeOptimizationReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(20, daysAgo(5)))]) })
     expect(report.rows[0]!.status).toBe('measured')
     expect(report.rows[0]!.realizedTokens).toBe(3200) // 160 tokens/session * 20
     // Tautology expected: estimate and realized share the formula when nothing
@@ -413,7 +411,7 @@ describe('archive realized delta', () => {
     await writeFile(restoredPath, 'x')
     const rec2: ActionRecord = { ...rec, changes: [{ path: restoredPath, backup: null, op: 'move', movedTo: restoredPath + '.archived', afterHash: '' }] }
     const dir2 = await writeJournal([rec2])
-    const report2 = await computeActReport({ actionsDir: dir2, now: NOW, loadProjects: load([projectOf(sessionsAt(20, daysAgo(5)))]) })
+    const report2 = await computeOptimizationReport({ actionsDir: dir2, now: NOW, loadProjects: load([projectOf(sessionsAt(20, daysAgo(5)))]) })
     expect(report2.rows[0]!.status).toBe('reverted')
     expect(report2.rows[0]!.realizedTokens).toBe(0)
   })
@@ -428,7 +426,7 @@ describe('unmeasured kinds', () => {
       baseline: { windowDays: 14, capturedAt: at, estimatedTokens: 3750, sessions: 28, metrics: { calls: 200 } },
     }
     const actionsDir = await writeJournal([rec])
-    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(20, daysAgo(5)))]) })
+    const report = await computeOptimizationReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(20, daysAgo(5)))]) })
     expect(report.rows[0]!.status).toBe('not-measurable')
     expect(report.rows[0]!.estimatedAtApply).toBe(3750)
     expect(report.rows[0]!.estimatedForWindow).toBe(3750) // no window scaling for unmeasured kinds
@@ -443,7 +441,7 @@ describe('unmeasured kinds', () => {
       baseline: { windowDays: 14, capturedAt: at, estimatedTokens: 80, sessions: 28, metrics: { 'skill-a': 80 } },
     }
     const actionsDir = await writeJournal([mcpRecord(), arch])
-    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([]) })
+    const report = await computeOptimizationReport({ actionsDir, now: NOW, loadProjects: load([]) })
 
     expect(report.rows).toHaveLength(2)
     for (const row of report.rows) {
@@ -461,7 +459,7 @@ describe('journal robustness', () => {
 
   it('skips malformed records with a note instead of crashing, and drops the optimize header', async () => {
     const actionsDir = await writeJournal([missingAt, numericAt])
-    const report = await computeActReport({
+    const report = await computeOptimizationReport({
       actionsDir, now: NOW,
       loadProjects: async () => { throw new Error('should not scan when no eligible records remain') },
     })
@@ -470,48 +468,36 @@ describe('journal robustness', () => {
     expect(report.rows).toHaveLength(0)
     expect(report.activeCount).toBe(0)
     expect(buildOptimizeAppliedHeader(report)).toBeNull()
-    expect(renderActReport(report)).toMatch(/2 malformed records skipped/)
+    expect(renderOptimizationReport(report)).toMatch(/2 malformed records skipped/)
   })
 
   it('still measures valid records alongside malformed ones', async () => {
     const actionsDir = await writeJournal([missingAt, mcpRecord()])
-    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(20, daysAgo(5)))]) })
+    const report = await computeOptimizationReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(20, daysAgo(5)))]) })
 
     expect(report.malformedRecords).toBe(1)
     expect(report.rows).toHaveLength(1)
     expect(report.rows[0]!.realizedTokens).toBe(40_000)
-    expect(renderActReport(report)).toMatch(/1 malformed record skipped/)
+    expect(renderOptimizationReport(report)).toMatch(/1 malformed record skipped/)
   })
 
-  it('excludes valid Core Compatibility records without counting them as malformed', async () => {
-    const at = daysAgo(10)
-    const controlledContract = createCoreCompatibilityAction({ model: 'qwen3:8b', originatingSurface: 'cli', actionId: 'controlled-report-record', createdAt: at, timeoutMs: 50 })
-    const controlled = makeRecord(controlledContract, 'proposed', initialOperationState(controlledContract), () => NOW)
-    const actionsDir = await writeJournal([mcpRecord(), controlled, missingAt])
-    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(20, daysAgo(5)))]) })
-
-    expect(report.rows).toHaveLength(1)
-    expect(report.rows[0]!.id).toBe('a1')
-    expect(report.activeCount).toBe(1)
-    expect(report.malformedRecords).toBe(1)
-  })
 })
 
 describe('optimize header', () => {
   it('appears only when a normal-confidence measured token action exists', async () => {
     const actionsDir = await writeJournal([mcpRecord()])
-    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(20, daysAgo(5)))]) })
+    const report = await computeOptimizationReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(20, daysAgo(5)))]) })
     const header = buildOptimizeAppliedHeader(report)
-    expect(header).toMatch(/^Applied fixes: 1 active, realized ~40\.0K tokens.*over 10 days\. Details: metrora act report$/)
+    expect(header).toMatch(/^Applied fixes: 1 active, realized ~40\.0K tokens.*over 10 days\. Details: metrora optimization-actions report$/)
   })
 
   it('renders no header when every measured row is low confidence (under-claim)', async () => {
     const actionsDir = await writeJournal([mcpRecord()])
-    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(10, daysAgo(5)))]) })
+    const report = await computeOptimizationReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(10, daysAgo(5)))]) })
 
     expect(report.rows[0]!.status).toBe('measured')
     expect(report.rows[0]!.confidence).toBe('low')
-    expect(report.rows[0]!.realizedTokens).toBe(20_000) // still visible in act report
+    expect(report.rows[0]!.realizedTokens).toBe(20_000) // still visible in optimization report
     expect(report.totalRealizedTokens).toBe(20_000)
     expect(buildOptimizeAppliedHeader(report)).toBeNull()
   })
@@ -525,16 +511,16 @@ describe('optimize header', () => {
       baseline: { windowDays: 14, capturedAt: daysAgo(10), estimatedTokens: 56_000, sessions: 100, metrics: { 'other-server': 2000 } },
     })
     const actionsDir = await writeJournal([r1, r2])
-    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(20, daysAgo(5)))]) })
+    const report = await computeOptimizationReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(20, daysAgo(5)))]) })
 
-    expect(report.totalRealizedTokens).toBe(80_000) // both stay visible in act report
+    expect(report.totalRealizedTokens).toBe(80_000) // both stay visible in optimization report
     const header = buildOptimizeAppliedHeader(report)
     expect(header).toMatch(/^Applied fixes: 2 active, realized ~40\.0K tokens/)
   })
 
   it('returns null and never scans when the journal has no eligible actions', async () => {
     const emptyDir = await writeJournal([])
-    const report = await computeActReport({
+    const report = await computeOptimizationReport({
       actionsDir: emptyDir, now: NOW,
       loadProjects: async () => { throw new Error('should not scan for an empty journal') },
     })
@@ -549,7 +535,7 @@ describe('optimize header', () => {
       mcpRecord({ id: 'x2', at: daysAgo(4), findingId: 'unused-mcp' }),
     ]
     const actionsDir = await writeJournal(records)
-    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(20, daysAgo(3)))]) })
+    const report = await computeOptimizationReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(20, daysAgo(3)))]) })
     expect(report.appliedByFinding['unused-mcp']).toBe(daysAgo(9).slice(0, 10))
   })
 })
@@ -557,8 +543,8 @@ describe('optimize header', () => {
 describe('json + render shape', () => {
   it('mirrors the rows and totals in --json', async () => {
     const actionsDir = await writeJournal([mcpRecord()])
-    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(20, daysAgo(5)))]) })
-    const json = buildActReportJson(report) as {
+    const report = await computeOptimizationReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(20, daysAgo(5)))]) })
+    const json = buildOptimizationReportJson(report) as {
       actions: Array<Record<string, unknown>>
       totals: Record<string, unknown>
       footer: string
@@ -583,16 +569,16 @@ describe('json + render shape', () => {
 
   it('renders an empty state without a table when nothing is measurable', async () => {
     const emptyDir = await writeJournal([])
-    const report = await computeActReport({ actionsDir: emptyDir, now: NOW, loadProjects: async () => [] })
-    const out = renderActReport(report)
+    const report = await computeOptimizationReport({ actionsDir: emptyDir, now: NOW, loadProjects: async () => [] })
+    const out = renderOptimizationReport(report)
     expect(out).toMatch(/No applied actions to measure yet/)
     expect(out).not.toMatch(/Total realized/)
   })
 
   it('renders a table with a total row when measurements exist', async () => {
     const actionsDir = await writeJournal([mcpRecord()])
-    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(20, daysAgo(5)))]) })
-    const out = renderActReport(report)
+    const report = await computeOptimizationReport({ actionsDir, now: NOW, loadProjects: load([projectOf(sessionsAt(20, daysAgo(5)))]) })
+    const out = renderOptimizationReport(report)
     expect(out).toMatch(/Total realized/)
     expect(out).toMatch(/40\.0K/)
     expect(out).toMatch(/measures only its own metric/)

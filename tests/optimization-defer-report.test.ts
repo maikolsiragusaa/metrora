@@ -3,9 +3,9 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { journalPath } from '../src/act/journal.js'
-import { captureBaseline, computeActReport } from '../src/act/report.js'
-import type { ActionRecord } from '../src/act/types.js'
+import { journalPath } from '../src/optimization-operations/journal.js'
+import { captureBaseline, computeOptimizationReport } from '../src/optimization-operations/report.js'
+import type { ActionRecord } from '../src/optimization-operations/types.js'
 import type { McpServerCoverage, WasteFinding } from '../src/optimize.js'
 import type { ProjectSummary } from '../src/types.js'
 
@@ -90,12 +90,12 @@ function deferRecord(kind: ActionRecord['kind'] = 'defer-enable', metrics: Recor
 
 const load = (projects: ProjectSummary[]) => async () => projects
 
-describe('act report defer evidence', () => {
+describe('optimization-actions report defer evidence', () => {
   it('counts only post-apply sessions where the parser observed deferral active', async () => {
     const actionsDir = await writeJournal([deferRecord()])
     const sessions = [session('a', true), session('b', true), session('c', true), session('d', false), session('e', false)]
 
-    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([project(sessions)]) })
+    const report = await computeOptimizationReport({ actionsDir, now: NOW, loadProjects: load([project(sessions)]) })
     const row = report.rows[0]!
 
     expect(row.status).toBe('measured')
@@ -109,7 +109,7 @@ describe('act report defer evidence', () => {
     const actionsDir = await writeJournal([deferRecord()])
     const sessions = Array.from({ length: 5 }, (_, index) => session(`off-${index}`, false))
 
-    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([project(sessions)]) })
+    const report = await computeOptimizationReport({ actionsDir, now: NOW, loadProjects: load([project(sessions)]) })
     const row = report.rows[0]!
 
     expect(row.status).toBe('reverted')
@@ -127,7 +127,7 @@ describe('act report defer evidence', () => {
       session('off', false, 'heavy-server'),
     ]
 
-    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([project(sessions)]) })
+    const report = await computeOptimizationReport({ actionsDir, now: NOW, loadProjects: load([project(sessions)]) })
     const row = report.rows[0]!
 
     expect(row.status).toBe('measured')
@@ -141,7 +141,7 @@ describe('act report defer evidence', () => {
     const actionsDir = await writeJournal([record])
     const sessions = [session('other-a', true, 'other-server'), session('other-b', true, 'another-server')]
 
-    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([project(sessions)]) })
+    const report = await computeOptimizationReport({ actionsDir, now: NOW, loadProjects: load([project(sessions)]) })
     const row = report.rows[0]!
 
     expect(row.status).toBe('reverted')
@@ -153,7 +153,7 @@ describe('act report defer evidence', () => {
     const legacy = { ...deferRecord(), baseline: undefined }
     const actionsDir = await writeJournal([legacy])
 
-    const report = await computeActReport({ actionsDir, now: NOW, loadProjects: load([project([session('active', true)])]) })
+    const report = await computeOptimizationReport({ actionsDir, now: NOW, loadProjects: load([project([session('active', true)])]) })
     expect(report.rows[0]!.status).toBe('not-measurable')
     expect(report.rows[0]!.note).toMatch(/no baseline captured/)
   })

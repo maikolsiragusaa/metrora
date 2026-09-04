@@ -1,7 +1,7 @@
 import type {
   ActionResult,
   AliasRow,
-  ActReportJson,
+  OptimizationReportJson,
   AuditRow,
   CombinedUsage,
   CompareJsonReport,
@@ -35,6 +35,8 @@ import type {
   OpenCodeEngineStatus,
   OpenCodeLocalProviderConfig,
   OpenCodeMcpServer,
+  OpenCodeProviderAuthAuthorization,
+  OpenCodeProviderAuthMethods,
   OpenCodeProvider,
   OpenCodeRendererEvent,
   OpenCodeSession,
@@ -135,7 +137,7 @@ export interface MetroraBridge extends ProjectBridge {
   // `fresh` is reserved for explicit Refresh; navigation reads the snapshot.
   getOverview(period: Period, provider: string, range?: DateRange, configSource?: string | null, background?: boolean, fresh?: boolean, projectScopeId?: string | null): Promise<MenubarPayload>
   getPlans(period: Period): Promise<StatusJson>
-  getActReport(): Promise<ActReportJson>
+  getOptimizationReport(): Promise<OptimizationReportJson>
   readonly platform: string
   /** Node process.arch of the host ('arm64', 'x64', ...). Absent on preloads
    *  that predate the direct-download update link. */
@@ -180,11 +182,17 @@ export interface MetroraBridge extends ProjectBridge {
   opencodePrompt(request: Record<string, unknown>): Promise<OpenCodeConversationMessage | null>
   opencodeCancel(requestId: string): Promise<boolean>
   opencodeListProviders(): Promise<OpenCodeProvider[]>
+  opencodeListProviderAuth(): Promise<OpenCodeProviderAuthMethods>
+  opencodeSetProviderApiKey(providerId: string, key: string): Promise<boolean>
+  opencodeProviderOAuthAuthorize(providerId: string, method: number, inputs: Record<string, string>): Promise<OpenCodeProviderAuthAuthorization>
+  opencodeProviderOAuthCallback(providerId: string, method: number, code?: string): Promise<boolean>
   opencodeListAgents(): Promise<OpenCodeAgent[]>
   opencodeListTools(): Promise<OpenCodeTools>
   opencodeGetWorkspace(): Promise<OpenCodeWorkspaceInfo>
   opencodeGetMcp(): Promise<OpenCodeMcpServer[]>
   opencodePermissionReply(sessionId: string, permissionId: string, response: 'once' | 'always' | 'reject'): Promise<boolean>
+  opencodeQuestionReply(requestId: string, answers: string[][]): Promise<boolean>
+  opencodeQuestionReject(requestId: string): Promise<boolean>
   opencodeConfigureLocal(config: OpenCodeLocalProviderConfig): Promise<OpenCodeEngineStatus>
   onOpenCodeEvent(cb: (event: OpenCodeRendererEvent) => void): () => void
   telemetryStatus(): Promise<TelemetryStatus | null>

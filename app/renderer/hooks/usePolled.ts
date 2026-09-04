@@ -24,7 +24,7 @@ export type Polled<T> = {
 // cached result in the same frame while a fresh fetch runs behind it — no blank,
 // no stale-freeze.
 //
-// The cap must comfortably hold every key live at once: the base overview/act/
+// The cap must comfortably hold every key live at once: the base overview/
 // yield polls PLUS one prefetched overview per detected provider. Sized too small
 // it LRU-evicts the base `overview|all` key between polls, which blanks the
 // overview and re-triggers the provider prefetch every cycle (the prefetch

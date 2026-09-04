@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
-import { sha256 } from '../act/backup.js'
-import type { ActionPlan, PlannedChange } from '../act/types.js'
+import { sha256 } from '../optimization-operations/backup.js'
+import type { ActionPlan, PlannedChange } from '../optimization-operations/types.js'
 
 // The hook entries `guard install` writes and `guard uninstall` removes. Every
 // command carries the same recognizable prefix so uninstall can find exactly

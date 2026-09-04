@@ -5,13 +5,13 @@ import { tmpdir } from 'node:os'
 import { spawnSync } from 'node:child_process'
 import { Writable } from 'node:stream'
 
-import { runAction } from '../src/act/apply.js'
-import { undoAction } from '../src/act/undo.js'
-import { planFindings, planFor, type PlanContext } from '../src/act/plans.js'
-import { runOptimizeApply } from '../src/act/optimize-apply.js'
+import { runAction } from '../src/optimization-operations/apply.js'
+import { undoAction } from '../src/optimization-operations/undo.js'
+import { planFindings, planFor, type PlanContext } from '../src/optimization-operations/plans.js'
+import { runOptimizeApply } from '../src/optimization-operations/optimize-apply.js'
 import { ACTION_TARGET_AUTHORITY, FINDING_EVIDENCE_REQUIREMENT } from '../src/optimize-provider-authority.js'
 import { scanAndDetect, type FindingApply, type FindingId, type WasteAction, type WasteFinding } from '../src/optimize.js'
-import type { ActionKind } from '../src/act/types.js'
+import type { ActionKind } from '../src/optimization-operations/types.js'
 import type { ProjectSummary } from '../src/types.js'
 
 vi.setConfig({ testTimeout: 30_000 })

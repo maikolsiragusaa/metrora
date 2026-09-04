@@ -31,7 +31,7 @@ This index separates user guidance, current product guarantees, public contracts
 - [Product principles](PRODUCT_PRINCIPLES.md) — stable local-first, privacy, evidence and portability commitments.
 - [Architecture](architecture.md) — current responsibility and authority map for the public codebase.
 - [OpenCode Engine Spike 001](OPENCODE_ENGINE_SPIKE_001.md) — pinned upstream engine, thin Electron boundary, one read-only Metrora tool, packaging, privacy and validation limits.
-- [ACT contract preparation 001](ACT_CONTRACT_PREP_001.md) — historical Metrora analytics/optimization action contract; it is not an OpenCode agent runtime.
+- [Historical optimization-operation contract 001](ACT_CONTRACT_PREP_001.md) — archived design record for the removed Core Compatibility executor; it is not a current OpenCode or Metrora agent authority.
 - [Provider quota authority](provider-quota-authority.md) — canonical provider-reported Capacity semantics, freshness and separation from measured local usage or budgets.
 - [Canonical history read projection v1](CANONICAL_HISTORY_READ_PROJECTION_V1.md) — shadow observation/activity identity and trusted daily-history boundary.
 - [Canonical history shadow store v1](CANONICAL_HISTORY_SHADOW_STORE_V1.md) — removable content-addressed persistence and cross-refresh reconciliation.
@@ -53,9 +53,10 @@ permissions, edits, git/workspace behavior, MCP and the agent loop.
 
 Metrora owns the bundled executable and SDK version, loopback lifecycle and
 authentication, renderer-safe projections, canonical usage snapshot, and one
-read-only `metrora_usage_snapshot` custom tool. The old Advisor/Harness/Swarm
-desktop implementation is superseded; the remaining `src/act/` modules are
-analytics/optimization CLI code and are not called by OpenCode.
+read-only `metrora_usage_snapshot` custom tool. Local optimization operations
+remain an independent CLI/product domain under `src/optimization-operations/`;
+they are not an agent runtime, are not OpenCode authority and are not called by
+OpenCode.
 
 ## Bench status
 

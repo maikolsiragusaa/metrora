@@ -8,8 +8,8 @@
 // from resources/cli.asar; no loose node_modules tree is shipped.
 
 const { createPackage } = require('@electron/asar')
-const { existsSync, mkdirSync, rmSync, writeFileSync } = require('node:fs')
-const { join } = require('node:path')
+const { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } = require('node:fs')
+const { dirname, join } = require('node:path')
 
 exports.default = async function afterPack(context) {
   const { appOutDir, electronPlatformName, packager } = context
@@ -50,7 +50,26 @@ exports.default = async function afterPack(context) {
   if (!existsSync(opencodeSrc)) throw new Error('after-pack: bundled OpenCode is missing — run "npm run stage-opencode" first')
   const opencodeDest = join(resources, 'opencode')
   rmSync(opencodeDest, { recursive: true, force: true })
-  require('node:fs').cpSync(opencodeSrc, opencodeDest, { recursive: true })
+  copyOpenCodeExecutables(opencodeSrc, opencodeDest)
 
   console.log(`after-pack: staged CLI sealed -> ${archive}; OpenCode copied -> ${opencodeDest}`)
+}
+
+function copyOpenCodeExecutables(sourceRoot, destinationRoot) {
+  function walk(current) {
+    for (const entry of readdirSync(current)) {
+      const source = join(current, entry)
+      if (statSync(source).isDirectory()) {
+        walk(source)
+        continue
+      }
+      if (entry !== 'opencode' && entry !== 'opencode.exe') continue
+      const relative = source.slice(sourceRoot.length + 1)
+      const destination = join(destinationRoot, relative)
+      mkdirSync(dirname(destination), { recursive: true })
+      copyFileSync(source, destination)
+    }
+  }
+  walk(sourceRoot)
+  if (!existsSync(destinationRoot)) throw new Error('after-pack: no staged OpenCode executable was found')
 }

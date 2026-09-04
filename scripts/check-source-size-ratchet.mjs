@@ -21,14 +21,6 @@ function isTestFile(path) {
     || /\.node-test\.[cm]?[jt]s$/.test(path)
 }
 
-// OpenCode is an explicitly exempt external engine integration. Its adapter,
-// renderer surface and staging glue are validated by their own typecheck,
-// tests and packaging checks rather than by Metrora's module-size ratchet.
-function isOpenCodeIntegration(path) {
-  return /(^|\/)opencode(?:[-./]|$)/i.test(path)
-    || /(^|\/)stage-opencode\.[cm]?[jt]s$/i.test(path)
-}
-
 async function collect(directory) {
   const entries = await readdir(directory, { withFileTypes: true })
   const files = []
@@ -109,7 +101,6 @@ if (!baseRef) {
 const renames = renameMapFrom(baseRef)
 const failures = []
 for (const file of await collect(root)) {
-  if (isOpenCodeIntegration(file.path)) continue
   const currentLines = physicalLineCount(await readFile(file.absolute, 'utf8'))
   if (currentLines <= defaultMaxLines) continue
 

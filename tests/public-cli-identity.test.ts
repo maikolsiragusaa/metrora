@@ -14,11 +14,11 @@ const sourceFiles = [
   'src/optimize.ts',
   'src/providers/types.ts',
   'src/web-dashboard.ts',
-  'src/act/apply.ts',
-  'src/act/cli.ts',
-  'src/act/journal.ts',
-  'src/act/optimize-apply.ts',
-  'src/act/report.ts',
+  'src/optimization-operations/apply.ts',
+  'src/optimization-operations/cli.ts',
+  'src/optimization-operations/journal.ts',
+  'src/optimization-operations/optimize-apply.ts',
+  'src/optimization-operations/report.ts',
   'src/guard/cli.ts',
   'src/guard/hooks.ts',
   'src/guard/settings.ts',
@@ -41,7 +41,7 @@ describe('canonical Metrora CLI public identity', () => {
       .join('\n')
 
     expect(source).toContain('metrora optimize')
-    expect(source).toContain('metrora act')
+    expect(source).toContain('metrora optimization-actions')
     expect(source).toContain('metrora share')
     expect(source).toContain('metrora sync')
   })

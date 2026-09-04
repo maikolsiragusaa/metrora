@@ -204,6 +204,6 @@ describe('MCP and canonical Tools boundaries', () => {
       .filter(name => name.endsWith('.ts'))
       .map(name => readFileSync(join(process.cwd(), 'src', 'tools', name), 'utf8'))
       .join('\n')
-    expect(toolsSources).not.toMatch(/@modelcontextprotocol|from ['"](?:react|electron)|from ['"].*\/act\//iu)
+    expect(toolsSources).not.toMatch(/@modelcontextprotocol|from ['"](?:react|electron)|from ['"].*\/(?:act|optimization-operations)\//iu)
   })
 })

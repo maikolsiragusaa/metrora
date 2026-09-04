@@ -3,10 +3,10 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { runAction } from '../src/act/apply.js'
-import { appendRecord, readRecords } from '../src/act/journal.js'
-import { DriftError, undoAction } from '../src/act/undo.js'
-import type { ActionRecord } from '../src/act/types.js'
+import { runAction } from '../src/optimization-operations/apply.js'
+import { appendRecord, readRecords } from '../src/optimization-operations/journal.js'
+import { DriftError, undoAction } from '../src/optimization-operations/undo.js'
+import type { ActionRecord } from '../src/optimization-operations/types.js'
 
 const roots: string[] = []
 

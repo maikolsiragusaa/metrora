@@ -16,7 +16,7 @@ export type FileChange = {
 }
 
 // Before/after measurement captured when an action is applied, diffed against
-// the post-apply window by `act report`. `metrics` holds the kind-specific
+// the post-apply window by `optimization-actions report`. `metrics` holds the kind-specific
 // numbers:
 //   mcp-remove / mcp-project-scope: server name -> schema tokens per session
 //   archive-skill|agent|command:    item name   -> definition tokens per session
@@ -43,7 +43,7 @@ export type ActionRecord = {
   at: string              // ISO timestamp
   kind: ActionKind
   findingId: string | null
-  description: string     // one human sentence, shown in `act list`
+  description: string     // one human sentence, shown in `optimization-actions list`
   changes: FileChange[]
   status: 'applied' | 'undone'
   undoneAt?: string

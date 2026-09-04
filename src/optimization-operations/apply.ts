@@ -4,14 +4,12 @@ import { randomUUID } from 'crypto'
 import type { ActionPlan, ActionRecord, FileChange } from './types.js'
 import { appendRecord, defaultActionsDir, withLock } from './journal.js'
 import { backupDirFor, relBackupPath, revertChange, sha256File, snapshotFile } from './backup.js'
-import { ACTION_KIND_RUN_CORE_COMPATIBILITY } from './action-contract-v1.js'
 
 // The only mutation path. Order: back up every file the plan touches, apply
 // the mutations, hash the results, then journal. If a mutation or the journal
 // append throws, the steps already applied are rolled back (newest first) and
 // nothing is journaled.
 export async function runAction(plan: ActionPlan, actionsDir: string = defaultActionsDir()): Promise<ActionRecord> {
-  if ((plan as unknown as { kind?: unknown }).kind === ACTION_KIND_RUN_CORE_COMPATIBILITY) throw new Error('run-core-compatibility is a controlled operation; use the trusted ACT executor')
   return withLock(actionsDir, async () => {
     const id = randomUUID()
     const at = new Date().toISOString()

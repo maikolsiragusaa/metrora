@@ -6,11 +6,11 @@ import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { PassThrough, Writable } from 'node:stream'
 
-import { planFor, planFindings, type PlanContext } from '../src/act/plans.js'
-import { renderApplyList, runOptimizeApply, type ApplyOptions } from '../src/act/optimize-apply.js'
-import { runAction } from '../src/act/apply.js'
-import { undoAction } from '../src/act/undo.js'
-import { readRecords, shortId } from '../src/act/journal.js'
+import { planFor, planFindings, type PlanContext } from '../src/optimization-operations/plans.js'
+import { renderApplyList, runOptimizeApply, type ApplyOptions } from '../src/optimization-operations/optimize-apply.js'
+import { runAction } from '../src/optimization-operations/apply.js'
+import { undoAction } from '../src/optimization-operations/undo.js'
+import { readRecords, shortId } from '../src/optimization-operations/journal.js'
 import {
   detectBloatedClaudeMd,
   detectDuplicateReads,
@@ -428,7 +428,7 @@ describe('runOptimizeApply end-to-end', () => {
     const out = io.stdout()
     for (const rec of records) {
       expect(out).toContain(`Applied ${shortId(rec.id)}`)
-      expect(out).toContain(`Undo anytime: metrora act undo ${shortId(rec.id)}`)
+      expect(out).toContain(`Undo anytime: metrora optimization-actions undo ${shortId(rec.id)}`)
     }
     expect(JSON.parse(await readFile(join(fx.home, '.claude.json'), 'utf-8')).mcpServers).toEqual({})
     expect(existsSync(join(fx.home, '.claude', 'skills', '.archived', 'foo'))).toBe(true)

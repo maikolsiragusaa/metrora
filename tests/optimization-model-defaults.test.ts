@@ -3,9 +3,9 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-import { runAction } from '../src/act/apply.js'
-import { undoAction } from '../src/act/undo.js'
-import { buildApplyModelDefaultPlan, recommendModelDefault } from '../src/act/model-defaults.js'
+import { runAction } from '../src/optimization-operations/apply.js'
+import { undoAction } from '../src/optimization-operations/undo.js'
+import { buildApplyModelDefaultPlan, recommendModelDefault } from '../src/optimization-operations/model-defaults.js'
 import type { ClassifiedTurn, ProjectSummary, SessionSummary, TaskCategory } from '../src/types.js'
 
 const NOW = new Date('2026-07-04T12:00:00.000Z')

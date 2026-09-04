@@ -66,8 +66,8 @@ semantic token vocabulary was independently reimplemented in
 `app/renderer/ui/tokens.css`. Metrora removed Tailwind, HeroUI, OpenHands
 router/store/client/backend, telemetry, fonts, logos and other product assets.
 The adapted primitives expose Metrora-owned contracts and can be removed or
-replaced without changing Metrora facts, navigation state, ACT, Shield,
-coding-engine semantics or evidence authority.
+replaced without changing Metrora facts, navigation state, coding-engine
+semantics or evidence authority.
 
 ## OpenCode coding engine
 

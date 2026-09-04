@@ -239,7 +239,7 @@ Start from the [documentation index](docs/README.md):
 - [Getting started](docs/GETTING_STARTED.md)
 - [CLI reference](docs/CLI_REFERENCE.md)
 - [OpenCode Engine Spike 001](docs/OPENCODE_ENGINE_SPIKE_001.md)
-- [ACT contract preparation 001](docs/ACT_CONTRACT_PREP_001.md)
+- [Historical optimization-operation contract 001](docs/ACT_CONTRACT_PREP_001.md)
 - [Bench evidence families](docs/BENCH_EVIDENCE_FAMILIES.md)
 - [Local runtime and Performance Wave 001](docs/LOCAL_RUNTIME_PERFORMANCE_WAVE_001.md)
 - [BenchRunV1 local Ollama](docs/BENCHRUN_V1_OLLAMA_LOCAL.md)

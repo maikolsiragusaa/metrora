@@ -643,7 +643,7 @@ describe('detectMcpDeferThreshold', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Apply payloads: the machine data src/act/plans.ts turns into defer-enable /
+// Apply payloads: the machine data src/optimization-operations/plans.ts turns into defer-enable /
 // defer-alwaysload / defer-threshold plans (#614 commit 2). Human-facing
 // explanation/fix text is covered above and must not change.
 // ---------------------------------------------------------------------------

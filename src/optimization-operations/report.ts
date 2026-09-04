@@ -2,39 +2,32 @@ import { existsSync } from 'fs'
 import { dirname } from 'node:path'
 import type { DateRange, ProjectSummary, SessionSummary } from '../types.js'
 import type { ActionBaseline, ActionKind, ActionRecord } from './types.js'
-import type { FindingPlan } from './plans.js'
 import {
   AVG_TOKENS_PER_READ,
-  HEALTHY_READ_EDIT_RATIO,
-  TOKENS_PER_MCP_TOOL,
-  TOOLS_PER_MCP_SERVER,
-  READ_TOOL_NAMES,
   EDIT_TOOL_NAMES,
-  aggregateMcpCoverage,
+  HEALTHY_READ_EDIT_RATIO,
+  READ_TOOL_NAMES,
   computeInputCostRate,
-  type McpServerCoverage,
-  type WasteFinding,
 } from '../optimize.js'
 import { parseAllSessions } from '../parser.js'
 import { computeYield, type YieldSummary } from '../yield.js'
-import { defaultActionsDir, readRecords } from './journal.js'
-import { DEFER_KINDS, captureDeferBaseline, measureDeferAction } from './defer-report.js'
+import { defaultActionsDir, readRecordHistory } from './journal.js'
+import { DEFER_KINDS, measureDeferAction } from './defer-report.js'
 import { ARCHIVE_DEF_TOKENS, HONEST_FOOTER, MCP_KINDS } from './report-policy.js'
 import { renderTable } from '../text-table.js'
 import { formatTokens } from '../format.js'
 import { formatCost } from '../currency.js'
-import { classifyActJournalRecords } from './core-compatibility-state-v1.js'
+export { captureBaseline, captureBaselinesForPlans, captureGuardBaseline } from './report-baseline.js'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const WINDOW_CAP_DAYS = 30
-const BASELINE_WINDOW_DAYS = 14
 const REPORT_MIN_AGE_DAYS = 3
 const MIN_POST_WINDOW_SESSIONS = 20
 const VOLUME_SHIFT_FACTOR = 2
 
 export type RealizedStatus = 'measured' | 'reverted' | 'not-measurable'
 
-export type ActReportRow = {
+export type OptimizationReportRow = {
   id: string
   appliedAt: string
   date: string
@@ -59,11 +52,11 @@ export type ActReportRow = {
   }
 }
 
-export type ActReport = {
+export type OptimizationReport = {
   generatedAt: string
   windowCapDays: number
   costRate: number
-  rows: ActReportRow[]
+  rows: OptimizationReportRow[]
   totalRealizedTokens: number
   totalRealizedCostUSD: number
   measuredCount: number
@@ -77,12 +70,35 @@ export type ActReport = {
   appliedByFinding: Record<string, string>
 }
 
-export type ActReportOptions = {
+export type OptimizationReportOptions = {
   actionsDir?: string
   now?: Date
   cwd?: string
   loadProjects?: (range: DateRange) => Promise<ProjectSummary[]>
   computeYield?: (range: DateRange) => Promise<YieldSummary>
+}
+const OPTIMIZATION_KINDS: ReadonlySet<ActionKind> = new Set([
+  'mcp-remove', 'mcp-project-scope', 'defer-enable', 'defer-alwaysload',
+  'defer-threshold', 'archive-skill', 'archive-agent', 'archive-command',
+  'claude-md-rule', 'shell-config', 'guard-install', 'guard-uninstall',
+  'model-default',
+])
+
+function isOptimizationRecord(value: unknown): value is ActionRecord {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const record = value as { id?: unknown; at?: unknown; kind?: unknown; description?: unknown; changes?: unknown; status?: unknown }
+  return typeof record.id === 'string'
+    && typeof record.at === 'string'
+    && !Number.isNaN(new Date(record.at).getTime())
+    && typeof record.kind === 'string'
+    && OPTIMIZATION_KINDS.has(record.kind as ActionKind)
+    && typeof record.description === 'string'
+    && Array.isArray(record.changes)
+    && (record.status === 'applied' || record.status === 'undone')
+}
+
+function isSupersededEngineRecord(value: unknown): boolean {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value) && Object.prototype.hasOwnProperty.call(value, 'recordVersion'))
 }
 
 // ---------------------------------------------------------------------------
@@ -183,9 +199,9 @@ function confidenceFor(afterSessions: number, baseline: ActionBaseline, afterSta
 // ---------------------------------------------------------------------------
 
 function mcpRow(
-  base: ActReportRow, rec: ActionRecord, sessions: SessionSummary[],
+  base: OptimizationReportRow, rec: ActionRecord, sessions: SessionSummary[],
   baseline: ActionBaseline, afterStart: Date, now: Date,
-): ActReportRow {
+): OptimizationReportRow {
   const servers = Object.keys(baseline.metrics)
   const perSessionTokens = Object.values(baseline.metrics).reduce((a, b) => a + b, 0)
   if (servers.length === 0 || perSessionTokens === 0) return { ...base, note: 'not measurable: empty baseline' }
@@ -211,9 +227,9 @@ function mcpRow(
 }
 
 function archiveRow(
-  base: ActReportRow, rec: ActionRecord, sessions: SessionSummary[],
+  base: OptimizationReportRow, rec: ActionRecord, sessions: SessionSummary[],
   baseline: ActionBaseline, afterStart: Date, now: Date,
-): ActReportRow {
+): OptimizationReportRow {
   const perSessionTokens = Object.values(baseline.metrics).reduce((a, b) => a + b, 0)
   if (perSessionTokens === 0) return { ...base, note: 'not measurable: empty baseline' }
   if (sessions.length === 0) return { ...base, note: 'not measurable: no sessions in the window yet' }
@@ -229,9 +245,9 @@ function archiveRow(
 }
 
 function readEditRow(
-  base: ActReportRow, sessions: SessionSummary[],
+  base: OptimizationReportRow, sessions: SessionSummary[],
   baseline: ActionBaseline, afterStart: Date, now: Date,
-): ActReportRow {
+): OptimizationReportRow {
   const editsNow = countToolCalls(sessions, EDIT_TOOL_NAMES)
   const readsNow = countToolCalls(sessions, READ_TOOL_NAMES)
   const editsThen = baseline.metrics['edits'] ?? 0
@@ -258,9 +274,9 @@ function readEditRow(
 }
 
 async function guardRow(
-  base: ActReportRow, afterStart: Date, now: Date,
-  baseline: ActionBaseline, opts: ActReportOptions,
-): Promise<ActReportRow> {
+  base: OptimizationReportRow, afterStart: Date, now: Date,
+  baseline: ActionBaseline, opts: OptimizationReportOptions,
+): Promise<OptimizationReportRow> {
   const abandonedThen = baseline.metrics['abandonedPct']
   const avgThen = baseline.metrics['avgSessionCostUSD']
   if (abandonedThen === undefined || avgThen === undefined) {
@@ -290,9 +306,9 @@ async function guardRow(
 }
 
 async function modelDefaultRow(
-  base: ActReportRow, rec: ActionRecord, sessions: SessionSummary[],
+  base: OptimizationReportRow, rec: ActionRecord, sessions: SessionSummary[],
   baseline: ActionBaseline, afterStart: Date, now: Date, projectFound: boolean,
-): Promise<ActReportRow> {
+): Promise<OptimizationReportRow> {
   if (!projectFound) {
     return { ...base, note: 'not measurable: project not found in current data (path may have changed)' }
   }
@@ -342,10 +358,10 @@ async function modelDefaultRow(
 
 async function computeRow(
   rec: ActionRecord, sessions: SessionSummary[], afterStart: Date, now: Date,
-  opts: ActReportOptions, modelDefaultProjectFound = true,
-): Promise<ActReportRow> {
+  opts: OptimizationReportOptions, modelDefaultProjectFound = true,
+): Promise<OptimizationReportRow> {
   const estimatedAtApply = rec.baseline?.estimatedTokens ?? 0
-  const base: ActReportRow = {
+  const base: OptimizationReportRow = {
     id: rec.id,
     appliedAt: rec.at,
     date: rec.at.slice(0, 10),
@@ -377,20 +393,22 @@ async function computeRow(
   if (rec.kind === 'shell-config') return { ...base, note: 'not measurable: bash result token sizes are not retained in the summary' }
   if (rec.kind === 'guard-install') return guardRow(base, afterStart, now, baseline, opts)
   if (rec.kind === 'model-default') return modelDefaultRow(base, rec, sessions, baseline, afterStart, now, modelDefaultProjectFound)
-  return { ...base, note: 'not measurable: kind is not tracked by act report' }
+  return { ...base, note: 'not measurable: kind is not tracked by optimization-actions report' }
 }
 
 // ---------------------------------------------------------------------------
 // Report
 // ---------------------------------------------------------------------------
 
-// Journal records are classified by the ACT v2 boundary before legacy reporting.
+// Journal records are classified by the strict operation boundary before
+// legacy optimization reporting.
 
-export async function computeActReport(opts: ActReportOptions = {}): Promise<ActReport> {
+export async function computeOptimizationReport(opts: OptimizationReportOptions = {}): Promise<OptimizationReport> {
   const now = opts.now ?? new Date()
-  const rawRecords = await readRecords(opts.actionsDir ?? defaultActionsDir())
-  const { legacy: records, malformed } = classifyActJournalRecords(rawRecords)
-  const malformedRecords = malformed.length
+  const rawRecords = await readRecordHistory(opts.actionsDir ?? defaultActionsDir())
+  const currentRecords = rawRecords.filter(value => !isSupersededEngineRecord(value))
+  const records = currentRecords.filter(isOptimizationRecord)
+  const malformedRecords = currentRecords.length - records.length
   const active = records.filter(r => r.status === 'applied')
 
   const appliedByFinding: Record<string, string> = {}
@@ -401,7 +419,7 @@ export async function computeActReport(opts: ActReportOptions = {}): Promise<Act
     if (!prev || date < prev) appliedByFinding[r.findingId] = date
   }
 
-  const empty: ActReport = {
+  const empty: OptimizationReport = {
     generatedAt: now.toISOString(),
     windowCapDays: WINDOW_CAP_DAYS,
     costRate: 0,
@@ -423,7 +441,7 @@ export async function computeActReport(opts: ActReportOptions = {}): Promise<Act
   const projects = await loadProjects({ start: windowStart, end: now })
   const costRate = computeInputCostRate(projects)
 
-  const rows: ActReportRow[] = []
+  const rows: OptimizationReportRow[] = []
   for (const rec of eligible) {
     const afterStart = new Date(Math.max(new Date(rec.at).getTime(), windowStart.getTime()))
     const modelDefaultWindow = rec.kind === 'model-default'
@@ -455,9 +473,10 @@ export async function computeActReport(opts: ActReportOptions = {}): Promise<Act
   }
 }
 
-export function buildOptimizeAppliedHeader(report: ActReport): string | null {
+export function buildOptimizeAppliedHeader(report: OptimizationReport): string | null {
   // Under-claim: only normal-confidence measured rows feed the optimize line.
-  // Low-confidence rows stay visible in `act report` but never in the header.
+  // Low-confidence rows stay visible in `optimization-actions report` but never
+  // in the header.
   const confident = report.rows.filter(r => r.status === 'measured' && isTokenKind(r.kind) && r.confidence === 'normal')
   if (confident.length === 0) return null
   const tokens = confident.reduce((s, r) => s + r.realizedTokens, 0)
@@ -467,10 +486,10 @@ export function buildOptimizeAppliedHeader(report: ActReport): string | null {
     confident.reduce((mx, r) => Math.max(mx, Math.ceil(ageDays(r.appliedAt, generated))), 0),
   )
   const cost = report.costRate > 0 ? ` (~${formatCost(tokens * report.costRate)})` : ''
-  return `Applied fixes: ${report.activeCount} active, realized ~${formatTokens(tokens)} tokens${cost} over ${days} day${days === 1 ? '' : 's'}. Details: metrora act report`
+  return `Applied fixes: ${report.activeCount} active, realized ~${formatTokens(tokens)} tokens${cost} over ${days} day${days === 1 ? '' : 's'}. Details: metrora optimization-actions report`
 }
 
-function realizedCell(r: ActReportRow): string {
+function realizedCell(r: OptimizationReportRow): string {
   if (r.status === 'reverted') return 'reverted'
   if (r.status === 'not-measurable') return 'not measurable'
   if (r.correlation) return `abandoned ${r.correlation.abandonedPctThen}% -> ${r.correlation.abandonedPctNow}% (corr.)`
@@ -482,7 +501,7 @@ function malformedNote(n: number): string {
   return `${n} malformed record${n === 1 ? '' : 's'} skipped`
 }
 
-export function renderActReport(report: ActReport): string {
+export function renderOptimizationReport(report: OptimizationReport): string {
   if (report.rows.length === 0) {
     const lines = ['', '  No applied actions to measure yet.']
     if (report.activeCount > 0) {
@@ -524,7 +543,7 @@ export function renderActReport(report: ActReport): string {
   return ['', table, ...(details.length > 0 ? ['', ...details] : []), '', '  ' + HONEST_FOOTER, ''].join('\n')
 }
 
-export function buildActReportJson(report: ActReport): unknown {
+export function buildOptimizationReportJson(report: OptimizationReport): unknown {
   return {
     generatedAt: report.generatedAt,
     windowCapDays: report.windowCapDays,
@@ -553,110 +572,5 @@ export function buildActReportJson(report: ActReport): unknown {
       observedDays: report.observedDays,
     },
     footer: HONEST_FOOTER,
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Baseline capture (apply time)
-// ---------------------------------------------------------------------------
-
-type CaptureCtx = {
-  projects: ProjectSummary[]
-  coverage: McpServerCoverage[]
-  windowDays: number
-  now: Date
-}
-
-function mcpServersFromApply(finding: WasteFinding): string[] {
-  if (finding.apply?.kind === 'mcp-remove') return finding.apply.servers
-  if (finding.apply?.kind === 'mcp-project-scope') return finding.apply.servers.map(s => s.server)
-  return []
-}
-
-function needsConfigBaseline(kind: ActionKind): boolean {
-  return MCP_KINDS.has(kind) || DEFER_KINDS.has(kind) || kind in ARCHIVE_DEF_TOKENS || kind === 'claude-md-rule' || kind === 'shell-config'
-}
-
-export function captureBaseline(finding: WasteFinding, kind: ActionKind, ctx: CaptureCtx): ActionBaseline | undefined {
-  const common = {
-    windowDays: ctx.windowDays,
-    capturedAt: ctx.now.toISOString(),
-    estimatedTokens: Math.max(0, Math.round(finding.tokensSaved)),
-  }
-
-  if (MCP_KINDS.has(kind)) {
-    const servers = mcpServersFromApply(finding)
-    if (servers.length === 0) return undefined
-    const covByServer = new Map(ctx.coverage.map(c => [c.server, c]))
-    const metrics: Record<string, number> = {}
-    for (const server of servers) {
-      const cov = covByServer.get(server)
-      const tools = cov && cov.toolsAvailable > 0 ? cov.toolsAvailable : TOOLS_PER_MCP_SERVER
-      metrics[server] = tools * TOKENS_PER_MCP_TOOL
-    }
-    return { ...common, sessions: countSessionsLoading(ctx.projects, servers), metrics }
-  }
-
-  if (DEFER_KINDS.has(kind)) return captureDeferBaseline(finding, ctx)
-
-  const defTokens = ARCHIVE_DEF_TOKENS[kind]
-  if (defTokens !== undefined) {
-    const names = finding.apply?.kind === 'archive' ? finding.apply.names : []
-    if (names.length === 0) return undefined
-    const metrics: Record<string, number> = {}
-    for (const name of names) metrics[name] = defTokens
-    return { ...common, sessions: allSessions(ctx.projects).length, metrics }
-  }
-
-  const sessions = allSessions(ctx.projects)
-  if (kind === 'claude-md-rule') {
-    return { ...common, sessions: sessions.length, metrics: { reads: countToolCalls(sessions, READ_TOOL_NAMES), edits: countToolCalls(sessions, EDIT_TOOL_NAMES) } }
-  }
-  if (kind === 'shell-config') {
-    return { ...common, sessions: sessions.length, metrics: { calls: countBashCalls(sessions) } }
-  }
-  return undefined
-}
-
-// Scan the trailing 14 days once and stamp a baseline onto every appliable
-// plan that carries one, so runAction persists it for `act report` to diff.
-export async function captureBaselinesForPlans(
-  plans: FindingPlan[],
-  opts: { now?: Date; loadProjects?: (range: DateRange) => Promise<ProjectSummary[]> } = {},
-): Promise<void> {
-  const applicable = plans.filter(fp => fp.plan && needsConfigBaseline(fp.plan.kind))
-  if (applicable.length === 0) return
-  const now = opts.now ?? new Date()
-  const start = new Date(now.getTime() - BASELINE_WINDOW_DAYS * DAY_MS)
-  const loadProjects = opts.loadProjects ?? ((range: DateRange) => parseAllSessions(range, 'claude'))
-  const projects = await loadProjects({ start, end: now })
-  const ctx: CaptureCtx = { projects, coverage: aggregateMcpCoverage(projects), windowDays: BASELINE_WINDOW_DAYS, now }
-  for (const fp of applicable) {
-    const baseline = captureBaseline(fp.finding, fp.plan!.kind, ctx)
-    if (baseline) fp.plan!.baseline = baseline
-  }
-}
-
-export async function captureGuardBaseline(
-  opts: { now?: Date; cwd?: string; computeYield?: (range: DateRange) => Promise<YieldSummary> } = {},
-): Promise<ActionBaseline | undefined> {
-  const now = opts.now ?? new Date()
-  const range = { start: new Date(now.getTime() - BASELINE_WINDOW_DAYS * DAY_MS), end: now }
-  const yieldFn = opts.computeYield ?? ((r: DateRange) => computeYield(r, opts.cwd ?? process.cwd()))
-  let summary: YieldSummary
-  try {
-    summary = await yieldFn(range)
-  } catch {
-    return undefined
-  }
-  return {
-    windowDays: BASELINE_WINDOW_DAYS,
-    capturedAt: now.toISOString(),
-    estimatedTokens: 0,
-    sessions: summary.total.sessions,
-    metrics: {
-      abandonedPct: summary.total.cost > 0 ? Math.round((summary.abandoned.cost / summary.total.cost) * 100) : 0,
-      avgSessionCostUSD: summary.total.sessions > 0 ? summary.total.cost / summary.total.sessions : 0,
-    },
   }
 }

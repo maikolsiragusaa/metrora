@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Polled } from '../hooks/usePolled'
 import { setActiveCurrency } from '../lib/format'
-import type { ActReportJson, DailyHistoryEntry, DurableModelAccountingRow, MenubarPayload, YieldJsonReport } from '../lib/types'
+import type { OptimizationReportJson, DailyHistoryEntry, DurableModelAccountingRow, MenubarPayload, YieldJsonReport } from '../lib/types'
 import { Overview, OverviewContent, deriveSignals, localDateKey } from './Overview'
 import { asOverviewCurrent, deriveOverviewPricing, deriveOverviewUsage } from './overviewUsage'
 
@@ -15,14 +15,14 @@ function polled(data: MenubarPayload): Polled<MenubarPayload> {
 // Mock the typed bridge so the section fetches our payload instead of spawning
 // the CLI. `normalizeCliError` (used by usePolled) is kept from the real module.
 // `vi.hoisted` lets the hoisted `vi.mock` factory reference the spy safely.
-const { getOverview, getActReport, getYield } = vi.hoisted(() => ({
+const { getOverview, getOptimizationReport, getYield } = vi.hoisted(() => ({
   getOverview: vi.fn<(period: string, provider: string) => Promise<MenubarPayload>>(),
-  getActReport: vi.fn<() => Promise<ActReportJson>>(),
+  getOptimizationReport: vi.fn<() => Promise<OptimizationReportJson>>(),
   getYield: vi.fn<(period: string, provider: string) => Promise<YieldJsonReport>>(),
 }))
 vi.mock('../lib/ipc', async orig => {
   const actual = await orig<typeof import('../lib/ipc')>()
-  return { ...actual, metrora: { getOverview, getActReport, getYield } }
+  return { ...actual, metrora: { getOverview, getOptimizationReport, getYield } }
 })
 
 function makeYieldReport(): YieldJsonReport {
@@ -213,9 +213,9 @@ describe('Overview', () => {
   beforeEach(() => {
     setActiveCurrency({ code: 'USD', symbol: '$', rate: 1 })
     getOverview.mockReset()
-    getActReport.mockReset()
+    getOptimizationReport.mockReset()
     getYield.mockReset()
-    getActReport.mockResolvedValue({ totals: { realizedCostUSD: 84.2, measuredActions: 11 } })
+    getOptimizationReport.mockResolvedValue({ totals: { realizedCostUSD: 84.2, measuredActions: 11 } })
     getYield.mockResolvedValue(makeYieldReport())
   })
   afterEach(() => {
@@ -344,11 +344,11 @@ describe('Overview', () => {
   it('hides the applied-fixes line when there are no realized savings', async () => {
     const now = new Date()
     getOverview.mockResolvedValue(makePayload(now))
-    getActReport.mockResolvedValue({ totals: { realizedCostUSD: 0, measuredActions: 7 } })
+    getOptimizationReport.mockResolvedValue({ totals: { realizedCostUSD: 0, measuredActions: 7 } })
 
     render(<Overview period="30days" provider="all" />)
 
-    await waitFor(() => expect(getActReport).toHaveBeenCalled())
+    await waitFor(() => expect(getOptimizationReport).toHaveBeenCalled())
     expect(screen.queryByText('Saved by applied fixes')).not.toBeInTheDocument()
     expect(screen.queryByText(/across \d+ fix/)).not.toBeInTheDocument()
   })
@@ -1047,9 +1047,9 @@ describe('Overview workflow card', () => {
   beforeEach(() => {
     setActiveCurrency({ code: 'USD', symbol: '$', rate: 1 })
     getOverview.mockReset()
-    getActReport.mockReset()
+    getOptimizationReport.mockReset()
     getYield.mockReset()
-    getActReport.mockResolvedValue({ totals: { realizedCostUSD: 0, measuredActions: 0 } })
+    getOptimizationReport.mockResolvedValue({ totals: { realizedCostUSD: 0, measuredActions: 0 } })
     getYield.mockResolvedValue(makeYieldReport())
   })
   afterEach(() => vi.useRealTimers())

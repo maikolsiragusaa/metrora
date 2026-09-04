@@ -181,7 +181,7 @@ export async function runOptimizeApply(
   }
 
   // Stamp a trailing-14-day before-baseline onto each plan so runAction
-  // persists it and `act report` can measure realized savings later. Best
+  // persists it and `optimization-actions report` can measure realized savings later. Best
   // effort: a scan failure leaves the baseline absent (reported "not
   // measurable"), never blocking the apply.
   try {
@@ -194,7 +194,7 @@ export async function runOptimizeApply(
     try {
       const record = await runAction(fp.plan!, opts.actionsDir)
       print(`  Applied ${chalk.bold(shortId(record.id))}  ${record.description}`)
-      print(chalk.dim(`    Undo anytime: metrora act undo ${shortId(record.id)}`))
+      print(chalk.dim(`    Undo anytime: metrora optimization-actions undo ${shortId(record.id)}`))
     } catch (e) {
       errout.write(chalk.red(`  Failed to apply ${fp.finding.id}: ${e instanceof Error ? e.message : String(e)}`) + '\n')
       process.exitCode = 1

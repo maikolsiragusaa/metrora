@@ -39,7 +39,17 @@
 .opencode-activity-dot { background: #879eff; margin-right: 7px; }
 .opencode-permission { display: grid; gap: 8px; background: rgba(239, 183, 91, .08); }
 .opencode-permission span { color: var(--muted, #8b96a5); font-size: 12px; }
+.opencode-permission small, .opencode-question p, .opencode-auth-flow p, .opencode-auth-flow small { color: var(--muted, #8b96a5); font-size: 12px; }
 .opencode-permission div, .opencode-retry { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.opencode-question { display: grid; gap: 10px; border: 1px solid var(--line, #28303a); border-radius: 8px; padding: 10px 12px; margin-top: 10px; background: rgba(105, 142, 255, .08); }
+.opencode-question fieldset { display: grid; gap: 6px; border: 1px solid var(--line, #28303a); border-radius: 6px; padding: 8px; }
+.opencode-question legend { color: var(--text, #e9edf2); font-size: 12px; font-weight: 700; padding: 0 4px; }
+.opencode-question p { margin: 0; }
+.opencode-question label { display: flex; align-items: flex-start; gap: 7px; color: var(--muted, #8b96a5); font-size: 12px; }
+.opencode-question input[type='text'], .opencode-question fieldset > input, .opencode-auth-flow input { width: 100%; box-sizing: border-box; background: var(--input, #0e1318); border: 1px solid var(--line, #28303a); color: inherit; border-radius: 6px; padding: 7px 8px; }
+.opencode-question > div { display: flex; gap: 8px; flex-wrap: wrap; }
+.opencode-auth-flow { display: grid; gap: 7px; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line, #28303a); }
+.opencode-auth-flow a { color: #9fb2ff; font-size: 12px; overflow-wrap: anywhere; }
 .opencode-composer { padding: 10px; }
 .opencode-composer textarea { width: 100%; resize: vertical; background: transparent; border: 0; color: inherit; outline: 0; font: inherit; line-height: 1.45; }
 .opencode-composer-footer { justify-content: space-between; color: var(--muted, #8b96a5); font-size: 11px; }

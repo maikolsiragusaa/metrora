@@ -1,7 +1,5 @@
-import { existsSync, readFileSync } from 'fs'
-import { execFileSync } from 'child_process'
-import { isAbsolute, join } from 'path'
-import { homedir } from 'os'
+import { existsSync, readFileSync } from 'node:fs'
+import { isAbsolute, join } from 'node:path'
 import type { ActionKind, ActionPlan, PlannedChange } from './types.js'
 import { sha256 } from './backup.js'
 import {
@@ -13,21 +11,15 @@ import {
 } from '../optimize.js'
 import type { WasteFinding } from '../optimize.js'
 import { authorizeBuiltPlan } from './plan-authority.js'
+import { buildArchive, buildClaudeMdRule, buildShellConfig } from './plan-archive.js'
+import { resolvePaths, type PlanContext, type ResolvedPaths } from './plan-context.js'
+
+export type { PlanContext, ResolvedPaths } from './plan-context.js'
 
 // Turns an optimize finding into a concrete, journaled file-mutation plan.
 // Only config-class findings are appliable; everything else yields plan: null
 // (shown as "manual" by the CLI). Every path is derived from an injectable
 // context so tests can point the whole thing at a fixture home.
-
-export type PlanContext = {
-  homeDir?: string
-  cwd?: string
-  shell?: string
-  // Installed Claude Code version (null when undeterminable). Injectable so
-  // tests never shell out; production defaults to probing `claude --version`.
-  claudeVersion?: () => string | null
-  provider?: string // action-target authority; omitted preserves all-provider behavior
-}
 
 export type BuiltPlan = {
   plan: ActionPlan | null
@@ -39,62 +31,6 @@ export type BuiltPlan = {
 }
 
 export type FindingPlan = BuiltPlan & { finding: WasteFinding }
-
-export type ResolvedPaths = {
-  homeDir: string
-  cwd: string
-  projectMcpJson: string
-  projectSettings: string
-  projectSettingsLocal: string
-  userClaudeJson: string
-  userSettings: string
-  skillsDir: string
-  agentsDir: string
-  commandsDir: string
-  projectClaudeMd: string
-  shellRc: string
-  // Not a path, but resolved from the same context: the injectable installed-
-  // version probe the defer-alwaysload version gate consults.
-  claudeVersion: () => string | null
-}
-
-// `claude --version` prints e.g. "2.1.130 (Claude Code)"; any failure (binary
-// missing, timeout, non-zero exit) yields null and version-gated plans
-// degrade to a manual note instead of guessing.
-const CLAUDE_VERSION_PROBE_TIMEOUT_MS = 3000
-
-function probeClaudeVersion(): string | null {
-  try {
-    return execFileSync('claude', ['--version'], {
-      encoding: 'utf-8',
-      timeout: CLAUDE_VERSION_PROBE_TIMEOUT_MS,
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim()
-  } catch {
-    return null
-  }
-}
-
-function resolvePaths(ctx: PlanContext): ResolvedPaths {
-  const homeDir = ctx.homeDir ?? homedir()
-  const cwd = ctx.cwd ?? process.cwd()
-  const shell = ctx.shell ?? process.env['SHELL'] ?? ''
-  return {
-    homeDir,
-    cwd,
-    projectMcpJson: join(cwd, '.mcp.json'),
-    projectSettings: join(cwd, '.claude', 'settings.json'),
-    projectSettingsLocal: join(cwd, '.claude', 'settings.local.json'),
-    userClaudeJson: join(homeDir, '.claude.json'),
-    userSettings: join(homeDir, '.claude', 'settings.json'),
-    skillsDir: join(homeDir, '.claude', 'skills'),
-    agentsDir: join(homeDir, '.claude', 'agents'),
-    commandsDir: join(homeDir, '.claude', 'commands'),
-    projectClaudeMd: join(cwd, 'CLAUDE.md'),
-    shellRc: join(homeDir, /zsh/.test(shell) ? '.zshrc' : '.bashrc'),
-    claudeVersion: ctx.claudeVersion ?? probeClaudeVersion,
-  }
-}
 
 export function planFor(finding: WasteFinding, ctx: PlanContext = {}): ActionPlan | null {
   const r = resolvePaths(ctx)
@@ -603,115 +539,5 @@ function buildDeferThreshold(finding: WasteFinding, r: ResolvedPaths): BuiltPlan
   return {
     plan: mcpPlan('defer-threshold', finding.id, description, docs.changes()),
     notes: [NEXT_SESSION_NOTE],
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Archive unused skills / agents / commands
-// ---------------------------------------------------------------------------
-
-const ARCHIVE_KIND: Record<'skill' | 'agent' | 'command', ActionKind> = {
-  skill: 'archive-skill',
-  agent: 'archive-agent',
-  command: 'archive-command',
-}
-
-function withSuffix(base: string, n: number): string {
-  const dot = base.lastIndexOf('.')
-  return dot === -1 ? `${base}-${n}` : `${base.slice(0, dot)}-${n}${base.slice(dot)}`
-}
-
-function buildArchive(finding: WasteFinding, r: ResolvedPaths, capability: 'skill' | 'agent' | 'command'): BuiltPlan {
-  const names = finding.apply?.kind === 'archive' ? finding.apply.names : []
-  const baseDir = capability === 'skill' ? r.skillsDir : capability === 'agent' ? r.agentsDir : r.commandsDir
-  const isDir = capability === 'skill'
-  const archivedDir = join(baseDir, '.archived')
-  const changes: PlannedChange[] = []
-  const notes: string[] = []
-  const claimed = new Set<string>()
-
-  for (const name of names) {
-    const source = isDir ? join(baseDir, name) : join(baseDir, `${name}.md`)
-    if (!existsSync(source)) {
-      notes.push(`skipped ${name}: ${shortPath(source, r.homeDir)} no longer exists`)
-      continue
-    }
-    const destBase = isDir ? name : `${name}.md`
-    let dest = join(archivedDir, destBase)
-    let n = 2
-    while (existsSync(dest) || claimed.has(dest)) {
-      dest = join(archivedDir, withSuffix(destBase, n))
-      n++
-    }
-    claimed.add(dest)
-    changes.push({ op: 'move', path: source, movedTo: dest })
-  }
-
-  if (changes.length === 0) return { plan: null, notes }
-  return {
-    plan: {
-      kind: ARCHIVE_KIND[capability],
-      findingId: finding.id,
-      description: `Archive ${changes.length} unused ${capability}${changes.length === 1 ? '' : 's'}`,
-      changes,
-    },
-    notes,
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Marker-block edits (CLAUDE.md rule, shell rc)
-// ---------------------------------------------------------------------------
-
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-function upsertMarkerBlock(existing: string | null, id: string, text: string, style: 'html' | 'hash'): string {
-  const begin = style === 'html' ? `<!-- metrora:begin ${id} -->` : `# metrora:begin ${id}`
-  const end = style === 'html' ? `<!-- metrora:end ${id} -->` : `# metrora:end ${id}`
-  const block = `${begin}\n${text}\n${end}\n`
-  if (!existing) return block
-  const region = new RegExp(`${escapeRegExp(begin)}[\\s\\S]*?${escapeRegExp(end)}\\n?`)
-  if (region.test(existing)) return existing.replace(region, block)
-  return existing.endsWith('\n') ? existing + block : existing + '\n' + block
-}
-
-function markerChange(target: string, id: string, text: string, style: 'html' | 'hash'): PlannedChange {
-  const buf = existsSync(target) ? readFileSync(target) : null
-  const existing = buf === null ? null : buf.toString('utf-8')
-  return {
-    op: buf === null ? 'create' : 'edit',
-    path: target,
-    content: upsertMarkerBlock(existing, id, text, style),
-    expectedHash: buf === null ? null : sha256(buf),
-  }
-}
-
-function buildClaudeMdRule(finding: WasteFinding, r: ResolvedPaths): BuiltPlan {
-  if (finding.fix.type !== 'paste') return { plan: null, notes: [] }
-  const target = r.projectClaudeMd
-  return {
-    plan: {
-      kind: 'claude-md-rule',
-      findingId: finding.id,
-      description: `Add the ${finding.id} rule block to ${shortPath(target, r.homeDir)}`,
-      changes: [markerChange(target, finding.id, finding.fix.text, 'html')],
-    },
-    notes: [],
-  }
-}
-
-function buildShellConfig(finding: WasteFinding, r: ResolvedPaths): BuiltPlan {
-  if (finding.fix.type !== 'paste') return { plan: null, notes: [] }
-  const target = r.shellRc
-  return {
-    plan: {
-      kind: 'shell-config',
-      findingId: finding.id,
-      description: `Set the bash output cap in ${shortPath(target, r.homeDir)}`,
-      changes: [markerChange(target, finding.id, finding.fix.text, 'hash')],
-    },
-    notes: [],
   }
 }

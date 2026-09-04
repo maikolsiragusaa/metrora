@@ -33,25 +33,25 @@ async function refreshFlags(): Promise<number> {
 
 async function doInstall(scope: Scope, statusline: boolean): Promise<void> {
   const { settingsPathFor, buildInstall } = await import('./settings.js')
-  const { runAction } = await import('../act/apply.js')
-  const { shortId } = await import('../act/journal.js')
+  const { runAction } = await import('../optimization-operations/apply.js')
+  const { shortId } = await import('../optimization-operations/journal.js')
   const { readGuardConfig, writeGuardConfig, guardConfigPath, DEFAULT_GUARD_CONFIG } = await import('./store.js')
 
   const path = settingsPathFor({ ...scope, cwd: process.cwd() })
   const built = buildInstall(path, { statusline })
   for (const note of built.notes) console.log(chalk.yellow(`  ! ${note}`))
   if (built.plan) {
-    // Capture a trailing-14-day yield baseline so `act report` can correlate
+    // Capture a trailing-14-day yield baseline so `optimization-actions report` can correlate
     // the guard install against later yield. Best effort; a failure just
     // leaves the guard row "not measurable".
     try {
-      const { captureGuardBaseline } = await import('../act/report.js')
+      const { captureGuardBaseline } = await import('../optimization-operations/report.js')
       const baseline = await captureGuardBaseline({ cwd: process.cwd() })
       if (baseline) built.plan.baseline = baseline
     } catch { /* baseline is optional */ }
     const record = await runAction(built.plan)
     console.log(`  Installed ${chalk.bold(shortId(record.id))}  ${built.plan.description}`)
-    console.log(chalk.dim(`    Undo anytime: metrora act undo ${shortId(record.id)}`))
+    console.log(chalk.dim(`    Undo anytime: metrora optimization-actions undo ${shortId(record.id)}`))
   } else {
     console.log(chalk.dim(`  ${path}: nothing to change.`))
   }
@@ -72,8 +72,8 @@ async function doInstall(scope: Scope, statusline: boolean): Promise<void> {
 
 async function doUninstall(scope: Scope): Promise<void> {
   const { settingsPathFor, buildUninstall } = await import('./settings.js')
-  const { runAction } = await import('../act/apply.js')
-  const { shortId } = await import('../act/journal.js')
+  const { runAction } = await import('../optimization-operations/apply.js')
+  const { shortId } = await import('../optimization-operations/journal.js')
 
   const path = settingsPathFor({ ...scope, cwd: process.cwd() })
   const built = buildUninstall(path)
@@ -81,7 +81,7 @@ async function doUninstall(scope: Scope): Promise<void> {
   if (built.plan) {
     const record = await runAction(built.plan)
     console.log(`  Uninstalled ${chalk.bold(shortId(record.id))}  ${built.plan.description}`)
-    console.log(chalk.dim(`    Undo anytime: metrora act undo ${shortId(record.id)}`))
+    console.log(chalk.dim(`    Undo anytime: metrora optimization-actions undo ${shortId(record.id)}`))
   }
 }
 

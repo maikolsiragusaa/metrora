@@ -2,18 +2,18 @@ import type { Command } from 'commander'
 import { renderTable } from '../text-table.js'
 import { defaultActionsDir, readRecords, shortId } from './journal.js'
 import { DriftError, undoAction } from './undo.js'
-import { buildActReportJson, computeActReport, renderActReport } from './report.js'
+import { buildOptimizationReportJson, computeOptimizationReport, renderOptimizationReport } from './report.js'
 
 function formatWhen(at: string): string {
   return at.replace('T', ' ').slice(0, 16)
 }
 
-export function registerActCommands(program: Command): void {
-  const act = program
-    .command('act')
-    .description('Review and undo changes metrora has applied')
+export function registerOptimizationCommands(program: Command): void {
+  const operations = program
+    .command('optimization-actions')
+    .description('Review and undo local configuration changes Metrora has applied')
 
-  act
+  operations
     .command('list')
     .description('List applied actions, newest first')
     .option('--json', 'Output the full records as JSON')
@@ -39,7 +39,7 @@ export function registerActCommands(program: Command): void {
       }
     })
 
-  act
+  operations
     .command('undo [id]')
     .description('Undo an action by id (8-char prefix accepted), or the most recent with --last')
     .option('--last', 'Undo the most recent action')
@@ -65,7 +65,7 @@ export function registerActCommands(program: Command): void {
       }
     })
 
-  act
+  operations
     .command('apply-model <project>')
     .description('Apply the model default recommendation for a project')
     .action(async (project: string) => {
@@ -95,7 +95,7 @@ export function registerActCommands(program: Command): void {
 
         console.log(`Applied default model ${chalk.green(recommendation.candidateModel)} for ${project}`)
         console.log(chalk.dim(`  Evidence: ${recommendation.candidateEditTurns} turns, ${(recommendation.candidateOneShotRate * 100).toFixed(1)}% one-shot, $${recommendation.candidateCostPerEdit.toFixed(3)}/edit`))
-        console.log(chalk.dim(`  Undo anytime: metrora act undo ${shortId(record.id)}`))
+        console.log(chalk.dim(`  Undo anytime: metrora optimization-actions undo ${shortId(record.id)}`))
         console.log(chalk.dim(`  Per-session override: --model <name>`))
       } catch (err) {
         console.error(err instanceof Error ? err.message : String(err))
@@ -103,18 +103,18 @@ export function registerActCommands(program: Command): void {
       }
     })
 
-  act
+  operations
     .command('report')
     .description('Realized vs estimated savings for applied actions older than 3 days')
     .option('--json', 'Output the realized report as JSON')
     .action(async (opts: { json?: boolean }) => {
       try {
-        const report = await computeActReport()
+        const report = await computeOptimizationReport()
         if (opts.json) {
-          console.log(JSON.stringify(buildActReportJson(report), null, 2))
+          console.log(JSON.stringify(buildOptimizationReportJson(report), null, 2))
           return
         }
-        console.log(renderActReport(report))
+        console.log(renderOptimizationReport(report))
       } catch (err) {
         console.error(err instanceof Error ? err.message : String(err))
         process.exitCode = 1

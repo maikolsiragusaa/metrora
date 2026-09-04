@@ -5,10 +5,10 @@ import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { runAction } from '../src/act/apply.js'
-import { journalPath, readRecords } from '../src/act/journal.js'
-import { sha256 } from '../src/act/backup.js'
-import type { ActionRecord } from '../src/act/types.js'
+import { runAction } from '../src/optimization-operations/apply.js'
+import { journalPath, readRecords } from '../src/optimization-operations/journal.js'
+import { sha256 } from '../src/optimization-operations/backup.js'
+import type { ActionRecord } from '../src/optimization-operations/types.js'
 
 const roots: string[] = []
 
@@ -104,7 +104,7 @@ describe('runAction journaling', () => {
     expect(records.map(r => r.description)).toEqual(['first', 'second'])
   })
 
-  it('round-trips a record through JSON (act list --json shape)', async () => {
+  it('round-trips a record through JSON (optimization-actions list --json shape)', async () => {
     const { actionsDir, files } = await makeRoot()
     const p = join(files, 'f.txt')
     await writeFile(p, 'before')
@@ -165,7 +165,7 @@ describe('action lock', () => {
   })
 })
 
-describe('act list --json (CLI)', () => {
+describe('optimization-actions list --json (CLI)', () => {
   it('prints full records as JSON, newest first', async () => {
     const home = await mkdtemp(join(tmpdir(), 'metrora-act-cli-'))
     roots.push(home)
@@ -186,7 +186,7 @@ describe('act list --json (CLI)', () => {
     // Anchor the spawn to this checkout so running vitest from another cwd
     // cannot execute a different checkout's cli.ts.
     const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
-    const res = spawnSync(process.execPath, ['--import', 'tsx', 'src/cli.ts', 'act', 'list', '--json'], {
+    const res = spawnSync(process.execPath, ['--import', 'tsx', 'src/cli.ts', 'optimization-actions', 'list', '--json'], {
       cwd: repoRoot,
       env: { ...process.env, HOME: home, USERPROFILE: home, HOMEPATH: home, HOMEDRIVE: '' },
       encoding: 'utf-8',

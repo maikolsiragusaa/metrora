@@ -69,6 +69,13 @@ that command is present, while the Desktop path uses the official SDK against
 The automated boundary coverage includes:
 
 - exact upstream version/commit and staged executable resolution;
+- exact OpenCode permission (`permission.asked`/`permission.replied`), question
+  (`question.asked`/`question.replied`/`question.rejected`) and message delta
+  (`message.part.delta` plus complete `message.part.updated`) contracts;
+- official provider authentication through `provider.auth`, OAuth
+  authorize/callback and `auth.set`, including OpenCode Zen discovery;
+- session-owned model, agent and exact variant forwarding with no local model
+  catalog or guessed context/output limits;
 - token, bearer, secret, path and source-content redaction;
 - nested OpenCode event projection without raw tool input/output leakage;
 - canonical usage snapshot projection and custom-tool registration;
@@ -83,10 +90,12 @@ Physical Founder acceptance, provider-authenticated prompt execution and a
 real local `llama.cpp` completion remain manual acceptance steps. This spike
 does not claim those steps were completed by automated tests.
 
-## Migration note
+## Current architecture note
 
-The former Desktop Advisor UI, local model bridges, Harness desktop ACT bridge,
-and Swarm implementation/tests are removed from the coding-engine path. The
-Metrora ACT modules that remain in `src/act/` are the existing analytics and
-optimization command path; they are not an agent engine and are not called by
-OpenCode.
+The current Desktop coding surface is OpenCode. The removed Core Compatibility
+executor and its approval/lifecycle authority are not part of the current
+product. Independent local optimization operations remain under
+`src/optimization-operations/` for analysis, reversible configuration changes,
+backup, journal and undo; they are separate from OpenCode and are never used as
+OpenCode authority. The former Desktop conversational runtime and orchestration
+paths are not retained as compatibility surfaces.

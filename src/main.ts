@@ -31,7 +31,7 @@ import { getSharingDir, loadRemotes, saveRemotes } from './sharing/store.js'
 import type { UsageQuery } from './sharing/share-server.js'
 import { formatDateRangeLabel, parseDateRangeFlags, parseDayFlag, parseDaysFlag, getDateRange, toPeriod, type Period } from './cli-date.js'
 import { runOptimize } from './optimize.js'
-import { registerActCommands } from './act/cli.js'
+import { registerOptimizationCommands } from './optimization-operations/cli.js'
 import { registerGuardCommands } from './guard/cli.js'
 import { registerSyncCommands } from './sync/cli.js'; import { registerBenchCommands } from './bench/cli.js'
 import { runContextCommand } from './context-tree.js'
@@ -1816,7 +1816,7 @@ program
     }
     const projects = await parseAllSessions(range, opts.provider)
     if (opts.apply) {
-      const { runOptimizeApply } = await import('./act/optimize-apply.js')
+      const { runOptimizeApply } = await import('./optimization-operations/optimize-apply.js')
       await runOptimizeApply(projects, range, { yes: opts.yes, dryRun: opts.dryRun, only: opts.only, provider: opts.provider })
       return
     }
@@ -1824,14 +1824,14 @@ program
     if (format === 'text') {
       // Surface realized savings from applied actions. Best effort: optimize
       // must never fail because of journal contents, so any error just drops
-      // the header. computeActReport returns fast without scanning when the
+      // the header. computeOptimizationReport returns fast without scanning when the
       // journal has no eligible applied actions, so users who never opted in
       // see identical output.
       let appliedHeader: string | undefined
       let previouslyApplied: Record<string, string> | undefined
       try {
-        const { computeActReport, buildOptimizeAppliedHeader } = await import('./act/report.js')
-        const applied = await computeActReport()
+        const { computeOptimizationReport, buildOptimizeAppliedHeader } = await import('./optimization-operations/report.js')
+        const applied = await computeOptimizationReport()
         appliedHeader = buildOptimizeAppliedHeader(applied) ?? undefined
         previouslyApplied = applied.appliedByFinding
       } catch { /* the header is optional; never block the findings */ }
@@ -2311,7 +2311,7 @@ program
     process.stdout.write(renderDoctorTable(report, { color: opts.color }))
   })
 
-registerActCommands(program)
+registerOptimizationCommands(program)
 registerGuardCommands(program)
 registerSyncCommands(program); registerProjectCommands(program); registerBenchCommands(program)
 

@@ -1,7 +1,7 @@
 import { appendFile, mkdir, readFile, rm, stat, writeFile } from 'fs/promises'
 import { dirname, join } from 'path'
 import { getConfigFilePath } from '../config.js'
-import type { JournalRecordV1 } from './core-compatibility-types.js'
+import type { ActionRecord } from './types.js'
 
 // Actions live beside config.json under the same Metrora home dir; reuse the
 // config resolver rather than inventing a second location.
@@ -17,15 +17,15 @@ export function shortId(id: string): string {
   return id.slice(0, 8)
 }
 
-export async function appendRecord(actionsDir: string, record: JournalRecordV1): Promise<void> {
+export async function appendRecord(actionsDir: string, record: ActionRecord): Promise<void> {
   await mkdir(actionsDir, { recursive: true })
   await appendFile(journalPath(actionsDir), JSON.stringify(record) + '\n', 'utf-8')
 }
 
-// Legacy append-only JSONL: a status flip is a full replacement line for the
-// same id, so the last line for an id wins. This forgiving reader remains for
-// legacy list/undo compatibility; controlled ACT reads use the strict reader.
-export async function readRecords(actionsDir: string): Promise<JournalRecordV1[]> {
+// Append-only JSONL: a status flip is a full replacement line for the same id,
+// so the last line for an id wins. The reader stays forgiving for local
+// analytics/optimization history: malformed lines never become executable data.
+export async function readRecords(actionsDir: string): Promise<ActionRecord[]> {
   let raw: string
   try {
     raw = await readFile(journalPath(actionsDir), 'utf-8')
@@ -34,12 +34,12 @@ export async function readRecords(actionsDir: string): Promise<JournalRecordV1[]
     throw err
   }
   const order: string[] = []
-  const byId = new Map<string, JournalRecordV1>()
+  const byId = new Map<string, ActionRecord>()
   for (const line of raw.split('\n')) {
     if (!line.trim()) continue
-    let rec: JournalRecordV1
+    let rec: ActionRecord
     try {
-      rec = JSON.parse(line) as JournalRecordV1
+      rec = JSON.parse(line) as ActionRecord
     } catch {
       continue
     }
@@ -49,12 +49,8 @@ export async function readRecords(actionsDir: string): Promise<JournalRecordV1[]
   }
   return order.map(id => byId.get(id)!)
 }
-/**
- * Controlled ACT operations cannot use the legacy journal's forgiving parser.
- * Every non-empty line is parsed and must at least be an object with an id;
- * the operation parser performs the stricter schema and lifecycle checks.
- */
-export async function readRecordHistoryStrict(actionsDir: string): Promise<unknown[]> {
+/** Read every journal line for report-level validation; malformed JSON becomes null. */
+export async function readRecordHistory(actionsDir: string): Promise<unknown[]> {
   let raw: string
   try {
     raw = await readFile(journalPath(actionsDir), 'utf-8')
@@ -66,14 +62,7 @@ export async function readRecordHistoryStrict(actionsDir: string): Promise<unkno
   for (const line of raw.split('\n')) {
     if (!line.trim()) continue
     let value: unknown
-    try {
-      value = JSON.parse(line)
-    } catch {
-      throw new Error('ACT journal is corrupt: malformed JSON')
-    }
-    if (!value || typeof value !== 'object' || Array.isArray(value) || typeof (value as { id?: unknown }).id !== 'string') {
-      throw new Error('ACT journal is corrupt: record identity is malformed')
-    }
+    try { value = JSON.parse(line) } catch { value = null }
     records.push(value)
   }
   return records

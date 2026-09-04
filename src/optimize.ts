@@ -10,7 +10,7 @@ import { parseJsonlLine, shouldSkipLine } from './parser.js'
 import type { DateRange, ProjectSummary, SessionSummary } from './types.js'
 import { formatCost } from './currency.js'
 import { formatTokens } from './format.js'
-import { recommendModelDefault, type ModelDefaultRecommendation } from './act/model-defaults.js'
+import { recommendModelDefault, type ModelDefaultRecommendation } from './optimization-operations/model-defaults.js'
 import { aggregateFileChurn, buildCoachingNotes, scanUserCorrections, medianTimeToFirstEditMs, worstOneShotCategory, type ReworkedFile } from './workflow-insights.js'
 import { optimizeResultCacheKey } from './optimize-cache-key.js'
 import { claudeOnlyDetector, providerCoversClaude } from './optimize-provider-authority.js'
@@ -132,7 +132,7 @@ const CAPABILITY_RELIABILITY_HIGH_IMPACT_TOKENS = 200_000
 // invoked is direct transcript evidence that deferral was active.
 const TOOL_SEARCH_TOOL_NAME = 'ToolSearch'
 // Exported: the defer-enable / defer-threshold plan builders in
-// src/act/plans.ts edit exactly this settings env key.
+// src/optimization-operations/plans.ts edits exactly this settings env key.
 export const ENABLE_TOOL_SEARCH_VAR = 'ENABLE_TOOL_SEARCH'
 const ANTHROPIC_BASE_URL_VAR = 'ANTHROPIC_BASE_URL'
 const CLAUDE_CODE_USE_VERTEX_VAR = 'CLAUDE_CODE_USE_VERTEX'
@@ -153,7 +153,7 @@ const ALWAYSLOAD_MAX_CALLS_PER_SESSION = 0.2
 // Server-level alwaysLoad shipped in Claude Code v2.1.121; on older
 // versions the key is inert and the server's tools defer normally, so the
 // pin costs nothing there. Exported: the defer-alwaysload plan builder
-// (src/act/plans.ts) gates on the same boundary against the INSTALLED
+// (src/optimization-operations/plans.ts) gates on the same boundary against the INSTALLED
 // version before offering to remove the pin.
 export const ALWAYSLOAD_MIN_VERSION = '2.1.121'
 const ALWAYSLOAD_HIGH_IMPACT_TOKENS = 200_000
@@ -243,7 +243,7 @@ export type WasteAction =
 export type Trend = 'active' | 'improving'
 
 // Stable, kebab-case identifier per detector. Used to route findings to
-// appliable plans (src/act/plans.ts) and for the `--only` filter, so these
+// appliable plans (src/optimization-operations/plans.ts) and for the `--only` filter, so these
 // strings must not change once shipped.
 export type FindingId =
   | 'read-edit-ratio'
@@ -603,7 +603,7 @@ type McpConfigEntry = {
   alwaysLoadPaths: string[]
 }
 
-// `homeDir` is injectable for tests (mirrors src/act/plans.ts PlanContext);
+// `homeDir` is injectable for tests (mirrors src/optimization-operations/plans.ts PlanContext);
 // production callers omit it.
 export function loadMcpConfigs(projectCwds: Iterable<string>, homeDir = homedir()): Map<string, McpConfigEntry> {
   const servers = new Map<string, McpConfigEntry>()
@@ -1273,7 +1273,7 @@ function collectMcpProjectProfiles(
   return candidates
 }
 
-export function detectMcpProfileAdvisor(
+export function detectMcpProfileOpportunity(
   projects: ProjectSummary[],
   coverage = aggregateMcpCoverage(projects),
 ): WasteFinding | null {
@@ -1666,7 +1666,7 @@ type DeferralEnvHit = {
 // precedence, so the hit we report is the value that actually takes
 // effect. Shell profiles come last: settings "env" entries override the
 // inherited environment. `homeDir` is injectable for tests (PlanContext
-// style in src/act/plans.ts).
+// style in src/optimization-operations/plans.ts).
 export function findDeferralEnvSetting(
   name: string,
   projectCwds: Iterable<string>,
@@ -1719,7 +1719,7 @@ function isFirstPartyBaseUrl(value: string): boolean {
   }
 }
 
-// Both exported: the defer-alwaysload plan builder (src/act/plans.ts) gates
+// Both exported: the defer-alwaysload plan builder (src/optimization-operations/plans.ts) gates
 // on the installed Claude Code version with the same comparison the detector
 // uses on observed versions. versionPredates returns false for unparseable
 // input, so gates that must fail closed check parseVersion separately.
@@ -3001,7 +3001,7 @@ export async function scanAndDetect(
     claudeOnlyDetector(provider, () => detectDuplicateReads(toolCalls, dateRange)),
     claudeOnlyDetector(provider, () => detectUnusedMcp(toolCalls, projects, projectCwds, mcpCoverage)),
     () => detectMcpToolCoverage(projects, mcpCoverage),
-    () => detectMcpProfileAdvisor(projects, mcpCoverage),
+    () => detectMcpProfileOpportunity(projects, mcpCoverage),
     // mcp-deferral-gaps family (#614): detection only, no apply plans yet.
     claudeOnlyDetector(provider, () => detectMcpDeferralOff(toolCalls, projects, projectCwds, apiCalls)),
     claudeOnlyDetector(provider, () => detectMcpAlwaysLoadHygiene(projects, projectCwds, apiCalls, mcpCoverage)),
@@ -3218,7 +3218,7 @@ function renderOptimize(
       lines.push(`  ${rec.project}: ${chalk.bold(rec.currentModel)} -> ${chalk.bold.hex(GREEN)(rec.candidateModel)}`)
       lines.push(chalk.dim(`  Current:  ${(rec.currentOneShotRate*100).toFixed(1)}% one-shot over ${rec.currentEditTurns} edits, ${formatCost(rec.currentCostPerEdit)}/edit`))
       lines.push(chalk.dim(`  Candidate: ${(rec.candidateOneShotRate*100).toFixed(1)}% one-shot over ${rec.candidateEditTurns} edits, ${formatCost(rec.candidateCostPerEdit)}/edit`))
-      lines.push(`  To apply: ${chalk.hex(CYAN)(`metrora act apply-model ${rec.project}`)}`)
+      lines.push(`  To apply: ${chalk.hex(CYAN)(`metrora optimization-actions apply-model ${rec.project}`)}`)
       lines.push('')
     }
   }

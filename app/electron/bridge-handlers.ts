@@ -401,7 +401,7 @@ export function createBridgeHandlers(deps: Deps): Record<string, Handler> {
       return { ok: true, value: Boolean(controller) }
     },
     'metrora:getPlans': run((period: string) => ['status', '--format', 'json', '--period', vPeriod(period)]),
-    'metrora:getActReport': run(() => ['act', 'report', '--json']),
+    'metrora:getOptimizationReport': run(() => ['optimization-actions', 'report', '--json']),
     'metrora:getModels': run((period: string, provider: string, byTask: boolean, range?: DateRange, projectScopeId?: string | null) => [
       'models', '--format', 'json', '--period', vPeriod(period), ...providerArgs(vProvider(provider)), ...(byTask ? ['--by-task'] : []), ...rangeArgs(vRange(range)),
       ...(validateProjectScope(projectScopeId) ? ['--metrora-project', validateProjectScope(projectScopeId)!] : []),

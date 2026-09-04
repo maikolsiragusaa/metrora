@@ -1,11 +1,17 @@
 # ACT Contract Preparation 001
 
+> Historical archive. This design record describes a superseded Core
+> Compatibility executor and is not current Metrora or OpenCode authority.
+> The implementation described here was removed from the current product
+> path; independent optimization operations are documented separately.
+
 > Historical CLI analytics/optimization contract. The former Desktop Advisor,
 > Harness action bridge and Swarm path are removed; Desktop coding now runs
 > through OpenCode. See [OpenCode Engine Spike 001](OPENCODE_ENGINE_SPIKE_001.md)
 > for the current coding-engine architecture.
 
-**Status:** current-main-native ACT foundation v2 contract and implementation note; the bounded first executor is implemented on this branch for review.
+**Status:** historical ACT foundation v2 contract and implementation note; the
+bounded executor described here is not part of the current product path.
 
 ## Purpose
 

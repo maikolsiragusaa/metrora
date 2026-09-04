@@ -7,6 +7,8 @@ import type {
   OpenCodeEngineStatus,
   OpenCodeLocalProviderConfig,
   OpenCodeMcpServer,
+  OpenCodeProviderAuthAuthorization,
+  OpenCodeProviderAuthMethods,
   OpenCodeProvider,
   OpenCodeRendererEvent,
   OpenCodeSession,
@@ -40,9 +42,8 @@ async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
   return Promise.reject(res.error)
 }
 
-// The legacy IPC channel names remain behind this adapter until main-process
-// aliases are installed. Renderer code receives Metrora as the canonical bridge
-// immediately, while old windows/integrations can keep using window.metrora.
+// The renderer receives only the current Metrora bridge surface. OpenCode has
+// its own namespaced channels below; optimization analytics stays separate.
 const bridge = {
   getQuota: (force?: boolean) => invoke('metrora:getQuota', force),
   getBenchHistory: () => invoke('metrora:getBenchHistory'),
@@ -62,7 +63,7 @@ const bridge = {
   assignSourceProject: (projectId: string, sourceProjectId: string) => invoke('metrora:assignSourceProject', projectId, sourceProjectId),
   unassignSourceProject: (sourceProjectId: string) => invoke('metrora:unassignSourceProject', sourceProjectId),
   getPlans: (period: string) => invoke('metrora:getPlans', period),
-  getActReport: () => invoke('metrora:getActReport'),
+  getOptimizationReport: () => invoke('metrora:getOptimizationReport'),
   getModels: (period: string, provider: string, byTask: boolean, range?: DateRange, projectScopeId?: string | null) => invoke('metrora:getModels', period, provider, byTask, range, projectScopeId),
   getSessions: (period: string, provider: string, range?: DateRange, projectScopeId?: string | null) => invoke('metrora:getSessions', period, provider, range, projectScopeId),
   getCompareModels: (period: string, provider: string) => invoke('metrora:getCompareModels', period, provider),
@@ -106,11 +107,17 @@ const bridge = {
   opencodePrompt: (request: Record<string, unknown>) => invoke<OpenCodeConversationMessage | null>('metrora:opencodePrompt', request),
   opencodeCancel: (requestId: string) => invoke<boolean>('metrora:opencodeCancel', requestId),
   opencodeListProviders: () => invoke<OpenCodeProvider[]>('metrora:opencodeListProviders'),
+  opencodeListProviderAuth: () => invoke<OpenCodeProviderAuthMethods>('metrora:opencodeListProviderAuth'),
+  opencodeSetProviderApiKey: (providerId: string, key: string) => invoke<boolean>('metrora:opencodeSetProviderApiKey', providerId, key),
+  opencodeProviderOAuthAuthorize: (providerId: string, method: number, inputs: Record<string, string>) => invoke<OpenCodeProviderAuthAuthorization>('metrora:opencodeProviderOAuthAuthorize', providerId, method, inputs),
+  opencodeProviderOAuthCallback: (providerId: string, method: number, code?: string) => invoke<boolean>('metrora:opencodeProviderOAuthCallback', providerId, method, code),
   opencodeListAgents: () => invoke<OpenCodeAgent[]>('metrora:opencodeListAgents'),
   opencodeListTools: () => invoke<OpenCodeTools>('metrora:opencodeListTools'),
   opencodeGetWorkspace: () => invoke<OpenCodeWorkspaceInfo>('metrora:opencodeGetWorkspace'),
   opencodeGetMcp: () => invoke<OpenCodeMcpServer[]>('metrora:opencodeGetMcp'),
   opencodePermissionReply: (sessionId: string, permissionId: string, response: 'once' | 'always' | 'reject') => invoke<boolean>('metrora:opencodePermissionReply', sessionId, permissionId, response),
+  opencodeQuestionReply: (requestId: string, answers: string[][]) => invoke<boolean>('metrora:opencodeQuestionReply', requestId, answers),
+  opencodeQuestionReject: (requestId: string) => invoke<boolean>('metrora:opencodeQuestionReject', requestId),
   opencodeConfigureLocal: (config: OpenCodeLocalProviderConfig) => invoke<OpenCodeEngineStatus>('metrora:opencodeConfigureLocal', config),
 
   getWorkspaceStatus: () => invoke('metrora:getWorkspaceStatus'),
