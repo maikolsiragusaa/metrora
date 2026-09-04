@@ -108,11 +108,21 @@ Any future implementation needs separate review for:
 
 Agent evaluation measures a complete agent workflow, not only a foundation model.
 
-It becomes relevant only after Metrora has real, separately authorized agent/Swarm execution to evaluate.
+Metrora now has real Agent/Subagent execution through the accepted upstream OpenCode Code surface. That makes future Agent Evaluation technically relevant, but it does **not** define a benchmark methodology or make ordinary product sessions comparable evaluation evidence.
 
 No Agent Evaluation implementation is shipped today.
 
-Any future implementation requires stronger container/sandbox, repository, network, secret, cost and action-authority controls.
+Any future implementation requires a separately versioned methodology and stronger review for:
+
+- task/dataset and repository rights;
+- disposable container/sandbox isolation;
+- repository, network and secret boundaries;
+- runtime/Agent configuration identity;
+- cost/resource limits;
+- reproducibility and contamination disclosure;
+- artifact/result retention;
+- scoring/comparability semantics;
+- clear separation from ordinary Code usage and Activity history.
 
 ## Comparison rules
 
