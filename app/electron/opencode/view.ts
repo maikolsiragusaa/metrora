@@ -126,7 +126,6 @@ export class OpenCodeViewManager {
     const record = [...this.records].find(candidate => candidate.window === window)
     if (!record) return false
     record.view.setVisible(false)
-    window.contentView.removeView(record.view)
     return true
   }
 

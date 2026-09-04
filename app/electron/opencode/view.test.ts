@@ -40,12 +40,13 @@ function fakeView(): FakeView {
 }
 
 function fakeWindow() {
-  const window: OpenCodeWindow & { added: OpenCodeView[]; removed: OpenCodeView[] } = {
+  const window: OpenCodeWindow & { added: OpenCodeView[]; removed: OpenCodeView[]; attached: Set<OpenCodeView> } = {
     added: [],
     removed: [],
+    attached: new Set(),
     contentView: {
-      addView: view => { window.added.push(view) },
-      removeView: view => { window.removed.push(view) },
+      addView: view => { window.added.push(view); window.attached.add(view) },
+      removeView: view => { window.removed.push(view); window.attached.delete(view) },
     },
   }
   return window
@@ -68,19 +69,31 @@ describe('OpenCode WebContentsView boundary', () => {
       removeListener: vi.fn((event, listener) => { if (appListeners.get(event) === listener) appListeners.delete(event) }),
     }
     const connection = { origin: 'http://127.0.0.1:43127', username: 'metrora', password: 'secret-password' }
+    let processStarts = 0
+    let runtimeReady = false
     const runtime = {
-      start: vi.fn(async () => status),
+      start: vi.fn(async () => {
+        if (!runtimeReady) {
+          processStarts += 1
+          runtimeReady = true
+        }
+        return status
+      }),
       stop: vi.fn(async () => undefined),
       status: vi.fn(() => status),
       getConnection: vi.fn(() => connection),
     }
     const view = fakeView()
+    const firstWebContents = view.webContents
     const window = fakeWindow()
-    const manager = new OpenCodeViewManager(runtime, { app, createView: () => view })
+    const createView = vi.fn(() => view)
+    const manager = new OpenCodeViewManager(runtime, { app, createView })
 
     await expect(manager.activate(window, { x: 4, y: 5, width: 900, height: 600 })).resolves.toEqual(status)
     expect(runtime.start).toHaveBeenCalledOnce()
+    expect(createView).toHaveBeenCalledOnce()
     expect(window.added).toEqual([view])
+    expect(window.attached).toEqual(new Set([view]))
     expect(view.visible).toBe(true)
     expect(view.webContents.focused).toBe(true)
     expect(view.webContents.opened).toEqual(['http://127.0.0.1:43127/'])
@@ -108,12 +121,22 @@ describe('OpenCode WebContentsView boundary', () => {
 
     manager.deactivate(window)
     expect(view.visible).toBe(false)
-    expect(window.removed).toEqual([view])
+    expect(window.attached).toEqual(new Set([view]))
+    expect(window.removed).toEqual([])
+
     await manager.activate(window, { x: 4, y: 5, width: 800, height: 500 })
+    expect(createView).toHaveBeenCalledOnce()
+    expect(window.added).toHaveLength(1)
+    expect(window.attached).toEqual(new Set([view]))
+    expect(view.webContents).toBe(firstWebContents)
+    expect(view.visible).toBe(true)
     expect(view.webContents.opened).toHaveLength(1)
     expect(view.bounds).toEqual({ x: 4, y: 5, width: 800, height: 500 })
+    expect(processStarts).toBe(1)
 
     await manager.shutdown()
+    expect(window.removed).toEqual([view])
+    expect(window.attached).toEqual(new Set())
     expect(view.webContents.destroyed).toBe(true)
     expect(runtime.stop).toHaveBeenCalledOnce()
     expect(app.removeListener).toHaveBeenCalledOnce()
