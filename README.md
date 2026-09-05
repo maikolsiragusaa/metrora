@@ -23,6 +23,9 @@ No mandatory account. No mandatory AI proxy. No second coding engine.
 > [!IMPORTANT]
 > Metrora for Windows is live on the **Microsoft Store**, published by Vensent. The Android companion is also live on **Google Play** under the same `eu.metrora.app` application identity used by the direct Android channel. Repository builds and historical pre-releases remain development, verification or alternate-distribution artifacts rather than Store authority.
 
+> [!NOTE]
+> Repository `main` can be ahead of the currently published Store binaries. The accepted OpenCode-based Code foundation described below is current source/product authority; rollout through a Store channel remains a separate release event and should not be inferred from source availability alone.
+
 ## Observe. Compare. Code. Control.
 
 AI-assisted development is fragmented across editors, CLIs, desktop apps, subscriptions, gateways, providers and models. Metrora brings the useful evidence and control surfaces back together without requiring your AI requests to flow through a Metrora cloud gateway.
@@ -42,7 +45,7 @@ The result is intentionally broader than a token tracker: Metrora is the place w
 - **No mandatory proxy.** Supported AI traffic can remain on the path chosen by the user; Metrora reads supported local evidence instead of demanding to become the gateway.
 - **Multi-tool, not single-provider.** Metrora currently registers **39 local collectors** across major AI coding clients, CLIs, editors and gateways.
 - **Evidence-aware.** Observed, metered, derived, estimated, stale, partial and unavailable states remain distinguishable. Unknown does not silently become zero.
-- **Real Code surface.** Metrora embeds upstream OpenCode for coding sessions, agents, tools, files, shell and Git rather than shipping a lookalike client or second agent runtime.
+- **Real Code surface.** The current source foundation embeds upstream OpenCode for coding sessions, agents, tools, files, shell and Git rather than shipping a lookalike client or second agent runtime.
 - **One factual layer, many surfaces.** Desktop, CLI, local web, Android, MCP, Bench and Code integrations build on shared Metrora facts instead of inventing separate accounting engines.
 - **User-owned data.** Export, local inspection and reproducible evidence remain first-class product boundaries.
 
@@ -82,7 +85,7 @@ Metrora owns its canonical facts, accounting, evidence, Projects, Capacity, Benc
 
 ## Code, powered by upstream OpenCode
 
-The Desktop **Code** destination hosts the real upstream [OpenCode](https://github.com/anomalyco/opencode) Web UI and runtime.
+The accepted Desktop **Code** foundation hosts the real upstream [OpenCode](https://github.com/anomalyco/opencode) Web UI and runtime.
 
 Metrora deliberately does **not** maintain a parallel general-purpose session, agent, provider, permissions, filesystem, shell or Git engine for Code. The host integration keeps the upstream coding experience intact while Metrora adds the surrounding product context it is uniquely positioned to own.
 
@@ -121,8 +124,8 @@ This matters because an AI control center is only useful if its numbers remain e
 
 | Surface | Role | Current status |
 | --- | --- | --- |
-| **Desktop** | Primary local control center for observation, comparison, Code, Capacity and configuration | **Live on Microsoft Store for Windows** |
-| **Code** | Upstream OpenCode runtime/Web UI hosted inside Metrora | **Available in the current Desktop line** |
+| **Desktop** | Primary local control center for observation, comparison, Capacity and configuration | **Live on Microsoft Store for Windows** |
+| **Code** | Upstream OpenCode runtime/Web UI hosted inside Metrora | **Accepted in current source/product foundation; Store rollout follows its own release cadence** |
 | **CLI** | Automation, inspection, export and keyboard-first analysis | Bundled with Windows; source development supported |
 | **Local web** | Browser view served from the local machine | Available locally |
 | **Android** | Read-focused companion for an explicitly paired Desktop | **Live on Google Play**; direct GitHub APK channel also exists |
@@ -159,7 +162,7 @@ Current evidence families remain separate:
 - **Coding Evaluation** — future, only under a versioned methodology and sandbox/licence boundary;
 - **Agent Evaluation** — future, only under a versioned methodology and isolation boundary.
 
-OpenCode already provides real Agent/Subagent execution inside Code; that does not by itself turn ordinary coding sessions into a reproducible Agent Evaluation benchmark.
+OpenCode already provides real Agent/Subagent execution inside the accepted Code foundation; that does not by itself turn ordinary coding sessions into a reproducible Agent Evaluation benchmark.
 
 See [Bench evidence families](docs/BENCH_EVIDENCE_FAMILIES.md).
 
@@ -199,7 +202,7 @@ See [Ecosystem surfaces](docs/ECOSYSTEM_SURFACES.md) for current-versus-future s
 
 ### Windows
 
-Install from the [Microsoft Store](https://apps.microsoft.com/detail/9NXSZFQSBBDX). The Store package contains the Desktop application and bundled Metrora CLI runtime; no separate Node.js installation is required for ordinary use.
+Install from the [Microsoft Store](https://apps.microsoft.com/detail/9NXSZFQSBBDX). The Store package contains the Desktop application and bundled Metrora CLI runtime; no separate Node.js installation is required for ordinary use. See the source-versus-Store note above for capabilities added after the published baseline.
 
 ### Android
 
