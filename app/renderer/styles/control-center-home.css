@@ -201,21 +201,21 @@
   /* The renderer receives the client area below the native Windows title bar,
      so the reference's top-bar coordinates are applied from y=0 here. */
   .metrora-shell .bar-home {
-    height: 90px;
-    min-height: 90px;
+    height: clamp(64px, 8.8vh, 90px);
+    min-height: clamp(64px, 8.8vh, 90px);
     align-items: flex-start;
     padding: 15px 41px 27px 30px;
   }
 
   .metrora-shell .bar-home .bar-command {
-    height: 48px;
+    height: clamp(42px, 4.7vh, 48px);
   }
 
   .metrora-shell .bar-home .btn,
   .metrora-shell .bar-home .pop,
   .metrora-shell .bar-home .calendar-trigger,
   .metrora-shell .bar-home .seg {
-    min-height: 48px;
+    min-height: clamp(42px, 4.7vh, 48px);
   }
 
   .control-center-hero__actions,
@@ -584,6 +584,9 @@
 .control-center-panel {
   min-width: 0;
   min-height: 319px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: 15px;
   border: 1px solid var(--cc-border);
   border-radius: 15px;
@@ -593,6 +596,7 @@
 
 .control-center-panel__head {
   display: flex;
+  flex: 0 0 auto;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
@@ -623,8 +627,11 @@
 .control-center-list,
 .control-center-model-list {
   display: flex;
+  min-height: 0;
   flex-direction: column;
   gap: 3px;
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 
 .control-center-list-row,
@@ -968,31 +975,44 @@
   }
 
   .control-center-hero {
-    height: 158px;
-    min-height: 158px;
-    margin-bottom: 11px;
+    height: clamp(118px, 15.4vh, 158px);
+    min-height: clamp(118px, 15.4vh, 158px);
+    margin-bottom: clamp(8px, 1.1vh, 11px);
+  }
+
+  .control-center-hero__actions,
+  .control-center-hero__meta {
+    display: none;
   }
 
   .control-center-stats {
-    gap: 16px;
-    min-height: 97px;
-    margin-bottom: 20px;
+    gap: clamp(10px, 1.55vh, 16px);
+    min-height: clamp(64px, 9.5vh, 97px);
+    margin-bottom: clamp(8px, 1.95vh, 20px);
   }
 
   .control-center-stat {
-    min-height: 97px;
+    min-height: clamp(64px, 9.5vh, 97px);
   }
 
   .control-center-grid {
     grid-template-columns: 1.13fr 1fr .78fr;
-    gap: 16px;
-    margin-bottom: 19px;
+    gap: clamp(8px, 1.55vh, 16px);
+    margin-bottom: clamp(8px, 1.85vh, 19px);
+  }
+
+  .control-center-panel {
+    min-height: clamp(205px, 31.2vh, 319px);
   }
 
   .control-center-promos {
     grid-template-columns: 1.08fr 1fr .94fr;
-    gap: 16px;
-    min-height: 172px;
+    gap: clamp(10px, 1.55vh, 16px);
+    min-height: clamp(120px, 16.8vh, 172px);
+  }
+
+  .control-center-promo {
+    min-height: clamp(120px, 16.8vh, 172px);
   }
 }
 
@@ -1015,5 +1035,234 @@
     content: '↻';
     font-size: 17px;
     line-height: 1;
+  }
+}
+
+/* The packaged Windows window is commonly rendered at 1280 x 697 CSS pixels
+   on a 150% display. Keep the reference composition in one frame at that
+   size, while retaining a denser fallback for a narrower desktop window. */
+@media (min-width: 1121px) and (max-width: 1340px),
+       (min-width: 1121px) and (max-height: 900px) {
+  .metrora-shell {
+    --metrora-sidebar-expanded: 192px;
+  }
+
+  .metrora-shell .bar-home {
+    height: clamp(64px, 8.8vh, 76px);
+    min-height: clamp(64px, 8.8vh, 76px);
+    align-items: center;
+    padding: 8px 20px;
+  }
+
+  .metrora-shell .bar-home .bar-command {
+    width: min(390px, 34vw);
+    min-width: min(390px, 34vw);
+    height: clamp(42px, 6.2vh, 48px);
+  }
+
+  .metrora-shell .bar-home .btn,
+  .metrora-shell .bar-home .pop,
+  .metrora-shell .bar-home .calendar-trigger,
+  .metrora-shell .bar-home .seg {
+    min-height: clamp(42px, 6.2vh, 48px);
+  }
+
+  .metrora-shell .bar-home .refresh-button {
+    width: 36px;
+    min-width: 36px;
+  }
+
+  .metrora-shell .body {
+    padding: 4px 20px 0;
+  }
+
+  .control-center-home {
+    gap: 0;
+  }
+
+  .control-center-hero {
+    height: 118px;
+    min-height: 118px;
+    margin-bottom: 8px;
+    border-radius: 16px;
+  }
+
+  .control-center-hero__content {
+    min-height: 118px;
+    padding: 14px 20px;
+  }
+
+  .control-center-hero h1 {
+    font-size: 30px;
+  }
+
+  .control-center-hero__title {
+    font-size: 17px;
+  }
+
+  .control-center-hero__copy {
+    margin-top: 5px;
+    font-size: 10.5px;
+  }
+
+  .control-center-stats {
+    gap: 10px;
+    min-height: 64px;
+    margin-bottom: 8px;
+  }
+
+  .control-center-stat {
+    min-height: 64px;
+    padding: 7px 9px;
+  }
+
+  .control-center-stat strong {
+    margin-top: 4px;
+    font-size: 17px;
+  }
+
+  .control-center-stat small {
+    margin-top: 3px;
+  }
+
+  .control-center-stat--action strong {
+    font-size: 14px;
+    white-space: nowrap;
+  }
+
+  .control-center-stat--action button {
+    margin-top: 4px;
+    font-size: 9.5px;
+  }
+
+  .control-center-grid {
+    grid-template-columns: 1.13fr 1fr .78fr;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .control-center-panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-height: 205px;
+    padding: 10px;
+    border-radius: 13px;
+  }
+
+  .control-center-panel__head {
+    margin-bottom: 6px;
+  }
+
+  .control-center-panel h2 {
+    font-size: 14px;
+  }
+
+  .control-center-list,
+  .control-center-model-list {
+    gap: 2px;
+  }
+
+  .control-center-list-row {
+    padding: 3px 3px;
+    line-height: 1.2;
+  }
+
+  .control-center-list-row__main {
+    gap: 2px;
+  }
+
+  .control-center-list-row strong {
+    font-size: 10.5px;
+  }
+
+  .control-center-list-row small {
+    font-size: 9px;
+  }
+
+  .control-center-model {
+    padding: 3px 0 1px;
+    line-height: 1.2;
+  }
+
+  .control-center-model__track {
+    margin: 5px 0 3px;
+  }
+
+  .control-center-model small {
+    font-size: 9px;
+  }
+
+  .control-center-empty-card {
+    min-height: 110px;
+    padding: 4px;
+  }
+
+  .control-center-empty-card__icon {
+    font-size: 24px;
+  }
+
+  .control-center-empty-card strong {
+    margin-top: 8px;
+    font-size: 11px;
+    line-height: 1.2;
+  }
+
+  .control-center-empty-card p {
+    margin: 5px 0 8px;
+    font-size: 9.5px;
+    line-height: 1.3;
+  }
+
+  .control-center-empty-card .control-center-button--small {
+    min-height: 25px;
+    font-size: 9px;
+  }
+
+  .control-center-promos {
+    grid-template-columns: 1.08fr 1fr .94fr;
+    gap: 10px;
+    min-height: 120px;
+  }
+
+  .control-center-promo {
+    min-height: 120px;
+    border-radius: 13px;
+  }
+
+  .control-center-share-row {
+    min-height: 24px;
+    height: 24px;
+  }
+
+  .control-center-share-row strong {
+    font-size: 9.5px;
+  }
+
+  .control-center-share-row span {
+    font-size: 8.5px;
+  }
+
+  .control-center-share-row .btn {
+    min-height: 22px;
+    padding: 2px 8px;
+    font-size: 9px;
+  }
+}
+
+/* At the smallest large-desktop width the full context search field competes
+   with every real scope control. Retain the icon affordance only there; the
+   1280 CSS-pixel Windows frame keeps the mockup-like field. */
+@media (min-width: 1121px) and (max-width: 1230px) {
+  .metrora-shell .bar-home .bar-command {
+    width: 42px;
+    min-width: 42px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .metrora-shell .bar-home .bar-command span,
+  .metrora-shell .bar-home .bar-command kbd {
+    display: none;
   }
 }
