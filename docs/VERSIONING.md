@@ -58,32 +58,35 @@ Store updates must pass their own acceptance and publication gates.
 ## Android version authority
 
 Android uses the native `versionName` and integer `versionCode` declared in
-`android/app/build.gradle.kts`. The immutable historical public Android release
-is:
+`android/app/build.gradle.kts` under application ID `eu.metrora.app`.
 
-- `versionName = 0.1.0-alpha.1`;
-- `versionCode = 1`;
+Historical/direct-channel authority includes:
+
+- immutable historical public release `0.1.0-alpha.1` / `versionCode = 1`;
+- failed, never-published candidate `0.1.0-alpha.2` / `versionCode = 2`;
+- production-signed direct GitHub release `0.1.0-alpha.3` / `versionCode = 3`.
+
+The current repository source line is:
+
+- `versionName = 0.1.0-alpha.4`;
+- `versionCode = 4`;
 - application ID `eu.metrora.app`.
 
-The current public direct APK advances the same package line to:
+**Google Play is now a live Android distribution channel** for the same
+`eu.metrora.app` package identity. The Play channel and direct APK channel share
+the same monotonic `versionCode` line so a later public upgrade must always use
+a strictly larger integer.
 
-- `versionName = 0.1.0-alpha.3`;
-- `versionCode = 3`;
-- application ID `eu.metrora.app`.
+The exact version currently served by Google Play is Store-channel authority;
+do not infer it merely from a historical direct GitHub release document. The
+repository source version is likewise not automatically evidence that Google
+Play has published that exact source until the corresponding Play release gate
+has completed.
 
-The alpha.2 source candidate is historical failed evidence and was never
-public. Alpha.3 is the current public GitHub prerelease under tag
-`android-v0.1.0-alpha.3`, with the canonical direct-install APK named
-`Metrora-Android-0.1.0-alpha.3.apk`. The public alpha.1 artifact consumed
-`versionCode = 1`; every later publicly installable Android upgrade must use a
-strictly larger `versionCode`.
-
-The human-readable `versionName` is used in the deterministic GitHub identity
-`android-v<versionName>` and asset name
-`Metrora-Android-<versionName>.apk`. Android's version line is independent of
-the Windows Store package version. The planned Google Play release keeps the
-same application ID and monotonic package line; Google Play publication is
-planned within 30 days but remains non-authoritative until the listing is live.
+The human-readable `versionName` continues to be used for deterministic direct
+GitHub identities such as `android-v<versionName>` and
+`Metrora-Android-<versionName>.apk`. Android versioning remains independent of
+the Windows Store package version.
 
 ## Ordering
 
@@ -111,6 +114,7 @@ The following values must agree where they represent the same authority:
 - desktop `buildVersion` — desktop numeric build mapping;
 - `release/windows-store-package-version.v1.json` — Store package transition authority for candidate derivation;
 - Store AppX manifest — candidate Store package-version mapping after the hook;
+- `android/app/build.gradle.kts` — Android source `versionName` / `versionCode` / application ID;
 - current-version declarations in `RELEASING.md`;
 - current desktop declarations in `app/DISTRIBUTION.md`;
 - current release-line declarations in this document and `docs/WINDOWS_DISTRIBUTION.md`.
@@ -123,6 +127,6 @@ CI executes the same check on pull requests and pushes to `main`.
 
 ## Historical evidence
 
-Historical version references are immutable evidence, not active version authorities. Published RC7, RC10 and earlier accepted candidate reports, manifests, migration fixtures, provenance notices and changelog history retain their original version/source binding.
+Historical version references are immutable evidence, not active version authorities. Published RC7, RC10, Android direct releases and earlier accepted candidate reports, manifests, migration fixtures, provenance notices and changelog history retain their original version/source binding.
 
 Never rename an old report or artifact to the current version, and never treat an accepted artifact as evidence for a later source commit.
