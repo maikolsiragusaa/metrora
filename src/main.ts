@@ -47,6 +47,7 @@ import { clampResetDay, getPlanUsageOrNull, getPlanUsages, type PlanUsage } from
 import { getPresetPlan, isPlanId, isPlanProvider, PLAN_IDS, PLAN_PROVIDERS, planDisplayName } from './plans.js'
 import { createRequire } from 'node:module'
 import { registerMetroraMcpCommands } from './mcp/cli.js'
+import { registerMetroraToolCommands } from './tools/cli.js'
 
 const require = createRequire(import.meta.url); const { version } = require('../package.json')
 import { loadCurrency, getCurrency, isValidCurrencyCode } from './currency.js'
@@ -2293,6 +2294,7 @@ program
   })
 
 registerMetroraMcpCommands(program, version)
+registerMetroraToolCommands(program)
 
 program
   .command('doctor')

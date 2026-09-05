@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell, WebConte
 import { writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
-import { resolveMetroraPath, shutdownCli, spawnCli, spawnCliAction } from './cli'
+import { resolveMetroraPath, resolveMetroraToolBridgeSpec, shutdownCli, spawnCli, spawnCliAction } from './cli'
 import { createApplicationMenuTemplate } from './menu'
 import { getQuota } from './quota'
 import { saveShareCardPng } from './share-card-export'
@@ -141,6 +141,7 @@ function registerHandlers(): void {
     userDataPath: app.getPath('userData'),
     isPackaged: app.isPackaged,
     workingDirectory: process.cwd(),
+    toolBridgeSpec: resolveMetroraToolBridgeSpec(),
     readUsageSnapshot: () => spawnCli(
       ['status', '--format', 'menubar-json', '--period', 'today', '--no-timeline', '--no-optimize'],
       { extraEnv: { METRORA_READ_MODE: 'snapshot' }, priority: 'background' },

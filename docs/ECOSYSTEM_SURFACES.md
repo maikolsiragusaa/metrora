@@ -2,7 +2,7 @@
 
 **Status:** public product direction and implementation-status guide  
 **Decision revision:** 2026-09-05  
-**Authority reviewed:** `maikolsiragusaa/metrora@c960183820467c73ce92c8ccc606a6dd3552c80c`
+**Authority reviewed:** `maikolsiragusaa/metrora@c2e21993016c9f63a3bc38b456e2548753228ebb`
 
 Metrora is a local-first control and intelligence system for AI-assisted development. Product surfaces compose around shared facts/contracts instead of growing into parallel engines that each invent their own truth or execution mechanics.
 
@@ -75,16 +75,36 @@ Metrora accounting continues to identify this source as **OpenCode**. Being laun
 
 Metrora-specific intelligence is added to the upstream Code surface through bounded Metrora Tools rather than through a parallel coding-agent engine.
 
-The first accepted end-to-end proof is `metrora_usage_snapshot`:
+The retained compatibility tool is `metrora_usage_snapshot`; the current
+canonical Code subset is:
+
+```text
+metrora_get_spend_snapshot
+metrora_get_model_efficiency
+metrora_get_overview_snapshot
+metrora_get_project_drivers
+metrora_get_session_highlights
+metrora_get_coverage_report
+metrora_get_bench_evidence
+```
+
+The end-to-end path is:
 
 ```text
 user asks a Metrora-specific question in Code
-→ OpenCode selects metrora_usage_snapshot
-→ Metrora returns bounded canonical evidence
+→ OpenCode selects a Metrora custom tool
+→ argv-only bridge invokes metrora tools call
+→ canonical Metrora registry returns bounded evidence
 → OpenCode explains the result
 ```
 
-Future factual Tool expansion should reuse the same canonical Metrora registries/contracts used elsewhere rather than implement Code-specific accounting or evidence paths.
+`get_quota_snapshot` remains a canonical registry/MCP capability, but is not
+advertised as a new OpenCode custom tool in this wave. Code tool modules do not
+read Metrora storage directly or implement Code-specific accounting/evidence.
+
+If the bridge is unavailable, the upstream Code runtime remains startable and
+the custom tool reports unavailable. OpenCode's official binary/source and
+its pinned staging/provenance remain unchanged.
 
 A Tool result remains evidence. A caller or model may explain it, but cannot silently replace Metrora's canonical measurement, scope or unavailable-state semantics.
 
@@ -103,7 +123,10 @@ Metrora already has typed read-only capabilities for questions such as:
 
 The reusable implementation lives in `src/tools`; the factual registry is not owned by one UI.
 
-The same factual capability can therefore be consumed by Local MCP, Code integrations and other bounded surfaces without implementing parallel evidence engines.
+The same factual capability can therefore be consumed by Local MCP, Code
+integrations and other bounded surfaces without implementing parallel evidence
+engines. Local MCP exposes all eight canonical definitions; Code exposes the
+seven listed above plus the retained legacy compatibility tool.
 
 ## MCP
 

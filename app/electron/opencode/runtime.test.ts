@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { readPreferredOpenCodePort, runtimePaths } from './config'
 import { buildOpenCodeServerArgs, createLaunchEnvironment, OpenCodeRuntime, resolveOpenCodeExecutable, type OpenCodeFetch, type SpawnedOpenCodeProcess } from './runtime'
-import { OPENCODE_COMMIT, OPENCODE_CUSTOM_TOOL_ID, OPENCODE_VERSION } from './types'
+import { OPENCODE_COMMIT, OPENCODE_CUSTOM_TOOL_ID, OPENCODE_CUSTOM_TOOL_IDS, OPENCODE_METRORA_TOOL_IDS, OPENCODE_VERSION } from './types'
 
 const temporaryDirectories: string[] = []
 
@@ -75,7 +75,7 @@ describe('OpenCode upstream sidecar runtime', () => {
       requests.push({ url, authorization: init?.headers?.Authorization ?? '' })
       return url.endsWith('/global/health')
         ? jsonResponse({ healthy: true, version: OPENCODE_VERSION })
-        : jsonResponse([OPENCODE_CUSTOM_TOOL_ID])
+        : jsonResponse([...OPENCODE_CUSTOM_TOOL_IDS])
     }
     const runtime = new OpenCodeRuntime({
       appPath: root,
@@ -85,6 +85,7 @@ describe('OpenCode upstream sidecar runtime', () => {
       executableOverride: executable,
       acquirePort: async () => 43127,
       randomPassword: () => 'p'.repeat(64),
+      toolBridgeSpec: '{"command":["C:/metrora/cli.exe","tools","call"],"environment":{}}',
       spawnProcess,
       fetchImpl,
       readUsageSnapshot: async () => ({
@@ -117,6 +118,7 @@ describe('OpenCode upstream sidecar runtime', () => {
           OPENCODE_CONFIG_DIR: join(userData, 'opencode', OPENCODE_VERSION),
           OPENCODE_CONFIG: join(userData, 'opencode', OPENCODE_VERSION, 'opencode.json'),
           OPENCODE_DISABLE_AUTOUPDATE: '1',
+          METRORA_TOOL_BRIDGE_SPEC: expect.any(String),
         }),
       }),
     )
@@ -136,6 +138,9 @@ describe('OpenCode upstream sidecar runtime', () => {
     expect(runtimePackage.dependencies?.['@opencode-ai/plugin']).toBe(OPENCODE_VERSION)
     expect(runtimeLock.packages?.['']?.dependencies?.['@opencode-ai/plugin']).toBe(OPENCODE_VERSION)
     expect(readFileSync(join(paths.toolsDir, `${OPENCODE_CUSTOM_TOOL_ID}.js`), 'utf8')).toContain('METRORA_USAGE_SNAPSHOT_FILE')
+    for (const toolId of OPENCODE_METRORA_TOOL_IDS) {
+      expect(readFileSync(join(paths.toolsDir, `${toolId}.js`), 'utf8')).toContain('METRORA_TOOL_BRIDGE_SPEC')
+    }
     const snapshot = readFileSync(paths.snapshotPath, 'utf8')
     expect(snapshot).toContain('metrora.usage-snapshot.v1')
     expect(snapshot).not.toContain('must not cross the boundary')
@@ -144,6 +149,33 @@ describe('OpenCode upstream sidecar runtime', () => {
     await runtime.stop()
     expect(child.killed).toBe(true)
     expect(runtime.status()).toMatchObject({ state: 'idle', customToolRegistered: null })
+  })
+
+  it('fails closed when one expected custom tool is missing', async () => {
+    const root = tempDirectory()
+    const userData = join(root, 'user-data')
+    const executable = join(root, 'opencode.exe')
+    writeFileSync(executable, 'official binary placeholder')
+    const child = fakeChild()
+    const missingTool = OPENCODE_METRORA_TOOL_IDS[0]
+    const runtime = new OpenCodeRuntime({
+      appPath: root,
+      resourcesPath: root,
+      userDataPath: userData,
+      isPackaged: false,
+      executableOverride: executable,
+      acquirePort: async () => 43132,
+      spawnProcess: () => child,
+      fetchImpl: async url => url.endsWith('/global/health')
+        ? jsonResponse({ healthy: true, version: OPENCODE_VERSION })
+        : jsonResponse(OPENCODE_CUSTOM_TOOL_IDS.filter(toolId => toolId !== missingTool)),
+      healthTimeoutMs: 500,
+      pollIntervalMs: 1,
+    })
+
+    await expect(runtime.start()).resolves.toMatchObject({ state: 'unavailable', customToolRegistered: false })
+    expect(runtime.status().detail).toContain('expected Metrora custom tools')
+    expect(child.killed).toBe(true)
   })
 
   it('does not block OpenCode startup on a slow usage snapshot refresh', async () => {
@@ -166,7 +198,7 @@ describe('OpenCode upstream sidecar runtime', () => {
       spawnProcess,
       fetchImpl: async url => url.endsWith('/global/health')
         ? jsonResponse({ healthy: true, version: OPENCODE_VERSION })
-        : jsonResponse([OPENCODE_CUSTOM_TOOL_ID]),
+        : jsonResponse([...OPENCODE_CUSTOM_TOOL_IDS]),
       readUsageSnapshot: async () => snapshotRefresh,
       healthTimeoutMs: 500,
       pollIntervalMs: 1,
@@ -213,7 +245,7 @@ describe('OpenCode upstream sidecar runtime', () => {
         authorizations.push(init?.headers?.Authorization ?? '')
         return url.endsWith('/global/health')
           ? jsonResponse({ healthy: true, version: OPENCODE_VERSION })
-          : jsonResponse([OPENCODE_CUSTOM_TOOL_ID])
+          : jsonResponse([...OPENCODE_CUSTOM_TOOL_IDS])
       },
       healthTimeoutMs: 500,
       pollIntervalMs: 1,
@@ -262,7 +294,7 @@ describe('OpenCode upstream sidecar runtime', () => {
       spawnProcess: () => fakeChild(),
       fetchImpl: async url => url.endsWith('/global/health')
         ? jsonResponse({ healthy: true, version: OPENCODE_VERSION })
-        : jsonResponse([OPENCODE_CUSTOM_TOOL_ID]),
+        : jsonResponse([...OPENCODE_CUSTOM_TOOL_IDS]),
       healthTimeoutMs: 500,
       pollIntervalMs: 1,
     })
@@ -301,7 +333,7 @@ describe('OpenCode upstream sidecar runtime', () => {
         authorizations.push(init?.headers?.Authorization ?? '')
         return url.endsWith('/global/health')
           ? jsonResponse({ healthy: true, version: OPENCODE_VERSION })
-          : jsonResponse([OPENCODE_CUSTOM_TOOL_ID])
+        : jsonResponse([...OPENCODE_CUSTOM_TOOL_IDS])
       },
       healthTimeoutMs: 500,
       pollIntervalMs: 1,
@@ -344,8 +376,11 @@ describe('OpenCode upstream sidecar runtime', () => {
     expect(buildOpenCodeServerArgs(43129)).toEqual(['serve', '--hostname', '127.0.0.1', '--port', '43129'])
     expect(() => buildOpenCodeServerArgs(0)).toThrow()
     const paths = runtimePaths('C:/user-data')
-    const environment = createLaunchEnvironment({ paths, username: 'metrora', password: 'x'.repeat(64), baseEnv: {} })
+    const environment = createLaunchEnvironment({ paths, username: 'metrora', password: 'x'.repeat(64), baseEnv: {}, toolBridgeSpec: '{"command":["C:/cli.exe","tools","call"],"environment":{}}' })
     expect(environment.OPENCODE_SERVER_PASSWORD).toBe('x'.repeat(64))
     expect(environment.OPENCODE_CONFIG).toBe(paths.configPath)
+    expect(environment.METRORA_TOOL_BRIDGE_SPEC).toContain('C:/cli.exe')
+    const withoutBridge = createLaunchEnvironment({ paths, username: 'metrora', password: 'x'.repeat(64), baseEnv: {} })
+    expect(withoutBridge.METRORA_TOOL_BRIDGE_SPEC).toBeUndefined()
   })
 })
