@@ -21,7 +21,7 @@ No mandatory account. No mandatory AI proxy. No second coding engine.
 </div>
 
 > [!IMPORTANT]
-> Metrora for Windows is live on the **Microsoft Store**, published by Vensent. The Android companion is also live on **Google Play** under the same `eu.metrora.app` application identity used by the direct Android channel. Repository builds and historical pre-releases remain development, verification or alternate-distribution artifacts rather than Store authority.
+> Metrora for Windows is available on the **Microsoft Store**, published by Vensent. The Android companion is also live on **Google Play** under the same `eu.metrora.app` application identity used by the direct Android channel. Repository builds and historical pre-releases remain development, verification or alternate-distribution artifacts rather than Store authority.
 
 > [!NOTE]
 > Repository `main` can be ahead of the currently published Store binaries. The accepted OpenCode-based Code foundation described below is current source/product authority; rollout through a Store channel remains a separate release event and should not be inferred from source availability alone.
