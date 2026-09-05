@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { createOpenCodeMetroraToolSource, OPENCODE_METRORA_TOOL_SOURCES, OPENCODE_USAGE_TOOL_SOURCE } from './tool'
-import { OPENCODE_METRORA_TOOL_IDS } from './types'
+import { OPENCODE_METRORA_TOOL_IDS, OPENCODE_METRORA_TOOL_MAP } from './types'
 
 const temporaryDirectories: string[] = []
 const originalSnapshotPath = process.env.METRORA_USAGE_SNAPSHOT_FILE
@@ -76,8 +76,20 @@ describe('Metrora OpenCode tool runtime file', () => {
   })
 
   it('writes all seven canonical tools with plain bounded schemas and no local data access', async () => {
+    const canonicalToolNames = [
+      'get_spend_snapshot',
+      'get_model_efficiency',
+      'get_overview_snapshot',
+      'get_project_drivers',
+      'get_session_highlights',
+      'get_coverage_report',
+      'get_bench_evidence',
+    ] as const
     expect(Object.keys(OPENCODE_METRORA_TOOL_SOURCES)).toEqual([...OPENCODE_METRORA_TOOL_IDS])
-    for (const toolId of OPENCODE_METRORA_TOOL_IDS) {
+    expect(Object.keys(OPENCODE_METRORA_TOOL_MAP)).toEqual([...OPENCODE_METRORA_TOOL_IDS])
+    expect(Object.values(OPENCODE_METRORA_TOOL_MAP)).toEqual([...canonicalToolNames])
+    for (const [index, toolId] of OPENCODE_METRORA_TOOL_IDS.entries()) {
+      expect(OPENCODE_METRORA_TOOL_MAP[toolId]).toBe(canonicalToolNames[index])
       const module = await importToolSource(OPENCODE_METRORA_TOOL_SOURCES[toolId])
       expect(module.default.args).toHaveProperty('filters')
       expect(module.default.args.filters).toMatchObject({ type: 'object', required: [], additionalProperties: false })
@@ -107,7 +119,7 @@ describe('Metrora OpenCode tool runtime file', () => {
     const module = await importToolSource(OPENCODE_METRORA_TOOL_SOURCES.metrora_get_spend_snapshot)
 
     await expect(module.default.execute({ filters: { period: 'today', model: 'model;still-one-argv' } })).resolves.toBe(JSON.stringify({
-      tool: 'metrora_get_spend_snapshot',
+      tool: 'get_spend_snapshot',
       args: { period: 'today', model: 'model;still-one-argv' },
     }))
   })

@@ -12,6 +12,25 @@ export const OPENCODE_METRORA_TOOL_IDS = [
   'metrora_get_bench_evidence',
 ] as const
 export type OpenCodeMetroraToolId = typeof OPENCODE_METRORA_TOOL_IDS[number]
+export type OpenCodeCanonicalMetroraToolName =
+  | 'get_spend_snapshot'
+  | 'get_model_efficiency'
+  | 'get_overview_snapshot'
+  | 'get_project_drivers'
+  | 'get_session_highlights'
+  | 'get_coverage_report'
+  | 'get_bench_evidence'
+
+/** Closed-world transport mapping; the canonical registry stays surface-agnostic. */
+export const OPENCODE_METRORA_TOOL_MAP = Object.freeze({
+  metrora_get_spend_snapshot: 'get_spend_snapshot',
+  metrora_get_model_efficiency: 'get_model_efficiency',
+  metrora_get_overview_snapshot: 'get_overview_snapshot',
+  metrora_get_project_drivers: 'get_project_drivers',
+  metrora_get_session_highlights: 'get_session_highlights',
+  metrora_get_coverage_report: 'get_coverage_report',
+  metrora_get_bench_evidence: 'get_bench_evidence',
+} as const satisfies Readonly<Record<OpenCodeMetroraToolId, OpenCodeCanonicalMetroraToolName>>)
 /** All Metrora-owned custom tools expected from the private runtime config. */
 export const OPENCODE_CUSTOM_TOOL_IDS = [OPENCODE_CUSTOM_TOOL_ID, ...OPENCODE_METRORA_TOOL_IDS] as const
 export const OPENCODE_EXPECTED_CUSTOM_TOOL_IDS = OPENCODE_CUSTOM_TOOL_IDS

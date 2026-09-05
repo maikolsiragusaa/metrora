@@ -1,4 +1,4 @@
-import { OPENCODE_METRORA_TOOL_IDS, type OpenCodeMetroraToolId } from './types'
+import { OPENCODE_METRORA_TOOL_IDS, OPENCODE_METRORA_TOOL_MAP, type OpenCodeMetroraToolId } from './types'
 
 /**
  * This source is written into Metrora's private OpenCode config directory at
@@ -150,13 +150,15 @@ export function createOpenCodeMetroraToolSource(
   options: { timeoutMs?: number } = {},
 ): string {
   const config = TOOL_CONFIG[toolId]
+  const canonicalToolName = OPENCODE_METRORA_TOOL_MAP[toolId]
   const timeoutMs = Number.isFinite(options.timeoutMs) && (options.timeoutMs ?? 0) > 0
     ? Math.max(1, Math.floor(options.timeoutMs!))
     : DEFAULT_TIMEOUT_MS
   return String.raw`import { spawn } from "node:child_process"
 import { isAbsolute } from "node:path"
 
-const TOOL_NAME = ${sourceJson(toolId)}
+const OPENCODE_TOOL_ID = ${sourceJson(toolId)}
+const CANONICAL_TOOL_NAME = ${sourceJson(canonicalToolName)}
 const MAX_ARGUMENT_BYTES = ${MAX_ARGUMENT_BYTES}
 const MAX_OUTPUT_BYTES = ${MAX_OUTPUT_BYTES}
 const MAX_STDERR_BYTES = ${MAX_STDERR_BYTES}
@@ -246,7 +248,7 @@ function invokeBridge(bridge, args, signal) {
     }
 
     try {
-      child = spawn(bridge.command[0], [...bridge.command.slice(1), TOOL_NAME, "--args-json", serializedArgs], {
+      child = spawn(bridge.command[0], [...bridge.command.slice(1), CANONICAL_TOOL_NAME, "--args-json", serializedArgs], {
         shell: false,
         windowsHide: true,
         env: bridge.environment,

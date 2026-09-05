@@ -1,9 +1,58 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Command } from 'commander'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { OPENCODE_METRORA_TOOL_SOURCES } from '../app/electron/opencode/tool'
+import { OPENCODE_METRORA_TOOL_IDS, OPENCODE_METRORA_TOOL_MAP } from '../app/electron/opencode/types'
+import { isMetroraToolName } from '../src/tools/contract.js'
 import { registerMetroraToolCommands, runMetroraToolsCall } from '../src/tools/cli.js'
 import { createMetroraToolRegistry } from '../src/tools/registry.js'
 import type { MetroraToolDataSource, MetroraToolRegistry } from '../src/tools/types.js'
+
+const temporaryDirectories: string[] = []
+const originalBridgeSpec = process.env.METRORA_TOOL_BRIDGE_SPEC
+
+afterEach(() => {
+  for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true, force: true })
+  if (originalBridgeSpec === undefined) delete process.env.METRORA_TOOL_BRIDGE_SPEC
+  else process.env.METRORA_TOOL_BRIDGE_SPEC = originalBridgeSpec
+})
+
+function importOpenCodeToolSource(source: string): Promise<{ default: { execute: (args?: unknown, context?: unknown) => Promise<string> } }> {
+  return import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`) as Promise<{ default: { execute: (args?: unknown, context?: unknown) => Promise<string> } }>
+}
+
+function canonicalBridgeEntry(directory: string): void {
+  const entry = join(directory, 'canonical-bridge.mjs')
+  const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+  const tsxApiUrl = pathToFileURL(join(repositoryRoot, 'node_modules', 'tsx', 'dist', 'esm', 'api', 'index.mjs')).href
+  const cliUrl = pathToFileURL(join(repositoryRoot, 'src', 'tools', 'cli.ts')).href
+  const registryUrl = pathToFileURL(join(repositoryRoot, 'src', 'tools', 'registry.ts')).href
+  writeFileSync(entry, [
+    `const { tsImport } = await import(${JSON.stringify(tsxApiUrl)})`,
+    `const { runMetroraToolsCall } = await tsImport(${JSON.stringify(cliUrl)}, { parentURL: import.meta.url })`,
+    `const { createMetroraToolRegistry } = await tsImport(${JSON.stringify(registryUrl)}, { parentURL: import.meta.url })`,
+    'const scope = { period: "all", range: null, provider: "all", projectId: "all", projectName: "All projects", model: null }',
+    'const source = {',
+    '  getOverview: async () => ({ current: { label: "All", cost: 12.5, calls: 3, sessions: 2, inputTokens: 100, outputTokens: 50, cacheReadTokens: 0, cacheWriteTokens: 0, pricingCoverage: 1, providers: { Codex: 12.5 }, providerDetails: [{ id: "codex", label: "Codex", cost: 12.5 }], topModels: [{ name: "fixture-model", cost: 12.5, calls: 3 }], topProjects: [{ name: "fixture-project", cost: 12.5, sessions: 2 }], topSessions: [{ project: "fixture-project", cost: 12.5, calls: 3, date: "2026-09-05" }] }, history: { daily: [] }}),',
+    '  getModels: async () => [{ provider: "codex", providerDisplayName: "Codex", model: "fixture-model", inputTokens: 100, outputTokens: 50, reasoningTokens: 0, additiveReasoningTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0, totalTokens: 150, costUSD: 12.5, calls: 3, pricing: { state: "priced" } }],',
+    '  getQuota: async () => [],',
+    '  getBenchEvidence: async () => ({ state: "UNAVAILABLE" }),',
+    '}',
+    'const runtime = createMetroraToolRegistry(source, scope)',
+    'const argv = process.argv.slice(2)',
+    'const exitCode = await runMetroraToolsCall(argv[2], { argsJson: argv[4] ?? "{}", period: "all", provider: "all", projectId: "all" }, { createRuntime: async () => runtime, loadPricing: async () => {} })',
+    'process.exitCode = exitCode',
+    '',
+  ].join('\n'))
+  process.env.METRORA_TOOL_BRIDGE_SPEC = JSON.stringify({
+    command: [process.execPath, entry, 'tools', 'call'],
+    environment: {},
+  })
+}
 
 const scope = {
   period: 'all' as const,
@@ -48,6 +97,46 @@ async function run(
 }
 
 describe('canonical Metrora Tools CLI adapter', () => {
+  it('keeps every OpenCode transport ID mapped to one valid canonical registry name', () => {
+    const ids = [...OPENCODE_METRORA_TOOL_IDS]
+    const canonicalNames = [
+      'get_spend_snapshot',
+      'get_model_efficiency',
+      'get_overview_snapshot',
+      'get_project_drivers',
+      'get_session_highlights',
+      'get_coverage_report',
+      'get_bench_evidence',
+    ] as const
+
+    expect(Object.keys(OPENCODE_METRORA_TOOL_MAP)).toEqual(ids)
+    expect(Object.values(OPENCODE_METRORA_TOOL_MAP)).toEqual([...canonicalNames])
+    for (const toolId of ids) expect(isMetroraToolName(OPENCODE_METRORA_TOOL_MAP[toolId])).toBe(true)
+  })
+
+  it('routes spend and model OpenCode tools through the bridge, canonical CLI, and registry', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'metrora-opencode-canonical-bridge-'))
+    temporaryDirectories.push(directory)
+    canonicalBridgeEntry(directory)
+
+    const spend = await importOpenCodeToolSource(OPENCODE_METRORA_TOOL_SOURCES.metrora_get_spend_snapshot)
+    const spendOutput = await spend.default.execute({ filters: { period: 'today' } })
+    expect(spendOutput).not.toBe('Metrora tool unavailable.')
+    expect(JSON.parse(spendOutput)).toMatchObject({
+      intent: 'spend-change',
+      scope: { period: 'today', provider: 'all', projectId: 'all' },
+      spend: { measuredCostUSD: 12.5 },
+    })
+
+    const models = await importOpenCodeToolSource(OPENCODE_METRORA_TOOL_SOURCES.metrora_get_model_efficiency)
+    const modelsOutput = await models.default.execute({ filters: { model: 'fixture-model' } })
+    expect(modelsOutput).not.toBe('Metrora tool unavailable.')
+    expect(JSON.parse(modelsOutput)).toMatchObject({
+      intent: 'model-efficiency',
+      modelEfficiency: { rows: expect.arrayContaining([expect.objectContaining({ model: 'fixture-model', costUSD: 12.5 })]) },
+    })
+  })
+
   it('returns only bounded canonical result content and forwards the startup scope', async () => {
     const runtime = canonicalRegistry()
     const createRuntime = vi.fn(async (startup) => {
