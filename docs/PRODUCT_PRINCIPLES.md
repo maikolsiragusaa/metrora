@@ -16,7 +16,7 @@ Metrora must not trap users behind an account, hosted dashboard or undocumented 
 
 ## Content-minimal by default
 
-The default analytical layer uses structured metadata such as timestamps, model identifiers, token counts, cost, tool names, task categories, project identifiers and measurement provenance.
+The default analytical layer uses structured metadata such as timestamps, model identifiers, token counts, cost, tool names, task categories, Project identifiers and measurement provenance.
 
 Prompts, responses, source code, patches, secrets, tool arguments and unrestricted local paths are outside the default sharing boundary.
 
@@ -47,7 +47,7 @@ A new interface must not reparse the same source data, invent missing facts, rep
 
 ## Sharing is explicit and inspectable
 
-Every device or workspace connection must state what is shared, with whom, for what purpose and how access can be revoked.
+Every device or Workspace connection must state what is shared, with whom, for what purpose and how access can be revoked.
 
 Aggregate views must not silently expose prompts, code, personal file paths or unrelated activity. Shared schemas must be versioned and testable.
 
@@ -55,9 +55,23 @@ Offline or failed delivery must not corrupt the local source of truth. Repeated 
 
 ## The CLI remains first-class
 
-The desktop application, local web interface and companion clients are views over the same trustworthy core. The CLI and public contracts must remain suitable for automation, inspection, migration and independent tooling.
+The Desktop application, local web interface and companion clients are views over the same trustworthy core. The CLI and public contracts must remain suitable for automation, inspection, migration and independent tooling.
 
 A graphical feature should not require a separate measurement implementation when the public core can own the semantics once.
+
+## Adopt mature upstream instead of rebuilding commodity engines
+
+Owning more code is not automatically a product advantage.
+
+When a mature open-source project already owns a commodity subsystem well, Metrora may adopt, pin, verify and integrate that upstream rather than maintain a weaker parallel implementation.
+
+The current Code surface is the clearest example:
+
+> **Metrora adds. OpenCode executes.**
+
+OpenCode owns ordinary coding-agent mechanics; Metrora keeps the host/security boundary and adds the facts, context, evidence and control surfaces that are specific to Metrora.
+
+Upstream adoption must preserve licence/provenance, deterministic versioning and a clean responsibility boundary. A fork or reconstruction should require a proven product/security blocker, not a preference for owning every layer.
 
 ## The open-source project remains genuinely useful
 
