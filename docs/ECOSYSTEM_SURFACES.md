@@ -1,82 +1,88 @@
 # Metrora ecosystem surfaces
 
 **Status:** public product direction and implementation-status guide  
-**Decision revision:** 2026-09-05  
-**Authority reviewed:** `maikolsiragusaa/metrora@c2e21993016c9f63a3bc38b456e2548753228ebb`
+**Decision revision:** 2026-09-05
 
-Metrora is a local-first control and intelligence system for AI-assisted development. Product surfaces compose around shared facts/contracts instead of growing into parallel engines that each invent their own truth or execution mechanics.
+Metrora is a local-first control and intelligence system for AI-assisted development. Its surfaces compose around shared facts and explicit authority boundaries instead of becoming parallel engines that each invent their own truth or execution mechanics.
 
-This page distinguishes what exists now from what remains future work.
+This page is deliberately public-facing: it explains what exists, how the pieces fit together and which directions are being explored. It does **not** publish private implementation sequencing, commercial packaging or internal infrastructure.
 
-## How the ecosystem fits together
+## The ecosystem in one diagram
 
-```text
-Usage · Activity · Models · Capacity · Projects
-                  ↓
-             Metrora Tools
-         ┌─────────┼───────────┐
-         ↓         ↓           ↓
-        MCP   integrations   Desktop
-                                  │
-                                  └─ Code
-                                     ↓
-                                  OpenCode
-                         Sessions · Agents · Tools
-                         files · shell · Git · MCP/ACP
+```mermaid
+flowchart LR
+    F[Canonical Metrora facts] --> U[Usage / Activity / Sessions]
+    F --> M[Models / economics]
+    F --> P[Projects / context]
+    F --> C[Capacity / coverage]
+    F --> B[Bench]
 
-Bench   = methodology-bound test/evidence system
-Widgets = shareable presentation of canonical evidence
-Wrapped = recap/share experience built on canonical evidence + Widgets
+    U --> T[Metrora Tools]
+    M --> T
+    P --> T
+    C --> T
+    B --> T
+
+    F --> D[Desktop]
+    F --> CLI[CLI / local web]
+    F --> A[Android]
+    T --> MCP[Local MCP / integrations]
+
+    D --> CODE[Code]
+    CODE --> O[OpenCode upstream]
+    O --> OM[Sessions · Agents · Tools · Files · Shell · Git · MCP/ACP]
 ```
 
-Canonical rule for the Code surface:
+Canonical rule for Code:
 
 > **Metrora adds. OpenCode executes.**
 
-Metrora owns the host boundary, canonical evidence/accounting and Metrora-specific Tools/context. OpenCode owns the commodity coding surface and its Sessions, Agents/Subagents, provider/model controls, standard Tools, filesystem/shell/Git mechanics and ordinary permissions/questions.
+Metrora owns canonical evidence/accounting, Projects, Capacity, Bench, its Tool contracts, the host/security boundary and product context. OpenCode owns the commodity coding surface and its normal session/agent/tool mechanics.
 
 ## Current status
 
-| Surface | Product job | Status |
+| Surface | Product job | Current status |
 | --- | --- | --- |
-| **Usage / Activity / Models / Capacity** | Factual local evidence, history, economics and provider-reported capacity | **Available** |
+| **Usage / Activity / Sessions / Models** | Local factual evidence, history, attribution and economics | **Available**, with ongoing data-quality and product-depth work |
 | **Projects** | User-controlled Metrora context and scope across relevant evidence | **Available** |
-| **Tools** | Typed factual access to Metrora evidence | **Available** — canonical registry, contract, evidence and privacy layer |
-| **Code** | Coding/agent work through official upstream OpenCode hosted by Desktop | **Available** — accepted OpenCode `1.18.27` runtime/Web UI with Metrora host lifecycle, security, packaging and accounting integration |
-| **Bench** | Performance-first testing plus separate Compatibility / Runtime Health evidence | **Available** — native llama.cpp/`llama-bench` Performance and Core Compatibility are separate bounded paths |
-| **ACT / ActionContract** | Trusted lifecycle for the bounded Metrora-owned Core Compatibility action | **Available for that narrow operation** — not a user-facing mode and not a universal wrapper around Code |
-| **MCP** | Standard external access to canonical Metrora Tools | **Available** — local read-only MCP Server V1 |
-| **Widgets** | Shareable visual/statistical presentation of canonical evidence | **Foundation exists through Share Card; broader Widgets family planned** |
-| **Wrapped** | Periodic recap/share experience using canonical evidence and Widgets | **Planned** |
-| **Durable Jobs / remote control** | Future Metrora-owned work/status/result control above local sessions when needed | **Future / separately gated** |
+| **Capacity** | Provider-reported quota/capacity where trustworthy evidence exists | **Available** with explicit unavailable/stale semantics |
+| **Tools** | Typed factual access to canonical Metrora evidence | **Available** — shared registry, contracts, evidence and privacy layer |
+| **Code** | Coding/agent work through upstream OpenCode hosted by Desktop | **Available** — accepted OpenCode `1.18.27` runtime/Web UI with Metrora host lifecycle, prewarm, security, persistence, packaging and accounting integration |
+| **Bench** | Performance-first testing plus separate Compatibility / Runtime Health evidence | **Available foundations** — native llama.cpp/`llama-bench` Performance and Core Compatibility remain separate bounded paths |
+| **MCP** | External factual access to canonical Metrora Tools | **Available** — local read-only MCP Server V1 |
+| **Android** | Read-focused companion to an explicitly paired Desktop | **Live on Google Play**; direct APK channel also documented |
+| **ACT / ActionContract** | Trusted lifecycle for explicitly Metrora-owned bounded actions | **Available for a narrow Core Compatibility operation**; not a universal wrapper around Code |
+| **Widgets / recap surfaces** | Privacy-aware presentation/share experiences built from canonical evidence | **Foundation exists; broader direction planned** |
+| **Remote/background/external control** | Bounded supervision and delegation above local sessions | **Future / separately gated** |
 
-Status labels are intentionally conservative. A direction is not presented as shipped until working product authority exists.
+Status labels are intentionally conservative. A public direction is not described as shipped until working product authority exists.
 
-## Code
+## Code: upstream engine, Metrora control center
 
-The Desktop **Code** destination hosts the real official upstream OpenCode Web UI/runtime rather than a Metrora reconstruction of it.
+The Desktop **Code** destination hosts the real upstream [OpenCode](https://github.com/anomalyco/opencode) Web UI/runtime rather than a Metrora reconstruction.
 
-Current accepted host boundary includes:
+The accepted host boundary includes:
 
-- pinned OpenCode `1.18.27`;
-- deterministic staged binary/provenance checks;
-- loopback-only embedded server;
-- random per-launch authentication held by the Electron main process;
+- pinned OpenCode `1.18.27` provenance;
+- deterministic staged binary checks;
+- loopback-only embedded serving;
+- random per-launch authentication held by Electron main;
 - exact-origin navigation restrictions and popup denial;
-- persistent upstream browser/project UI state;
+- persistent upstream browser/project state;
+- prewarmed hidden loading for fast Code entry;
 - clean sidecar shutdown;
-- Windows packaging paths that include the pinned OpenCode runtime.
+- Windows package paths that include the pinned runtime;
+- Metrora accounting under the canonical **OpenCode** collector.
 
-OpenCode remains upstream authority for its own coding Sessions and agent mechanics. Metrora does not create a second conversation/session universe for the same work.
+OpenCode remains upstream authority for its coding Sessions, Agents/Subagents and standard coding mechanics. Metrora does not create a second conversation/session universe for the same work.
 
-Metrora accounting continues to identify this source as **OpenCode**. Being launched inside Metrora does not invent a new provider identity.
+OpenCode is third-party upstream software and remains independently maintained. The integration does not imply affiliation or endorsement.
 
 ## Metrora Tools inside Code
 
-Metrora-specific intelligence is added to the upstream Code surface through bounded Metrora Tools rather than through a parallel coding-agent engine.
+Metrora Tools let the accepted Code runtime ask Metrora-specific factual questions **without moving accounting or evidence logic into the runtime adapter**.
 
-The retained compatibility tool is `metrora_usage_snapshot`; the current
-canonical Code subset is:
+The retained compatibility tool is `metrora_usage_snapshot`. The accepted canonical Code subset is:
 
 ```text
 metrora_get_spend_snapshot
@@ -88,191 +94,169 @@ metrora_get_coverage_report
 metrora_get_bench_evidence
 ```
 
-The end-to-end path is:
+The path stays intentionally thin:
 
 ```text
-user asks a Metrora-specific question in Code
-→ OpenCode selects a Metrora custom tool
-→ argv-only bridge invokes metrora tools call
-→ canonical Metrora registry returns bounded evidence
-→ OpenCode explains the result
+question inside Code
+      ↓
+OpenCode selects a Metrora custom tool
+      ↓
+argv-only bridge invokes metrora tools call
+      ↓
+canonical Metrora Tool registry
+      ↓
+bounded factual evidence
+      ↓
+OpenCode explains the result
 ```
 
-`get_quota_snapshot` remains a canonical registry/MCP capability, but is not
-advertised as a new OpenCode custom tool in this wave. Code tool modules do not
-read Metrora storage directly or implement Code-specific accounting/evidence.
+The custom-tool modules do not read Metrora storage directly and do not implement Code-specific accounting. `get_quota_snapshot` remains part of the canonical registry/MCP contract, but it is not exposed as a new Code tool until the consuming path can use the real Capacity authority truthfully.
 
-If the bridge is unavailable, the upstream Code runtime remains startable and
-the custom tool reports unavailable. OpenCode's official binary/source and
-its pinned staging/provenance remain unchanged.
+Founder physical acceptance has exercised the canonical spend, model-efficiency and Bench-evidence tools through the embedded Code surface. A model may explain a Tool result; it may not silently replace Metrora's canonical measurement, scope or unavailable-state semantics.
 
-A Tool result remains evidence. A caller or model may explain it, but cannot silently replace Metrora's canonical measurement, scope or unavailable-state semantics.
+## MCP: interoperability without becoming the proxy
 
-## Tools
+The shipped Metrora MCP Server V1 is **local and read-only**. It exposes canonical factual Tools to compatible external clients without requiring ordinary AI requests to pass through Metrora.
 
-Metrora already has typed read-only capabilities for questions such as:
-
-- spend/Usage snapshots;
-- model-efficiency evidence;
-- provider Capacity/quota snapshots;
-- overview evidence;
-- Project drivers;
-- Session highlights;
-- coverage information;
-- Bench evidence.
-
-The reusable implementation lives in `src/tools`; the factual registry is not owned by one UI.
-
-The same factual capability can therefore be consumed by Local MCP, Code
-integrations and other bounded surfaces without implementing parallel evidence
-engines. Local MCP exposes all eight canonical definitions; Code exposes the
-seven listed above plus the retained legacy compatibility tool.
-
-## MCP
-
-Metrora adopts the Model Context Protocol as an interoperability direction.
-
-The shipped first product is a **local, read-only Metrora MCP Server V1** that exposes canonical factual Tools.
-
-A compatible external AI client can use Metrora facts without requiring AI traffic to pass through a Metrora proxy.
-
-Local MCP V1 principles:
+Principles:
 
 - local-first and account-optional;
-- public Community interoperability;
-- read-only first;
-- no duplicate MCP-specific accounting/evidence engine;
+- factual/read-only first;
+- shared Tool/evidence authority rather than MCP-specific accounting;
 - no arbitrary shell, filesystem, repository or secret access;
-- no ability to bypass Metrora privacy/scope contracts;
-- failure of MCP cannot corrupt canonical Metrora history.
+- no bypass around Metrora privacy/scope contracts;
+- MCP failure cannot corrupt canonical Metrora history.
 
-A future hosted or state-changing control surface is separate work. OpenCode's ability to consume MCP servers is also distinct from exposing Metrora for inbound external control.
+OpenCode consuming MCP servers is a different direction from an external client controlling Metrora. The two should not be confused.
 
-### Future control through external clients
+## Future external control
 
-Future external control should use an explicit bounded Metrora-owned control object rather than grant a client generic execution authority.
+Metrora's public direction includes the possibility of **bounded external control and remote/background supervision**.
 
-Conceptually:
+The public concept is intentionally simple:
 
 ```text
-external AI client
-→ Metrora MCP or bounded control API
-→ Metrora facts / Project / optional durable Job
-→ authorized execution through an accepted runtime where needed
-→ status / result / evidence
+ChatGPT / Claude / compatible external client
+                    ↓
+        bounded Metrora control boundary
+                    ↓
+       Metrora context + evidence + policy
+                    ↓
+      accepted execution runtime when needed
+                    ↓
+          status / result / evidence
 ```
 
-The exact Job/control schema, authorization and remote lifecycle are future work. Local MCP V1 remains read-only until such a contract exists.
+This is future work, not a claim that today's read-only MCP server can execute arbitrary tasks.
 
-Browser/UI automation is not part of the public architecture described here.
-
-## ACT / ActionContract
-
-The current public ActionContract foundation is intentionally narrow.
-
-Today it binds `metrora.action.v1` to the bounded `run-core-compatibility` workflow and its confirmation/lifecycle/evidence semantics.
-
-It remains useful for that Metrora-owned operation, but it should not be interpreted as a requirement that every ordinary OpenCode file edit, shell command or Git action pass through a second Metrora permission engine. Those everyday coding mechanics belong to the accepted upstream Code surface.
-
-If Metrora later introduces stronger Metrora-owned effects — for example remote/background Jobs or other explicitly authorized product workflows — they require their own bounded trust/control contracts.
+The architecture should preserve explicit authorization and avoid browser/UI automation as the product control plane.
 
 ## Bench
 
-Metrora Bench remains a separate evidence system rather than becoming a generic “AI score”.
+Metrora Bench remains a methodology-bound evidence system rather than a generic “AI score”.
 
-Primary direction:
+Primary public direction:
 
-- **Performance** — how a declared model/runtime/configuration actually runs on declared hardware.
+- **Performance** — how a declared model/runtime/configuration actually behaves on declared hardware.
 
 Separate evidence families:
 
-- **Compatibility / Runtime Health** — including the current deterministic `core-v1` checks;
-- **Coding Evaluation** — future, separately versioned and methodology/licence/sandbox gated;
-- **Agent Evaluation** — future, separately versioned and methodology/isolation gated.
+- **Compatibility / Runtime Health** — including deterministic Core Compatibility;
+- **Coding Evaluation** — future, versioned and methodology/licence/sandbox gated;
+- **Agent Evaluation** — future, versioned and methodology/isolation gated.
 
-The existence of real OpenCode Agent/Subagent execution does not by itself define an Agent Evaluation methodology.
+Real OpenCode Agent/Subagent execution already exists. That does not by itself define a reproducible Agent Evaluation methodology.
 
-A supported ActionContract may invoke a specific Bench workflow, but Bench remains the canonical owner of Bench evidence/history.
+## ACT / ActionContract
 
-## Widgets and Wrapped
+ACT is intentionally narrow.
 
-Metrora already has a local **Share Card** foundation. The broader direction is to evolve this into **Widgets**: reusable, privacy-aware visual presentations of canonical Metrora evidence.
+The current public ActionContract foundation binds a documented Metrora-owned Core Compatibility workflow to explicit confirmation/lifecycle/evidence semantics.
 
-Possible future Widgets include:
+It is **not** a requirement that ordinary OpenCode edits, shell commands or Git actions pass through a second Metrora permissions engine. Those mechanics belong to the upstream Code surface.
+
+Future stronger Metrora-owned effects, if shipped, require their own explicit trust/control boundary.
+
+## Android
+
+Metrora for Android is live on [Google Play](https://play.google.com/store/apps/details?id=eu.metrora.app).
+
+The companion consumes bounded projections from an explicitly paired Desktop. It does not independently become the collector, pricing authority or canonical history engine.
+
+The direct production-signed APK channel remains useful for intentional direct installation/Obtainium and has its own source/signing/integrity contract.
+
+## Widgets, sharing and recap direction
+
+Metrora already has a local Share Card foundation. A broader direction is to build reusable, privacy-aware presentation primitives from canonical evidence, for example:
 
 - Usage/cost cards;
 - model/provider mix;
 - Project or Activity summaries;
 - Bench Performance results;
-- Compatibility results;
-- methodology-labelled comparisons.
+- methodology-labelled comparisons;
+- periodic recap experiences.
 
-Local static sharing should remain useful without requiring an account. Any future hosted/live sharing is a separate service decision.
-
-**Wrapped** is not a second analytics engine. It is a recap/share experience — for example monthly or annual — built from canonical Metrora evidence and Widget presentation primitives.
+The important boundary is that presentation does not become a second analytics engine. A share/recap surface should be derived from canonical Metrora evidence.
 
 ## Naming
 
-Ordinary pages stay concise:
+Ordinary product navigation stays concise:
 
 `Usage · Activity · Models · Capacity · Projects · Code · Bench · Settings`
 
-Systems with an independent interaction/protocol identity can carry a fuller name on first/external mention, for example:
+Systems with an independent protocol/methodology identity can use fuller names on first mention:
 
 - **Metrora Bench**;
 - **Metrora MCP Server**.
 
-Within an established Metrora context, prefer:
+`ACT` remains a bounded action authority, not a primary product mode. There is no current separate `Swarm` product surface.
 
-`Code · Tools · MCP · Bench · Projects · Widgets`
+## Public direction
 
-rather than repeating “Metrora” before every noun.
+The next public direction is deliberately expressed as capability growth rather than a private milestone schedule:
 
-`ACT` remains an internal/bounded action authority, not a primary navigation item. There is no current separate `Swarm` product surface.
+```text
+CURRENT CONTROL CENTER
+Usage · Activity · Models · Projects · Capacity · Bench · Code
+                         │
+                         ▼
+       stronger Sessions / Models / factual quality
+                         │
+                         ▼
+      richer Projects / Capacity / Bench context
+                         │
+                         ▼
+      more canonical Tools across Code + integrations
+                         │
+                         ▼
+       bounded remote/background/external control
+                         │
+                         ▼
+       evidence-aware assistance and automation
+```
 
-## Public README direction
+Parallel work can improve collectors, pricing/provenance, Bench reliability, Android supervision and distribution quality without waiting for later control capabilities.
 
-The repository README should remain easy for users and contributors to understand at a glance:
+What is intentionally **not** published here:
 
-- immediate download/install actions near the top;
-- concise `Observe · Compare · Code · Control` thesis;
-- truthful current Code/OpenCode boundary;
-- clear current/future labels;
-- local-first/privacy positioning;
-- supported-tools credibility;
-- obvious routes into documentation and contribution.
+- internal implementation sequencing;
+- private infrastructure topology;
+- credentials or operational access patterns;
+- unpublished commercial packaging/pricing;
+- private routing/decision policy details.
 
-Original Metrora visuals/copy are preferred over cloning another project's branded imagery.
+The public promise is architectural rather than tactical: Metrora should become a stronger control center by improving its own facts, context, intelligence and control — **not by rebuilding mature commodity engines merely to own more code**.
 
-## Visual-asset provenance
+## Visual direction
 
-Metrora contains historical visual material inherited from the incorporated upstream snapshot. A 2026-08-30 audit confirmed that multiple old top-level repository marketing/screenshots in `assets/` are byte-identical to material from that incorporated upstream source.
+Current Markdown diagrams are intentionally source-versionable. Product screenshots and original Metrora diagrams can be added later without changing the authority described here.
 
-Before using assets for current Metrora marketing:
-
-- remove obsolete inherited screenshots when proven unused;
-- do not present inherited marketing imagery as new Metrora brand artwork;
-- do not delete runtime/package assets without proving they are unused;
-- review provider logos/icons separately because trademark/asset rights are independent from repository code licensing;
-- replace README/marketing visuals progressively with original Metrora artwork or current truthful screenshots.
-
-Required upstream provenance/licence notices remain governed by `THIRD_PARTY_NOTICES.md` and `LICENSES/`.
-
-## Near-term progression
-
-This is dependency-oriented direction, not a rigid roadmap gate:
-
-1. **Code/OpenCode** — keep the accepted pinned upstream surface, host/security/persistence/accounting and packaging boundary healthy.
-2. **Code host UX** — reduce first-entry latency/blank loading at the host layer without reconstructing the upstream UI.
-3. **Metrora Tools in Code** — add the highest-value bounded factual capabilities through canonical Tool contracts.
-4. **Local MCP V1** — keep factual/read-only interoperability stable; stronger control remains separately gated.
-5. **README / asset truthfulness** — keep the public story aligned with the shipped product.
-6. **Widgets** — evolve Share Card into reusable static/privacy-aware presentations when useful.
-7. Maintain independent **llama.cpp / Performance Bench** reliability/provenance work.
-8. Durable Job/external-control work remains later and separately authorized.
+Historical/inherited marketing imagery should not be presented as new Metrora artwork. Third-party logos and marks remain subject to their own trademark/licence rules.
 
 See also:
 
+- [`architecture.md`](architecture.md)
+- [`OPENCODE_UPSTREAM_SURFACE_001.md`](OPENCODE_UPSTREAM_SURFACE_001.md)
 - [`BENCH_EVIDENCE_FAMILIES.md`](BENCH_EVIDENCE_FAMILIES.md)
 - [`ACT_CONTRACT_PREP_001.md`](ACT_CONTRACT_PREP_001.md)
 - [`PRODUCT_PRINCIPLES.md`](PRODUCT_PRINCIPLES.md)

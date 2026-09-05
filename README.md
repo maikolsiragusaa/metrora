@@ -4,102 +4,213 @@
 
 ### The local-first control center for AI-assisted development
 
-Bring usage, cost, models, projects, provider capacity, Bench and Code into one coherent view — without putting a mandatory proxy between you and your AI tools.
+**Observe usage. Compare models. Code with upstream OpenCode. Control the context around your AI workflow.**
 
-[Get Metrora for Windows](https://apps.microsoft.com/detail/9NXSZFQSBBDX) · [Get the Android companion](https://github.com/maikolsiragusaa/metrora/releases/tag/android-v0.1.0-alpha.3) · [Build from source](docs/GETTING_STARTED.md)
+No mandatory account. No mandatory AI proxy. No second coding engine.
 
-[Website](https://metrora.eu) · [Documentation](docs/README.md) · [Supported tools](docs/SUPPORTED_TOOLS.md)
+[Get Metrora for Windows](https://apps.microsoft.com/detail/9NXSZFQSBBDX) · [Get Metrora on Google Play](https://play.google.com/store/apps/details?id=eu.metrora.app) · [Build from source](docs/GETTING_STARTED.md)
+
+[Website](https://metrora.eu) · [Documentation](docs/README.md) · [Supported tools](docs/SUPPORTED_TOOLS.md) · [Community](https://metrora.eu/community)
 
 [![Metrora CI](https://github.com/maikolsiragusaa/metrora/actions/workflows/ci.yml/badge.svg)](https://github.com/maikolsiragusaa/metrora/actions/workflows/ci.yml)
 [![Microsoft Store](https://img.shields.io/badge/Microsoft%20Store-Download-0078D4?logo=microsoft&logoColor=white)](https://apps.microsoft.com/detail/9NXSZFQSBBDX)
-[![Android](https://img.shields.io/badge/Android-0.1.0--alpha.3-3DDC84?logo=android&logoColor=white)](https://github.com/maikolsiragusaa/metrora/releases/tag/android-v0.1.0-alpha.3)
-[![Fluxer Community](https://img.shields.io/badge/Fluxer-Community-4641D9?logo=fluxer&logoColor=white)](https://metrora.eu/community)
+[![Google Play](https://img.shields.io/badge/Google%20Play-Android-3DDC84?logo=googleplay&logoColor=white)](https://play.google.com/store/apps/details?id=eu.metrora.app)
+[![Code: OpenCode](https://img.shields.io/badge/Code-OpenCode%20upstream-0F1115)](https://github.com/anomalyco/opencode)
 [![License: MIT](https://img.shields.io/badge/License-MIT-0F1115.svg)](LICENSE)
 
 </div>
 
 > [!IMPORTANT]
-> Metrora for Windows is available on the **Microsoft Store**, published by Vensent. The current Store update is the accepted **RC11** Windows line and includes the companion runtime used for local Android pairing. The **Android companion is publicly available now as the production-signed `0.1.0-alpha.3` GitHub pre-release**, with a Google Play release planned within 30 days. Repository builds and historical GitHub Windows pre-releases remain separate development or archival artifacts.
+> Metrora for Windows is available on the **Microsoft Store**, published by Vensent. The Android companion is also live on **Google Play** under the same `eu.metrora.app` application identity used by the direct Android channel. Repository builds and historical pre-releases remain development, verification or alternate-distribution artifacts rather than Store authority.
+
+> [!NOTE]
+> Repository `main` can be ahead of the currently published Store binaries. The accepted OpenCode-based Code foundation described below is current source/product authority; rollout through a Store channel remains a separate release event and should not be inferred from source availability alone.
 
 ## Observe. Compare. Code. Control.
 
-Metrora brings fragmented AI-development evidence together without requiring a new traffic path or a mandatory cloud account. The current product is organized around four shipped jobs:
+AI-assisted development is fragmented across editors, CLIs, desktop apps, subscriptions, gateways, providers and models. Metrora brings the useful evidence and control surfaces back together without requiring your AI requests to flow through a Metrora cloud gateway.
 
-| Stage | What Metrora provides today |
+| Stage | What Metrora does |
 | --- | --- |
-| **Observe** | Usage, Cost, Models, Projects and Activity from supported local tool evidence, with measured, derived, estimated and unavailable states kept distinct. |
-| **Compare** | Side-by-side model and provider views using observed economics, plus controlled local Bench evidence without inventing a universal quality ranking. |
-| **Code** | The accepted upstream coding surface embedded in Desktop, with Metrora retaining the host lifecycle, usage boundary and local product context. |
-| **Control** | Provider-reported Capacity/quota, budgets, Project scope, local settings and explicit reversible controls where Metrora has deterministic authority. No autonomous routing or orchestration is implied. |
+| **Observe** | Unifies Usage, Cost, Activity, Sessions, Models, Projects and supported provider evidence from local sources. |
+| **Compare** | Compares observed model/provider economics and methodology-bound Bench evidence without pretending every source is equally complete. |
+| **Code** | Embeds the official upstream **OpenCode** runtime and Web UI inside Metrora Desktop instead of rebuilding a parallel coding-agent stack. |
+| **Control** | Brings Capacity, budgets, Project scope, local settings and explicit Metrora-owned controls into the same control center. |
 
-Metrora is multi-tool and multi-provider by design. A supported collector can contribute useful local evidence without forcing the underlying AI request through Metrora.
+The result is intentionally broader than a token tracker: Metrora is the place where **facts, context, Code and control meet**.
 
-## Local-first by design
+## Why Metrora
 
-- **No mandatory account for local use.** Install Metrora, read supported local evidence and use the core product without creating a Metrora account.
-- **No mandatory proxy or gateway.** Your AI traffic does not need to pass through Metrora for Metrora to observe supported usage evidence.
-- **Local evidence stays authoritative.** Canonical measurements, pricing provenance and evidence states are owned by Metrora's local factual surfaces; downstream surfaces do not silently rewrite them.
-- **Unknown is not zero.** Missing, stale, partial or unavailable provider evidence remains explicit instead of being converted into a reassuring number.
-- **Companions consume bounded projections.** Android pairs locally with Desktop and does not become a second collector, pricing engine or accounting authority.
+- **Local-first.** Ordinary local use does not require a Metrora account or hosted backend.
+- **No mandatory proxy.** Supported AI traffic can remain on the path chosen by the user; Metrora reads supported local evidence instead of demanding to become the gateway.
+- **Multi-tool, not single-provider.** Metrora currently registers **39 local collectors** across major AI coding clients, CLIs, editors and gateways.
+- **Evidence-aware.** Observed, metered, derived, estimated, stale, partial and unavailable states remain distinguishable. Unknown does not silently become zero.
+- **Real Code surface.** The current source foundation embeds upstream OpenCode for coding sessions, agents, tools, files, shell and Git rather than shipping a lookalike client or second agent runtime.
+- **One factual layer, many surfaces.** Desktop, CLI, local web, Android, MCP, Bench and Code integrations build on shared Metrora facts instead of inventing separate accounting engines.
+- **User-owned data.** Export, local inspection and reproducible evidence remain first-class product boundaries.
 
-## Code surface
+## How the system fits together
 
-The Desktop Code destination hosts the accepted upstream coding surface. Metrora
-owns the host lifecycle, navigation boundary, usage snapshot/accounting and
-local product integrations; the upstream UI, sessions and tools remain upstream
-responsibilities.
+```mermaid
+flowchart TD
+    A[AI coding tools / CLIs / editors / gateways] --> B[Local collectors + provider parsers]
+    B --> C[Canonical Metrora facts]
+    C --> U[Usage + Activity + Sessions]
+    C --> M[Models + economics]
+    C --> P[Projects + provenance]
+    C --> Q[Capacity + coverage]
+    C --> B1[Bench evidence]
 
-## Bench: Performance first, evidence families kept separate
+    U --> T[Metrora Tools]
+    M --> T
+    P --> T
+    Q --> T
+    B1 --> T
 
-Metrora Bench is converging around the practical local question:
+    C --> D[Metrora Desktop]
+    C --> L[CLI / local web]
+    C --> A1[Android companion]
+    T --> X[Local MCP / bounded integrations]
 
-> **How does this declared model/runtime/configuration run on this hardware?**
+    D --> CODE[Code inside Metrora]
+    CODE --> OC[OpenCode upstream]
+    OC --> OCF[Sessions · Agents · Tools · Files · Shell · Git · MCP/ACP]
+```
 
-Different Bench questions remain separate evidence families:
+Two responsibilities stay deliberately separate:
 
-- **Performance** — the primary product direction: throughput, latency, TTFT, memory and runtime/hardware configuration where reliably measurable;
-- **Compatibility / Runtime Health** — the current `core-v1` deterministic checks;
-- **Coding Evaluation** — future, under a separately versioned methodology and sandbox/licence review;
-- **Agent Evaluation** — future, only once real agent/Swarm execution exists.
+> **Metrora adds. OpenCode executes.**
 
-Current shipped Bench evidence includes a small Ollama runtime-timing slice, Core Compatibility and the first native llama.cpp `llama-bench` Performance adapter behind a Metrora-owned bounded runner. No current result is presented as a universal model-quality or coding ranking.
+Metrora owns its canonical facts, accounting, evidence, Projects, Capacity, Bench, host security and product context. OpenCode owns commodity coding-agent mechanics inside the Code surface.
 
-See [Bench evidence families](docs/BENCH_EVIDENCE_FAMILIES.md), [BenchRunV1 local Ollama](docs/BENCHRUN_V1_OLLAMA_LOCAL.md) and [Bench Core Compatibility v1](docs/BENCH_TASK_PACK_V1.md).
+## Code, powered by upstream OpenCode
+
+The accepted Desktop **Code** foundation hosts the real upstream [OpenCode](https://github.com/anomalyco/opencode) Web UI and runtime.
+
+Metrora deliberately does **not** maintain a parallel general-purpose session, agent, provider, permissions, filesystem, shell or Git engine for Code. The host integration keeps the upstream coding experience intact while Metrora adds the surrounding product context it is uniquely positioned to own.
+
+Current Metrora host responsibilities include:
+
+- deterministic pinned OpenCode runtime provenance;
+- loopback-only embedded serving and per-launch authentication;
+- persistent project/browser state and fast prewarmed entry;
+- navigation and popup restrictions at the Electron boundary;
+- clean process lifecycle and Windows packaging integration;
+- OpenCode usage/accounting observation under the canonical `OpenCode` collector;
+- bounded Metrora-specific factual context through the Metrora Tool boundary.
+
+OpenCode is third-party upstream software and remains independently maintained. Metrora's integration does not imply affiliation with or endorsement by the OpenCode project.
+
+See [OpenCode upstream surface](docs/OPENCODE_UPSTREAM_SURFACE_001.md) and [Ecosystem surfaces](docs/ECOSYSTEM_SURFACES.md).
+
+## Facts before guesses
+
+Metrora is built around a simple rule: **evidence strength is part of the answer**.
+
+A value may be:
+
+- **observed** directly from a source;
+- **metered** by a provider or client;
+- **derived** deterministically from stronger evidence;
+- **estimated** under documented assumptions;
+- **explicitly zero**;
+- **partial, stale or unavailable**.
+
+Those states are not interchangeable. Historical API-equivalent pricing is date-effective, settled cost assignments do not silently change when a catalog changes later, and subscription coverage stays separate from API-equivalent valuation.
+
+This matters because an AI control center is only useful if its numbers remain explainable.
+
+## Product surfaces
+
+| Surface | Role | Current status |
+| --- | --- | --- |
+| **Desktop** | Primary local control center for observation, comparison, Capacity and configuration | **Live on Microsoft Store for Windows** |
+| **Code** | Upstream OpenCode runtime/Web UI hosted inside Metrora | **Accepted in current source/product foundation; Store rollout follows its own release cadence** |
+| **CLI** | Automation, inspection, export and keyboard-first analysis | Bundled with Windows; source development supported |
+| **Local web** | Browser view served from the local machine | Available locally |
+| **Android** | Read-focused companion for an explicitly paired Desktop | **Live on Google Play**; direct GitHub APK channel also exists |
+| **MCP** | Read-only external access to canonical factual Metrora Tools | Local MCP Server V1 available |
+| **Bench** | Performance and compatibility evidence under explicit methodology | Performance + Core Compatibility foundations available |
+
+Source trees also retain macOS and GNOME companion work, but a source surface is not presented as an official distribution until its own accepted public channel exists.
+
+## Supported ecosystem
+
+Metrora currently registers **39 local collectors**. The supported set includes sources such as Claude, Codex, Gemini, Cursor, GitHub Copilot, OpenCode, Antigravity, Zed, Kiro, Cline, Cline CLI, Roo Code, KiloCode, Qwen, Kimi, Warp and other compatible clients or gateways.
+
+“Supported” is intentionally not a binary marketing claim. Metrora separately reports:
+
+1. whether the source can be discovered and analyzed locally;
+2. what evidence the source actually exposes;
+3. what provenance/coverage limitations remain;
+4. whether a concrete source path is approved for stronger signed-measurement workflows.
+
+See [Supported tools](docs/SUPPORTED_TOOLS.md) and the generated [collector inventory](docs/COLLECTOR_INVENTORY_V1.md).
+
+## Metrora Bench
+
+Bench is not a generic leaderboard bolted onto usage analytics.
+
+Its practical question is:
+
+> **How does this declared model/runtime/configuration behave under this declared methodology and hardware?**
+
+Current evidence families remain separate:
+
+- **Performance** — including bounded native llama.cpp/`llama-bench` evidence;
+- **Compatibility / Runtime Health** — deterministic Core Compatibility checks;
+- **Coding Evaluation** — future, only under a versioned methodology and sandbox/licence boundary;
+- **Agent Evaluation** — future, only under a versioned methodology and isolation boundary.
+
+OpenCode already provides real Agent/Subagent execution inside the accepted Code foundation; that does not by itself turn ordinary coding sessions into a reproducible Agent Evaluation benchmark.
+
+See [Bench evidence families](docs/BENCH_EVIDENCE_FAMILIES.md).
+
+## Android companion
+
+Metrora for Android is available on [Google Play](https://play.google.com/store/apps/details?id=eu.metrora.app).
+
+The companion pairs with an explicitly approved Metrora Desktop and consumes bounded Desktop-generated projections instead of becoming a second collector, pricing engine or accounting authority. Pairing uses encrypted transport and device trust; ordinary companion flows do not export prompt/response bodies, source files, patches, provider secrets or unrestricted filesystem paths.
+
+The production-signed direct APK channel remains available for users who intentionally choose direct installation or Obtainium. See [Android public distribution](docs/ANDROID_PUBLIC_DISTRIBUTION_V1.md).
+
+## Public direction
+
+Metrora ships conservatively, but the direction is intentionally larger than tracking. The following are **directional areas, not delivery promises or a private execution plan**:
+
+```text
+stronger Sessions + Activity
+        ↓
+richer Models + economics + provenance
+        ↓
+deeper Projects + Capacity + Bench context
+        ↓
+more canonical Metrora Tools across Code / MCP / integrations
+        ↓
+bounded external control + remote/background supervision where safe
+        ↓
+smarter evidence-aware assistance, routing and automation
+```
+
+In parallel, Metrora is exploring richer privacy-aware sharing/recap surfaces built from canonical evidence rather than a second analytics pipeline.
+
+The architectural constraint does not change as the product grows: Metrora should add differentiated facts, context, intelligence and control **without rebuilding commodity engines that a mature upstream already owns well**.
+
+See [Ecosystem surfaces](docs/ECOSYSTEM_SURFACES.md) for current-versus-future status.
 
 ## Install Metrora
 
 ### Windows
 
-Get Metrora from the [Microsoft Store](https://apps.microsoft.com/detail/9NXSZFQSBBDX).
+Install from the [Microsoft Store](https://apps.microsoft.com/detail/9NXSZFQSBBDX). The Store package contains the Desktop application and bundled Metrora CLI runtime; no separate Node.js installation is required for ordinary use. See the source-versus-Store note above for capabilities added after the published baseline.
 
-The Store package installs the bundled Metrora desktop and CLI runtime without requiring a separate Node.js installation. Source builds remain available for development, inspection and contribution; see [Getting started](docs/GETTING_STARTED.md).
+### Android
 
-### Android companion
+Install the companion from [Google Play](https://play.google.com/store/apps/details?id=eu.metrora.app). The direct GitHub Android release channel remains documented for users who intentionally choose direct APK installation.
 
-The current public Android alpha is [`0.1.0-alpha.3`](https://github.com/maikolsiragusaa/metrora/releases/tag/android-v0.1.0-alpha.3), distributed as a production-signed direct APK from GitHub Releases:
+### Build from source
 
-- [Download `Metrora-Android-0.1.0-alpha.3.apk`](https://github.com/maikolsiragusaa/metrora/releases/download/android-v0.1.0-alpha.3/Metrora-Android-0.1.0-alpha.3.apk)
-- verify the public manifest and `SHA256SUMS` attached to the release;
-- for Obtainium, add `https://github.com/maikolsiragusaa/metrora` and track the `android-v*` releases.
-
-`0.1.0-alpha.1` remains an immutable historical release and `0.1.0-alpha.2` was never published. The direct GitHub APK remains available now; Google Play publication is planned within 30 days and remains a separate release channel until it is actually live. The companion pairs locally with the current Microsoft Store Desktop and does not become a second collection or accounting authority. F-Droid remains separately gated.
-
-## What Metrora helps you answer
-
-AI-assisted development is usually split across editors, desktop applications, CLIs, subscriptions, gateways and models. Each tool exposes a different fragment of the picture. Metrora reads supported evidence already available on your machine and lets you investigate questions such as:
-
-- Which tools, models and projects are driving usage and cost?
-- What provider Capacity or quota remains, when the provider exposes trustworthy evidence?
-- How do models or providers compare on observed economics in the selected scope?
-- What does a controlled local Bench run actually measure, and what remains unknown?
-- Why did a scoped period, model, Project or provider change, according to the available Metrora evidence?
-- Which explicit local controls or reversible optimizations are supported by deterministic Metrora authority?
-
-Metrora does not require a wrapper around your AI requests, and it does not claim general model quality or autonomous control from incomplete evidence.
-
-## Try Metrora from source
-
-Use Node.js 22.15 or newer for repository development and validation.
+For repository development and inspection, use Node.js 22.15 or newer:
 
 ```bash
 git clone https://github.com/maikolsiragusaa/metrora.git
@@ -109,18 +220,10 @@ npm run build:cli
 npm run dev -- --help
 ```
 
-Open the terminal dashboard:
+Run the terminal dashboard:
 
 ```bash
 npm run dev
-```
-
-Generate a copy-pasteable overview:
-
-```bash
-npm run dev -- overview
-npm run dev -- overview --provider codex
-npm run dev -- overview --from 2026-08-01 --to 2026-08-05
 ```
 
 Open the local browser dashboard:
@@ -129,7 +232,7 @@ Open the local browser dashboard:
 npm run dev -- web
 ```
 
-Build and validate the desktop application:
+Build and validate Desktop:
 
 ```bash
 npm --prefix app ci
@@ -138,152 +241,89 @@ npm --prefix app run typecheck
 npm --prefix app run build
 ```
 
-The root npm package is intentionally private and is not an official distribution channel. See the complete [getting-started guide](docs/GETTING_STARTED.md).
+Repository builds are development/inspection artifacts, not Store-signed releases. See [Getting started](docs/GETTING_STARTED.md).
 
-## Main commands
+## CLI highlights
 
 | Command | Purpose |
 | --- | --- |
-| `metrora` | Interactive usage dashboard. |
-| `metrora overview` | Plain-text usage summary for a period or exact date range. |
-| `metrora web` | Local browser dashboard. |
-| `metrora status` | Compact today-and-month status output. |
-| `metrora sessions` | Per-session usage report. |
-| `metrora models` | Per-model cost, token and task breakdown. |
-| `metrora compare` | Side-by-side model comparison. |
-| `metrora optimize` | Waste analysis and optional reversible fixes. |
-| `metrora budget` | Configure and check spend limits. |
-| `metrora plan` | Track subscription-plan usage and projected overage. |
-| `metrora audit` | Compare provider evidence with displayed token and cost totals. |
-| `metrora doctor` | Diagnose provider discovery and parsing health. |
-| `metrora export` | Export usage as CSV or JSON. |
-| `metrora bench local --model <model>` | Run bounded synthetic local runtime-timing evidence against an Ollama model; no quality or ranking score. |
-| `metrora bench task-pack --model <model>` | Run deterministic Core Compatibility checks against a local Ollama model; private history and factual comparison only. |
-| `metrora bench performance --executable <path> --model <path>` | Run bounded native llama.cpp `llama-bench` Performance evidence against existing executable/model files; no quality or universal score. |
+| `metrora overview` | Usage/cost overview for a period or date range |
+| `metrora sessions` | Per-session evidence |
+| `metrora models` | Per-model usage, token and cost evidence |
+| `metrora compare` | Side-by-side model comparison |
+| `metrora status` | Compact status output |
+| `metrora doctor` | Provider discovery and parser diagnostics |
+| `metrora audit` | Compare available source evidence with displayed totals |
+| `metrora export` | Export user-owned data as CSV or JSON |
+| `metrora bench ...` | Run bounded Bench workflows under explicit methodology |
+| `metrora mcp serve` | Start the local read-only Metrora MCP server |
 
-Most analytical commands support provider, project and date filters. The [CLI reference](docs/CLI_REFERENCE.md) groups the public commands by task and explains compatibility boundaries.
+The complete command surface and compatibility boundaries live in the [CLI reference](docs/CLI_REFERENCE.md).
 
-## Supported tools
-
-Metrora currently registers **39 local collectors**, including Claude, Codex, Gemini, Cursor, GitHub Copilot, OpenCode, Antigravity, Zed, Kiro, Cline, Cline CLI, Roo Code, KiloCode, Qwen, Kimi, Warp and other supported clients and gateways.
-
-Support is reported with three separate facts:
-
-1. whether Metrora can discover and analyze the source locally;
-2. what kind of evidence the source exposes, including measured, derived or estimated values;
-3. whether a concrete source path is approved for signed Workspace measurements.
-
-This prevents “supported” from implying stronger evidence than a provider actually exposes. See the [user-facing support matrix](docs/SUPPORTED_TOOLS.md) and the generated [collector inventory](docs/COLLECTOR_INVENTORY_V1.md).
-
-## Evidence and pricing
-
-Metrora distinguishes values that are:
-
-- **observed** directly from a source;
-- **derived** deterministically from observed values;
-- **estimated** using documented assumptions;
-- **metered** by a provider or client;
-- **explicitly zero** rather than unavailable;
-- **unknown or unavailable** when trustworthy attribution does not exist.
-
-Missing evidence is not silently converted to zero.
-
-Historical API-equivalent pricing is date-effective and non-retroactive by default. A later catalog refresh cannot silently rewrite settled historical costs. Provider- or client-metered values remain authoritative, subscription coverage stays separate from API-equivalent valuation, and explicit zero remains different from unavailable pricing. See [Pricing history](docs/PRICING_HISTORY.md).
-
-## Product surfaces
-
-| Surface | Role | Current status |
-| --- | --- | --- |
-| Desktop | Primary local control center for observation, comparison, Code, Capacity and configuration | **Available on Microsoft Store for Windows; RC11 current Store line** |
-| CLI | Automation, inspection, export and keyboard-first analysis | Bundled with the Windows Store app; also available from source for development |
-| Local web dashboard | Browser view served from the local machine | Available locally |
-| Android companion | Read-focused local-network companion for a paired Desktop | **Public GitHub pre-release `0.1.0-alpha.3`; Google Play release planned within 30 days** |
-| macOS menubar | Compact local usage view | Development source retained; not an official Metrora distribution |
-| GNOME extension | Compact Linux panel view | Development source retained; not an official Metrora distribution |
-
-Windows is the first supported public desktop distribution. Source support for other desktop platforms does not imply that an accepted public package exists for those platforms.
-
-The Android companion is publicly distributed through the [`android-v0.1.0-alpha.3`](https://github.com/maikolsiragusaa/metrora/releases/tag/android-v0.1.0-alpha.3) GitHub pre-release. It pairs with Metrora Desktop on the same LAN, can show a fresh Desktop-generated usage overview or an encrypted offline snapshot, and consumes bounded Project-aware Home, Activity Sessions/Pull Requests, Analyze/Models, Analyze/Spend and capability-driven Workspace projections. Activity uses additive cursor-paged metadata contracts and does not expose prompt/response content. QR pairing, image import, SAS/Desktop approval and mutual-TLS device trust remain the local security boundary. The Android app does not duplicate collection, parsing, pricing, history or evidence authority. The current Microsoft Store RC11 line includes the companion runtime required by this pairing path. Google Play publication is planned within 30 days; until that channel is actually live, GitHub remains the current public Android distribution authority.
-
-## Privacy model
+## Privacy and security
 
 Metrora is local-first by default:
 
 - no account is required for ordinary local use;
-- AI traffic does not pass through Metrora;
+- AI traffic does not need to pass through Metrora;
 - prompts, responses, source code, patches, secrets and unrestricted local paths are outside the default sharing boundary;
-- analytical claims keep observed, derived, estimated and unavailable evidence distinguishable;
-- optional device or Workspace connections require explicit scope and revocable authorization;
-- user-owned data remains exportable through documented formats.
+- Android consumes bounded projections from an explicitly paired Desktop;
+- optional Workspace/device connections require explicit scope and revocable authorization;
+- user-owned evidence remains exportable through documented formats.
 
-Read the [product principles](docs/PRODUCT_PRINCIPLES.md), [public contracts v1](docs/PUBLIC_CONTRACTS_V1.md), [Workspace v1 boundary](docs/WORKSPACE_V1.md) and [security policy](SECURITY.md).
-
-## Origin and independent development
-
-Metrora is independently maintained under its own product identity. Required
-third-party notices and licence texts remain in
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [`LICENSES/`](LICENSES/).
+Read [Product principles](docs/PRODUCT_PRINCIPLES.md), [Public contracts](docs/PUBLIC_CONTRACTS_V1.md), [Workspace v1](docs/WORKSPACE_V1.md) and [Security](SECURITY.md).
 
 ## Documentation
 
-Start from the [documentation index](docs/README.md):
+Start with the [documentation home](docs/README.md).
+
+Recommended paths:
 
 - [Getting started](docs/GETTING_STARTED.md)
-- [CLI reference](docs/CLI_REFERENCE.md)
+- [Architecture](docs/architecture.md)
 - [Ecosystem surfaces](docs/ECOSYSTEM_SURFACES.md)
-- [ACT contract preparation 001](docs/ACT_CONTRACT_PREP_001.md)
-- [Bench evidence families](docs/BENCH_EVIDENCE_FAMILIES.md)
-- [Local runtime and Performance Wave 001](docs/LOCAL_RUNTIME_PERFORMANCE_WAVE_001.md)
-- [BenchRunV1 local Ollama](docs/BENCHRUN_V1_OLLAMA_LOCAL.md)
-- [Bench Core Compatibility v1](docs/BENCH_TASK_PACK_V1.md)
+- [OpenCode upstream surface](docs/OPENCODE_UPSTREAM_SURFACE_001.md)
 - [Supported tools](docs/SUPPORTED_TOOLS.md)
-- [Product principles](docs/PRODUCT_PRINCIPLES.md)
-- [Pricing history](docs/PRICING_HISTORY.md)
-- [Workspace v1](docs/WORKSPACE_V1.md)
-- [Public contracts v1](docs/PUBLIC_CONTRACTS_V1.md)
-- [Android companion foundation](docs/ANDROID_COMPANION_FOUNDATION.md)
-- [Android public distribution v1](docs/ANDROID_PUBLIC_DISTRIBUTION_V1.md)
-- [Local companion API v1](docs/LOCAL_COMPANION_API.md)
-- [Windows distribution boundary](docs/WINDOWS_DISTRIBUTION.md)
-- [Community and commercial boundary](docs/COMMERCIAL_BOUNDARY.md)
+- [CLI reference](docs/CLI_REFERENCE.md)
+- [Accounting and pricing](docs/ACCOUNTING_AND_PRICING.md)
+- [Bench evidence families](docs/BENCH_EVIDENCE_FAMILIES.md)
+- [Android companion](docs/ANDROID_COMPANION_FOUNDATION.md)
+- [Local companion API](docs/LOCAL_COMPANION_API.md)
+
+Deep compatibility, release and public-contract documents remain linked from the documentation home rather than competing with the product overview here.
 
 ## Repository map
 
 ```text
-src/       collection, parsing, canonical records, CLI, analytics and sharing
-app/       Electron desktop application
-dash/      local React web dashboard
-android/   production-signed Android companion and public direct-APK source
-mac/       macOS menubar application
-gnome/     GNOME extension
-tests/     core test suite
-docs/      product, user, contract and technical documentation
+src/       canonical collection, parsing, pricing, analytics, evidence, Tools and CLI
+app/       Electron Desktop host and Metrora product UI
+dash/      local browser dashboard
+android/   Google Play / direct-channel Android companion source
+mac/       macOS companion source
+gnome/     GNOME Shell companion source
+tests/     core and integration tests
+docs/      user guides, architecture, public contracts and release evidence
+scripts/   bounded build, verification and migration utilities
 ```
-
-The current package publishes only the `metrora` command. Historical signed
-evidence identifiers remain internal protocol details and are not product
-facing names for new releases.
 
 ## Contributing
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Provider and parser changes require fixtures, focused tests, provenance, privacy review and real-session validation where possible.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Provider/parser changes require fixtures, focused tests, provenance/privacy review and representative-record validation where possible.
 
 Security issues must be reported privately according to [SECURITY.md](SECURITY.md).
 
 ## Community
 
-<img src="./assets/brand/third-party/fluxer-symbol-color.svg" alt="Fluxer" width="48" />
+The public Metrora community is available through [metrora.eu/community](https://metrora.eu/community). Technical issues and pull requests stay on GitHub; security reports stay private.
 
-The public Metrora community is open on **Fluxer** for product discussion, questions, feedback and contributor conversation. Join through [metrora.eu/community](https://metrora.eu/community), the stable Metrora community entry point.
+## Origin, third-party software and licence
 
-Technical issues and pull requests stay on GitHub. Security reports must continue to follow the private process in [SECURITY.md](SECURITY.md).
+Metrora is independently maintained under its own product identity and distributed under the MIT License. Third-party software — including the upstream OpenCode component used by Code — retains its own project identity, licence and notices.
 
-## Product identity and licence
+Required notices and licence texts remain in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [`LICENSES/`](LICENSES/).
 
 Metrora™ is the product and user-facing brand. Signal Grid™ is its canonical visual identity. Vensent™ is the publisher identity used for official Metrora distribution.
 
-Metrora is independently maintained and distributed under the MIT License. Product and repository surfaces use the assets and Graphite + Signal Cyan palette documented in [`assets/brand`](assets/brand/README.md).
-
-See the [project notices](NOTICE.md), [brand policy](BRAND_POLICY.md) and [licence](LICENSE).
+See [NOTICE.md](NOTICE.md), [BRAND_POLICY.md](BRAND_POLICY.md) and [LICENSE](LICENSE).
 
 Metrora™ — published by Vensent™. Copyright © 2026 Metrora contributors.
