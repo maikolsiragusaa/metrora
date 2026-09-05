@@ -34,6 +34,7 @@ const PERIOD_VALUES = ['today', 'week', '30days', 'month', 'all', 'lifetime'] as
 const TOOL_PERIOD_VALUES = ['today', 'yesterday', 'week', '30days', 'month', 'all', 'lifetime'] as const
 const PROVIDER_FILTER_VALUES = ['all', 'claude', 'codex'] as const
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/u
+const FACTUAL_PROVIDER_IDENTIFIER = /^(?:[A-Za-z0-9._:-]{1,80}|\[provider\])$/u
 
 export type MetroraToolValidationCode =
   | 'unknown-tool'
@@ -130,6 +131,10 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const prototype = Object.getPrototypeOf(value)
   return prototype === Object.prototype || prototype === null
+}
+
+function safeProviderIdentifier(value: unknown): value is string {
+  return typeof value === 'string' && FACTUAL_PROVIDER_IDENTIFIER.test(value)
 }
 
 function jsonSafe(value: unknown, seen: Set<object>): unknown {
@@ -346,7 +351,7 @@ function containsUnsafeMetroraToolContent(value: unknown, key = ''): boolean {
   for (const [childKey, child] of Object.entries(value)) {
     const normalizedChildKey = childKey.replace(/[^a-z0-9]/giu, '').toLowerCase()
     if (normalizedChildKey === 'source' && (typeof child !== 'string' || !new Set(['overview', 'history', 'models', 'quota', 'bench']).has(child))) return true
-    if (normalizedChildKey === 'provider' && (typeof child !== 'string' || !new Set(['all', 'claude', 'codex', '[provider]']).has(child))) return true
+    if (normalizedChildKey === 'provider' && !safeProviderIdentifier(child)) return true
     if (normalizedChildKey === 'id' && (typeof child !== 'string' || !/^(?:[A-Za-z0-9._:-]{1,160}|evidence-\d+)$/u.test(child))) return true
     if (normalizedChildKey === 'projectid' && (typeof child !== 'string' || (child !== 'all' && child !== '[scoped-project]'))) return true
     if (containsUnsafeMetroraToolContent(child, childKey)) return true

@@ -1,8 +1,8 @@
 import { chmod, mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
-import { OPENCODE_CUSTOM_TOOL_ID, OPENCODE_VERSION } from './types'
-import { OPENCODE_USAGE_TOOL_SOURCE } from './tool'
+import { OPENCODE_CUSTOM_TOOL_ID, OPENCODE_METRORA_TOOL_IDS, OPENCODE_VERSION } from './types'
+import { OPENCODE_METRORA_TOOL_SOURCES, OPENCODE_USAGE_TOOL_SOURCE } from './tool'
 import type { MetroraUsageSnapshot } from './snapshot'
 
 export const LOOPBACK_HOST = '127.0.0.1' as const
@@ -89,7 +89,7 @@ export async function writeRuntimeFiles(paths: OpenCodeRuntimePaths): Promise<vo
 
   // Keep a private package manifest because OpenCode's extension loader checks
   // the config directory as a package boundary. No network dependency is
-  // required by the one dependency-free Metrora tool.
+  // required by the dependency-free Metrora custom tools.
   const runtimePackage = {
     name: 'metrora-opencode-runtime',
     version: '1.0.0',
@@ -125,8 +125,14 @@ export async function writeRuntimeFiles(paths: OpenCodeRuntimePaths): Promise<vo
   await writeFile(paths.configPath, JSON.stringify(config, null, 2), { encoding: 'utf8', mode: 0o600 })
   await restrictPermissions(paths.configPath, 0o600)
 
-  await writeFile(path.join(paths.toolsDir, `${OPENCODE_CUSTOM_TOOL_ID}.js`), OPENCODE_USAGE_TOOL_SOURCE, { encoding: 'utf8', mode: 0o600 })
-  await restrictPermissions(path.join(paths.toolsDir, `${OPENCODE_CUSTOM_TOOL_ID}.js`), 0o600)
+  const legacyToolPath = path.join(paths.toolsDir, `${OPENCODE_CUSTOM_TOOL_ID}.js`)
+  await writeFile(legacyToolPath, OPENCODE_USAGE_TOOL_SOURCE, { encoding: 'utf8', mode: 0o600 })
+  await restrictPermissions(legacyToolPath, 0o600)
+  for (const toolId of OPENCODE_METRORA_TOOL_IDS) {
+    const toolPath = path.join(paths.toolsDir, `${toolId}.js`)
+    await writeFile(toolPath, OPENCODE_METRORA_TOOL_SOURCES[toolId], { encoding: 'utf8', mode: 0o600 })
+    await restrictPermissions(toolPath, 0o600)
+  }
 }
 
 export async function writeUsageSnapshot(paths: OpenCodeRuntimePaths, value: MetroraUsageSnapshot): Promise<void> {
