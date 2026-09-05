@@ -188,6 +188,7 @@ function AppMain() {
               onOpenCode={openCode}
               onRefresh={refreshVisible}
               refreshing={overview.loading}
+              compactHome={section === 'overview'}
             />
             <div className={motionClass('body', 'section-fade')}>
               {section === 'overview' ? (

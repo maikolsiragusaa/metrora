@@ -50,6 +50,7 @@ export function TopBar({
   onOpenCode,
   onRefresh,
   refreshing = false,
+  compactHome = false,
 }: {
   title: ReactNode
   scope?: ReactNode
@@ -71,9 +72,10 @@ export function TopBar({
   onOpenCode?: () => void
   onRefresh?: () => void
   refreshing?: boolean
+  compactHome?: boolean
 }) {
   return (
-    <div className="bar">
+    <div className={`bar${compactHome ? ' bar-home' : ''}`}>
       <button
         type="button"
         className="bar-command"

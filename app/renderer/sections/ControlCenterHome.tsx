@@ -23,7 +23,7 @@ export function ControlCenterHome({ current, scope, providerLabel, onNavigate }:
           <span className="eyebrow">{scope}</span>
           <h1>Metrora</h1>
           <p className="control-center-hero__title">AI Control Center</p>
-          <p className="control-center-hero__copy">Observe usage, compare models, control capacity, and move into Code when you’re ready.</p>
+          <p className="control-center-hero__copy">Observe usage, compare models, and control capacity.</p>
           <div className="control-center-hero__actions">
             <button className="control-center-button control-center-button--primary" type="button" onClick={() => onNavigate?.('activity')}>View Activity <span aria-hidden="true">→</span></button>
             <button className="control-center-button control-center-button--quiet" type="button" onClick={() => onNavigate?.('code')}>Open Code <span aria-hidden="true">↗</span></button>
@@ -101,13 +101,9 @@ function HomeStat({ label, value, detail }: { label: string; value: string; deta
 function HomePromoCard({ asset, assetName, eyebrow, title, copy, action, onClick }: { asset: string; assetName: string; eyebrow: string; title: string; copy: string; action: string; onClick: () => void }) {
   return (
     <article className="control-center-promo" data-reference-asset={assetName} style={{ '--control-center-promo-image': `url(${asset})` } as CSSProperties}>
-      <div className="control-center-promo__scrim" />
-      <div className="control-center-promo__content">
-        <span className="eyebrow">{eyebrow}</span>
-        <h2>{title}</h2>
-        <p>{copy}</p>
-        <button className="control-center-button control-center-button--card" type="button" onClick={onClick}>{action} <span aria-hidden="true">→</span></button>
-      </div>
+      <button className="control-center-promo__hit-area" type="button" onClick={onClick} aria-label={`${eyebrow}: ${action}`}>
+        <span className="metrora-sr-only">{title}. {copy} {action}</span>
+      </button>
     </article>
   )
 }

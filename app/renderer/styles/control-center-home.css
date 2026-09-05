@@ -67,6 +67,10 @@
   color: var(--cc-text);
 }
 
+.metrora-shell {
+  --metrora-sidebar-expanded: 204px;
+}
+
 .metrora-sidebar {
   background: var(--cc-sidebar);
   border-color: var(--cc-border);
@@ -188,9 +192,60 @@
 }
 
 .metrora-shell .bar {
-  min-height: 64px;
-  padding: 14px clamp(18px, 3vw, 34px);
+  min-height: 60px;
+  padding: 12px clamp(18px, 2.4vw, 30px);
   border-color: var(--cc-border);
+}
+
+@media (min-width: 1121px) {
+  /* The renderer receives the client area below the native Windows title bar,
+     so the reference's top-bar coordinates are applied from y=0 here. */
+  .metrora-shell .bar-home {
+    height: 90px;
+    min-height: 90px;
+    align-items: flex-start;
+    padding: 15px 41px 27px 30px;
+  }
+
+  .metrora-shell .bar-home .bar-command {
+    height: 48px;
+  }
+
+  .metrora-shell .bar-home .btn,
+  .metrora-shell .bar-home .pop,
+  .metrora-shell .bar-home .calendar-trigger,
+  .metrora-shell .bar-home .seg {
+    min-height: 48px;
+  }
+
+  .control-center-hero__actions,
+  .control-center-hero__meta {
+    display: none;
+  }
+
+  .metrora-shell .bar-home .t,
+  .metrora-shell .bar-home .scope,
+  .metrora-shell .bar-home .open-code-button {
+    display: none;
+  }
+
+  .metrora-shell .bar-home .bar-command {
+    min-width: min(390px, 34vw);
+  }
+
+  .metrora-shell .bar-home .refresh-button {
+    width: 36px;
+    min-width: 36px;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .metrora-shell .bar-home .refresh-button::before {
+    color: currentColor;
+    content: '↻';
+    font-size: 17px;
+    line-height: 1;
+  }
 }
 
 .metrora-shell .bar .t {
@@ -288,7 +343,7 @@
 }
 
 .metrora-shell .body {
-  padding: 24px clamp(18px, 3vw, 34px) 32px;
+  padding: 12px clamp(18px, 2.4vw, 30px) 12px;
 }
 
 .control-center-home,
@@ -296,7 +351,7 @@
   display: flex;
   width: 100%;
   flex-direction: column;
-  gap: 18px;
+  gap: 14px;
 }
 
 .control-center-share-row {
@@ -304,10 +359,11 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 12px 15px;
-  border: 1px solid var(--cc-border);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--cc-panel) 86%, transparent);
+  min-height: 26px;
+  padding: 0 2px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .control-center-share-row > div {
@@ -319,17 +375,18 @@
 
 .control-center-share-row strong {
   color: var(--cc-text);
-  font-size: 12px;
+  font-size: 10.5px;
 }
 
 .control-center-share-row span {
   color: var(--cc-muted);
-  font-size: 10.5px;
+  font-size: 9.5px;
 }
 
 .control-center-hero {
   position: relative;
-  min-height: 288px;
+  height: 158px;
+  min-height: 158px;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--cc-primary-bright) 24%, var(--cc-border));
   border-radius: 20px;
@@ -357,11 +414,12 @@
   position: relative;
   z-index: 1;
   display: flex;
-  max-width: 580px;
-  min-height: 288px;
+  max-width: 640px;
+  min-height: 158px;
+  height: 100%;
   flex-direction: column;
   justify-content: center;
-  padding: 34px clamp(24px, 5vw, 58px);
+  padding: 20px clamp(24px, 3.2vw, 36px);
   color: #f7f5ff;
 }
 
@@ -380,28 +438,28 @@
 }
 
 .control-center-hero h1 {
-  margin: 9px 0 0;
+  margin: 5px 0 0;
   color: #fff;
-  font-size: clamp(32px, 4vw, 54px);
+  font-size: clamp(30px, 3vw, 40px);
   font-weight: 720;
   letter-spacing: -.055em;
   line-height: .98;
 }
 
 .control-center-hero__title {
-  margin: 9px 0 0;
+  margin: 4px 0 0;
   color: #d4cbff;
-  font-size: clamp(17px, 2vw, 24px);
+  font-size: clamp(17px, 1.7vw, 22px);
   font-weight: 600;
   letter-spacing: -.025em;
 }
 
 .control-center-hero__copy {
-  max-width: 465px;
-  margin: 10px 0 0;
+  max-width: 440px;
+  margin: 6px 0 0;
   color: rgba(245, 243, 255, .76);
-  font-size: 13px;
-  line-height: 1.55;
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .control-center-hero__actions {
@@ -459,15 +517,15 @@
 .control-center-stats {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 11px;
+  gap: 10px;
 }
 
 .control-center-stat {
   display: flex;
-  min-height: 105px;
+  min-height: 92px;
   flex-direction: column;
   justify-content: center;
-  padding: 16px 17px;
+  padding: 13px 14px;
   border: 1px solid var(--cc-border);
   border-radius: 13px;
   background: var(--cc-panel);
@@ -481,9 +539,9 @@
 }
 
 .control-center-stat strong {
-  margin-top: 8px;
+  margin-top: 5px;
   color: var(--cc-text);
-  font-size: clamp(18px, 2vw, 25px);
+  font-size: clamp(18px, 1.8vw, 23px);
   font-weight: 680;
   letter-spacing: -.04em;
   line-height: 1;
@@ -491,7 +549,7 @@
 }
 
 .control-center-stat small {
-  margin-top: 7px;
+  margin-top: 4px;
   font-size: 10px;
 }
 
@@ -520,13 +578,13 @@
 .control-center-grid {
   display: grid;
   grid-template-columns: 1.25fr 1fr .9fr;
-  gap: 12px;
+  gap: 10px;
 }
 
 .control-center-panel {
   min-width: 0;
-  min-height: 296px;
-  padding: 18px;
+  min-height: 319px;
+  padding: 15px;
   border: 1px solid var(--cc-border);
   border-radius: 15px;
   background: var(--cc-panel);
@@ -538,14 +596,14 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 18px;
+  margin-bottom: 12px;
 }
 
 .control-center-panel h2,
 .control-center-promo h2 {
-  margin: 6px 0 0;
+  margin: 5px 0 0;
   color: var(--cc-text);
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 650;
   letter-spacing: -.035em;
   line-height: 1.1;
@@ -577,7 +635,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 10px 8px;
+  padding: 7px 6px;
   border: 1px solid transparent;
   border-radius: 9px;
   background: transparent;
@@ -627,7 +685,7 @@
 }
 
 .control-center-model {
-  padding: 8px 0 5px;
+  padding: 6px 0 3px;
 }
 
 .control-center-model__label {
@@ -664,7 +722,7 @@
 
 .control-center-empty-card {
   display: flex;
-  min-height: 205px;
+  min-height: 176px;
   flex-direction: column;
   align-items: flex-start;
   justify-content: center;
@@ -696,12 +754,12 @@
 .control-center-promos {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  gap: 10px;
 }
 
 .control-center-promo {
   position: relative;
-  min-height: 214px;
+  min-height: 172px;
   overflow: hidden;
   border: 1px solid var(--cc-border);
   border-radius: 15px;
@@ -712,46 +770,19 @@
   box-shadow: var(--cc-shadow-small);
 }
 
-.control-center-promo__scrim {
+.control-center-promo__hit-area {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgba(8, 11, 31, .08) 28%, rgba(8, 11, 31, .8) 100%);
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: pointer;
 }
 
-.control-center-promo__content {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
-  left: 12px;
-  padding: 12px 13px;
-  border: 1px solid rgba(255, 255, 255, .16);
-  border-radius: 11px;
-  background: rgba(8, 11, 31, .7);
-  color: #fff;
-  backdrop-filter: blur(8px);
-}
-
-.control-center-promo h2 { color: #fff; font-size: 15px; }
-
-.control-center-promo p {
-  margin: 6px 0 10px;
-  color: rgba(247, 246, 255, .8);
-  font-size: 10px;
-  line-height: 1.45;
-}
-
-.control-center-button--card {
-  min-height: 28px;
-  padding: 0 10px;
-  border-color: rgba(255, 255, 255, .2);
-  background: rgba(255, 255, 255, .1);
-  color: #fff;
-  font-size: 10px;
-}
-
-.control-center-button--card:hover {
-  border-color: rgba(255, 255, 255, .38);
-  background: rgba(255, 255, 255, .18);
+.control-center-promo__hit-area:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -5px;
 }
 
 .control-center-section__intro {
@@ -917,4 +948,72 @@
   .control-center-list-row,
   .activity-row { transition: none; }
   .control-center-button:hover { transform: none; }
+}
+
+/* Keep the desktop geometry overrides after the shared shell/mobile rules so
+   the approved Home proportions win in the cascade. */
+@media (min-width: 1121px) {
+  .metrora-shell .body {
+    padding: 0 53px 12px 30px;
+  }
+
+  .metrora-shell .body > * {
+    max-width: none;
+    margin-right: 0;
+    margin-left: 0;
+  }
+
+  .control-center-home {
+    gap: 0;
+  }
+
+  .control-center-hero {
+    height: 158px;
+    min-height: 158px;
+    margin-bottom: 11px;
+  }
+
+  .control-center-stats {
+    gap: 16px;
+    min-height: 97px;
+    margin-bottom: 20px;
+  }
+
+  .control-center-stat {
+    min-height: 97px;
+  }
+
+  .control-center-grid {
+    grid-template-columns: 1.13fr 1fr .78fr;
+    gap: 16px;
+    margin-bottom: 19px;
+  }
+
+  .control-center-promos {
+    grid-template-columns: 1.08fr 1fr .94fr;
+    gap: 16px;
+    min-height: 172px;
+  }
+}
+
+@media (max-width: 1120px) {
+  .metrora-shell .bar-home .t,
+  .metrora-shell .bar-home .scope,
+  .metrora-shell .bar-home .open-code-button {
+    display: none;
+  }
+
+  .metrora-shell .bar-home .refresh-button {
+    width: 42px;
+    min-width: 42px;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .metrora-shell .bar-home .refresh-button::before {
+    color: currentColor;
+    content: '↻';
+    font-size: 17px;
+    line-height: 1;
+  }
 }
