@@ -1,9 +1,8 @@
 # Releasing Metrora
 
-Metrora does not yet have an official stable desktop release. Windows is
-currently distributed publicly through the Microsoft Store, published by
-Vensent, with RC11 as the current Store authority. This document defines the
-current public release boundary.
+Metrora does not yet have an official stable desktop release. Windows is publicly distributed through Microsoft Store, published by Vensent, with RC11 as the current Store authority. Android is publicly distributed through Google Play under package identity `eu.metrora.app`, with a separately documented direct APK channel.
+
+This document defines the public release boundary. Protected credentials, private custody procedures and unpublished operational details do not belong here.
 
 ## Canonical identity
 
@@ -11,75 +10,73 @@ current public release boundary.
 - Domain: **metrora.eu**
 - Repository: `maikolsiragusaa/metrora`
 - Canonical command: `metrora`
-- Published Store source line: `1.0.0-rc.11`
-- Published desktop build version: `1.0.0.11`
-- Published Store package version: `1.0.1.0`
-- Previous published Store line: `1.0.0-rc.10` / Desktop `1.0.0.10` / Store `1.0.0.0`
-- Latest published GitHub technical preview: `1.0.0-rc.7`
+- Published Windows Store source line: `1.0.0-rc.11`
+- Published Windows desktop build version: `1.0.0.11`
+- Published Windows Store package version: `1.0.1.0`
+- Previous Windows Store line: `1.0.0-rc.10` / Desktop `1.0.0.10` / Store `1.0.0.0`
+- Latest published GitHub Windows technical preview: `1.0.0-rc.7`
+- Android application ID: `eu.metrora.app`
+- Android public channels: Google Play + separately source-bound direct APK releases
 
-The published command is `metrora`. Historical protocol and signed-data
-identifiers are governed by their versioned contracts and are not release
-brands or names for new artifacts.
+Historical protocol/signed-data identifiers are governed by their versioned contracts and are not release brands or names for new artifacts.
 
 The root npm package is private and must not be published from this repository.
 
-## Current engineering authority
+## Current public channels
 
-`1.0.0-rc.11` is the current **published Microsoft Store source line** for the
-Windows distribution published by Vensent. It was accepted by Microsoft as the
-Store update with Desktop build version `1.0.0.11` and Store package identity
-version `1.0.1.0`.
+### Windows
 
-RC10 remains immutable historical publication evidence. RC9 and earlier
-candidate lines remain bound to their own source and acceptance records.
-Post-RC11 development is separate from the Store artifact; any future Store
-update requires its own candidate, acceptance, submission and publication
-decision.
+`1.0.0-rc.11` is the current published Microsoft Store source line for Windows distribution under publisher Vensent. It was accepted as the Store update with Desktop build `1.0.0.11` and Store package identity `1.0.1.0`.
 
-`1.0.0-rc.7` remains the latest published GitHub Windows technical preview. That channel is unsigned, manually updated and not Microsoft Store certified. Its source, release assets, manifests and checksums remain immutable historical publication evidence.
+RC10 remains immutable historical publication evidence. RC9 and earlier candidates remain bound to their own source/acceptance records. Post-RC11 development does not retroactively change the Store artifact; another Store update requires its own candidate, acceptance, submission and publication decision.
 
-The Microsoft Store path is separate from source builds and GitHub technical
-pre-releases. The live Store listing is the supported public Windows install
-path; later source work does not retroactively change the frozen RC11 authority.
+`1.0.0-rc.7` remains the latest published GitHub Windows technical preview. That unsigned channel is separate from Microsoft Store signing/certification and remains immutable historical evidence for its accepted source.
 
-Exact source commits and artifact digests belong in the applicable workflow/release acceptance evidence rather than being copied into general release guidance.
+### Android
+
+Google Play is a live public Android channel for package `eu.metrora.app`.
+
+A production-signed direct GitHub APK channel is also retained for users who intentionally choose direct installation or Obtainium. The current historical direct release is `0.1.0-alpha.3` under tag `android-v0.1.0-alpha.3`; earlier direct-release history remains immutable evidence.
+
+A GitHub APK release and a Google Play release are separate channel events even when they share application identity and monotonic `versionCode` ordering.
+
+See [`docs/ANDROID_PUBLIC_DISTRIBUTION_V1.md`](docs/ANDROID_PUBLIC_DISTRIBUTION_V1.md) and [`docs/VERSIONING.md`](docs/VERSIONING.md).
 
 ## Version authorities
 
-Metrora deliberately separates three version forms:
+Metrora deliberately separates product/source versions from platform packaging versions.
 
-- product/source SemVer: `1.0.0-rc.11` for the current published Store line;
-- desktop build version: `1.0.0.11` for that published line;
-- Microsoft Store AppX package identity version: `1.0.1.0` for that published line;
-- previous Store baseline: RC10 / `1.0.0.0`.
+Windows currently uses:
 
-The Store's four-component package identity is a platform contract and must not
-be confused with the desktop build counter or the SemVer pre-release label.
-`release/windows-store-package-version.v1.json` records the RC10-to-RC11
-packaging transition used for the published update. It must be advanced under a
-separate release decision before another Store candidate is derived. See
-[`docs/VERSIONING.md`](docs/VERSIONING.md).
+- product/source SemVer `1.0.0-rc.11`;
+- Desktop build version `1.0.0.11`;
+- Microsoft Store AppX package identity `1.0.1.0`.
+
+Android uses `versionName` plus strictly increasing integer `versionCode` under `eu.metrora.app`.
+
+A source version is not automatically evidence that a Store channel has published that exact source. Store/listing authority and source/build authority remain separate until the publication gate completes.
+
+See [`docs/VERSIONING.md`](docs/VERSIONING.md).
 
 ## Release responsibilities
 
-An official desktop release proceeds through separate responsibilities:
+An official release/update proceeds through separate responsibilities:
 
-1. freeze the public source commit and version;
+1. freeze the reviewed public source/version;
 2. run applicable tests, architecture and security gates;
-3. assemble the canonical product payload;
-4. derive declared platform formats and manifests;
-5. verify artifact inventory and digests independently;
-6. run platform and lifecycle acceptance;
-7. apply the exact accepted distribution identity and protected signing authority where required;
-8. publish artifacts, checksums, provenance and release notes;
-9. update `metrora.eu` only after the relevant channel is accepted;
-10. retain rollback authority and prior accepted artifacts.
+3. assemble the declared product/channel artifact;
+4. verify package identity, payload, provenance and digests independently;
+5. run platform/lifecycle/physical acceptance where required;
+6. apply the protected distribution identity/signing authority;
+7. publish through the intended channel as a separate action;
+8. update public website/docs only after the channel is actually accepted/live;
+9. retain rollback authority and historical release evidence.
 
-Build, packaging, protected signing, publication and rollback must not be collapsed into one all-purpose workflow.
+Build, packaging, signing, publication and rollback must not collapse into one opaque “release” step.
 
 ## Required validation
 
-Run the checks owned by the affected surface, including where applicable:
+Run checks owned by the changed surface, including where applicable:
 
 ```bash
 npm ci
@@ -91,99 +88,83 @@ npm --prefix app run typecheck
 npm --prefix app run build
 ```
 
-Platform workflows add their own manifest, payload, runtime, installation, update, rollback and state-preservation checks. The Store package check must execute the bundled CLI from the packaged AppX layout using the bundled Electron runtime; file presence alone is not sufficient.
+Platform workflows add their own manifest, payload, runtime, installation, update, rollback and state-preservation checks.
 
-## GitHub Windows pre-release
+A file merely being present in a package is not equivalent to executing the bundled runtime successfully.
 
-An unsigned Windows GitHub pre-release is a technical-evaluation channel. It is separate from Microsoft Store signing and certification.
+## Windows GitHub technical preview
+
+An unsigned Windows GitHub pre-release is a technical-evaluation channel. It is separate from Microsoft Store signing/certification.
 
 The published `v1.0.0-rc.7` pre-release remains bound to its accepted source commit and release evidence. New source changes do not retroactively alter that release.
 
-Any later GitHub pre-release must again come from one exact reviewed source commit and must pass the applicable candidate, artifact-binding and physical-acceptance boundaries before publication.
+Any later GitHub pre-release must again come from one exact reviewed source commit and pass the applicable artifact-binding and physical-acceptance boundaries before publication.
 
-The public acceptance contract is [`docs/WINDOWS_GITHUB_PRE_RELEASE_ACCEPTANCE_V1.md`](docs/WINDOWS_GITHUB_PRE_RELEASE_ACCEPTANCE_V1.md). The immutable RC7 publication record is [`release/1.0.0-rc.7/GITHUB_PRE_RELEASE.md`](release/1.0.0-rc.7/GITHUB_PRE_RELEASE.md).
+See [`docs/WINDOWS_GITHUB_PRE_RELEASE_ACCEPTANCE_V1.md`](docs/WINDOWS_GITHUB_PRE_RELEASE_ACCEPTANCE_V1.md).
 
-An unsigned GitHub pre-release must state that its portable/installer assets are unsigned, may trigger SmartScreen, require manual updates and are not Microsoft Store certified. It must not be presented as stable merely because GitHub represents it as a release object.
+## Microsoft Store boundary
 
-## Microsoft Store candidate boundary
-
-The published RC11 Store package was built from its exact reviewed source commit
-using the non-publishing Store workflow. The accepted package carries the
-Desktop companion runtime in `resources/cli.asar` and passed the bundled-runtime
-checks used for the submission boundary.
+The live Windows Store package derives from reviewed source and its accepted Store artifact/identity.
 
 For any future Store candidate:
 
-1. the exact AppX artifact and workflow manifest must verify;
-2. Store identity, publisher, architecture, capabilities and package version must match reviewed configuration;
-3. the packaged CLI must execute successfully from the AppX payload without a separately installed Node.js or a loose scoped `node_modules` runtime tree;
-4. the packaged companion module must import from `app/resources/cli.asar/dist/desktop-share-runtime.js` and expose `createDesktopShareRuntime` without starting a listener;
-5. the unsigned submission candidate must remain byte-identical to the workflow output;
-6. a separately test-signed copy may be used only for bounded local physical acceptance;
-7. local-test package/certificate/private-key material must be removed afterward;
-8. the sanitized local acceptance report must pass;
-9. submission requires an explicit stop/go after those checks.
+- exact artifact/workflow provenance must verify;
+- Store identity, publisher, architecture, capabilities and package version must match reviewed configuration;
+- bundled Metrora runtime must execute from the package without relying on an undeclared external runtime;
+- the pinned OpenCode runtime required by the current Code surface must be present and pass its package/runtime validation;
+- local physical acceptance must not be confused with Microsoft certification;
+- submission/publication requires a separate explicit decision after candidate validation.
 
-A passing local test is not Microsoft certification and does not authorize publication or Store-availability claims. A future Store update requires a new reviewed candidate and its own acceptance/submission decision.
+## Android channel boundary
 
-## Versioning and notes
+Android release variants share application identity but keep validation/signing/publication responsibilities separate.
 
-Metrora uses semantic versioning. The first independent candidate line is `1.0.0-rc.N`; the first official stable release is `1.0.0`. A release change updates every version-bearing package and generated metadata deliberately. See [`docs/VERSIONING.md`](docs/VERSIONING.md).
+Public invariants:
 
-Every public release note states:
+- application ID remains `eu.metrora.app`;
+- public upgrades use strictly increasing `versionCode` values;
+- debug/QA identities are not production identities;
+- direct-production signing and Play-upload signing are separate responsibilities;
+- private signing material is not repository/issue/PR/log content;
+- candidate build success is not publication authority;
+- direct APK assets remain source-bound and independently verifiable where documented;
+- Google Play status is taken from the live Store channel rather than inferred from a CI artifact.
 
-- version and source commit;
-- distribution channel and format;
-- signature status;
-- supported operating-system scope;
-- checksums and provenance location;
-- migration or rollback constraints;
+The current direct-channel contract is documented in [`docs/ANDROID_PUBLIC_DISTRIBUTION_V1.md`](docs/ANDROID_PUBLIC_DISTRIBUTION_V1.md).
+
+## Release notes
+
+Every public release note should state what users need to verify the release without dumping private operational detail:
+
+- version/source identity;
+- distribution channel/format;
+- signature status where relevant;
+- supported platform scope;
+- checksums/provenance location where published;
+- migration/rollback constraints;
 - known limitations;
 - privacy-impacting changes, if any.
 
 ## Rollback
 
-Do not rewrite or replace a broadly distributed release under the same version. Publish a new version and retain the previous accepted artifact long enough to support rollback.
+Do not rewrite or replace a broadly distributed release under the same version.
 
-Rollback preserves endpoint identity, OS-vault material, analytics, Workspace state, evidence, exports and user-owned local files according to the accepted migration contract.
+Rollback/migration must preserve user-owned state according to the accepted platform contract, including relevant endpoint identity, analytics, Workspace state, evidence and exports.
 
 ## Platform boundary
 
 - Windows is the first official desktop distribution target.
-- macOS development artifacts remain ad-hoc signed and unnotarized until platform-specific trusted-distribution acceptance passes.
-- Linux formats require packaging and support acceptance before official publication.
-- Mobile distribution has its own signing and release boundary and does not replace desktop or Workspace authority.
-
-## Android direct distribution boundary
-
-Android's direct channel is a Founder-gated GitHub Release with one
-production-signed `Metrora-Android-<versionName>.apk`, a public release manifest
-and `SHA256SUMS`. The current public release is `0.1.0-alpha.3` under
-`android-v0.1.0-alpha.3`; `0.1.0-alpha.1` remains historical public-release
-evidence, and `0.1.0-alpha.2` is historical failed evidence that was never
-public. The source-bound workflow is manual-only, does not publish from pushes
-or tags, and can prepare only a draft release after an existing tag is
-independently bound to the reviewed source commit. See
-[`docs/ANDROID_PUBLIC_DISTRIBUTION_V1.md`](docs/ANDROID_PUBLIC_DISTRIBUTION_V1.md).
-
-The V1 production custody contract uses a JKS keystore. The keystore and
-passwords remain Founder-owned external material; the repository workflow
-materializes them only for the protected signing step and does not persist
-them in `GITHUB_ENV` or release metadata.
-
-The QA physical-acceptance identity is not a production release identity.
-Google Play publication is planned within 30 days but remains a separate channel
-until the Play listing is actually public. The alpha.3 GitHub APK remains the
-current public Android authority in the meantime. F-Droid remains separately
-gated.
+- Android is an official companion distribution target through Google Play, with a separate direct channel.
+- macOS development artifacts remain development source until platform-specific trusted-distribution acceptance exists.
+- Linux formats require packaging/support acceptance before official publication.
+- mobile distribution does not replace Desktop/core factual authority.
 
 ## Prohibitions
 
 - no `npm publish` from the private root package;
 - no inherited upstream publication instructions presented as Metrora;
-- no protected credentials in untrusted pull requests;
+- no protected credentials/private signing material in untrusted pull requests or public documentation;
 - no publication from an unverified local build;
 - no silent replacement of accepted artifacts;
-- no claim of Microsoft Store certification/publication before Microsoft actually accepts that channel;
-- no claim of Google Play publication before the listing is actually public;
-- no claim of an official stable release before the relevant channel passes acceptance.
+- no Store/certification claim before the channel is actually live;
+- no claim of an official stable desktop release before the relevant stable channel passes acceptance.
