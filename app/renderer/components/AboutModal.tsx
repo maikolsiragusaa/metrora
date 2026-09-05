@@ -40,7 +40,7 @@ export function AboutModal({ socials, onClose }: { socials: SocialLink[]; onClos
           <div className="about-modal-name" id="about-modal-title">Metrora</div>
           <div className="about-modal-version">v{version}</div>
           <div className="about-modal-build">{BUILD_STAMP}</div>
-          <div className="about-modal-tagline">Local-first intelligence for AI usage, cost and efficiency.</div>
+          <div className="about-modal-tagline">AI Control Center · local-first intelligence for AI usage, cost and efficiency.</div>
         </div>
         <div className="about-modal-side">
           <div className="about-modal-section">

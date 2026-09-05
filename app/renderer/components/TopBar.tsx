@@ -74,6 +74,17 @@ export function TopBar({
 }) {
   return (
     <div className="bar">
+      <button
+        type="button"
+        className="bar-command"
+        aria-label="Search Metrora sections"
+        title="Search Metrora sections (⌘K / Ctrl+K)"
+        onClick={() => window.dispatchEvent(new Event('metrora:open-command-menu'))}
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.3" /><path d="m16 16 4.5 4.5" /></svg>
+        <span>Search sections</span>
+        <kbd>⌘K / Ctrl+K</kbd>
+      </button>
       <div className="t">{title}</div>
       {scope !== undefined && <span className="scope">{scope}</span>}
       <div className="sp" />

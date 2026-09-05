@@ -135,7 +135,7 @@ export function Settings({ period, refreshToken = 0, onNavigate, initialPane, cl
           {pane === 'privacy' && <PrivacyPane />}
         </main>
       </div>
-      <Hint items={[{ k: shortcutRangeLabel('1', '8'), label: 'Navigate' }, { k: shortcutLabel('R'), label: 'Refresh' }]} right="Local settings · nothing is uploaded automatically" />
+      <Hint items={[{ k: shortcutRangeLabel('1', '7'), label: 'Navigate' }, { k: shortcutLabel('R'), label: 'Refresh' }]} right="Local settings · nothing is uploaded automatically" />
     </>
   )
 }

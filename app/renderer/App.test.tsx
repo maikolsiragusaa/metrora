@@ -205,41 +205,38 @@ describe('App shortcuts', () => {
   it('switches sections with command-number shortcuts', async () => {
     render(<App />)
 
-    expect(await screen.findByText('Most expensive sessions')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Metrora AI Control Center')).toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: '2', metaKey: true })
-    expect(await screen.findByText('No detailed sessions are available in this range.')).toBeInTheDocument()
+    expect(await screen.findByText('Recent sessions')).toBeInTheDocument()
   })
 
   it('keeps command navigation, settings, and refresh shortcuts active without stale hints', async () => {
     render(<App />)
 
-    expect(await screen.findByText('Most expensive sessions')).toBeInTheDocument()
-    expect(screen.getByText('⌘1-8')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Metrora AI Control Center')).toBeInTheDocument()
+    expect(screen.getByText('⌘1-7')).toBeInTheDocument()
     expect(screen.getAllByText('⌘,').length).toBeGreaterThan(0)
     expect(screen.getByText('⌘R')).toBeInTheDocument()
     expect(screen.queryByText('Command')).not.toBeInTheDocument()
     expect(screen.queryByText('Export view')).not.toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: '2', metaKey: true })
-    expect(await screen.findByText('No detailed sessions are available in this range.')).toBeInTheDocument()
+    expect(await screen.findByText('Recent sessions')).toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: '3', metaKey: true })
-    expect(await screen.findByText(/No PR-linked work yet/)).toBeInTheDocument()
+    expect(await screen.findByLabelText('Daily spend by model')).toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: '4', metaKey: true })
-    expect(await screen.findByText('Cost flow · model → project')).toBeInTheDocument()
+    expect(await screen.findByText('Model usage')).toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: '5', metaKey: true })
-    expect(await screen.findByText('No actionable opportunities detected in this range.')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Bench' })).toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: '6', metaKey: true })
-    expect(await screen.findByText('Other models')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Capacity' })).toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: '7', metaKey: true })
-    expect(await screen.findByText('Need at least two models with usage in this range to compare.')).toBeInTheDocument()
-
-    fireEvent.keyDown(document, { key: '8', metaKey: true })
     expect(await screen.findByText(/secure Workspace runtime did not return a public status/)).toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: ',', metaKey: true })
@@ -254,7 +251,7 @@ describe('App shortcuts', () => {
   it('uses the visible Refresh control for fresh Overview data and re-fetches section snapshots after publication', async () => {
     render(<App />)
 
-    expect(await screen.findByText('Most expensive sessions')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Metrora AI Control Center')).toBeInTheDocument()
     await waitFor(() => {
       expect(mocks.getActReport).toHaveBeenCalled()
       expect(mocks.getYield).toHaveBeenCalled()
@@ -276,7 +273,7 @@ describe('App shortcuts', () => {
   it('re-polls visible section data when period or provider changes', async () => {
     render(<App />)
 
-    fireEvent.keyDown(document, { key: '4', metaKey: true })
+    fireEvent.keyDown(document, { key: '3', metaKey: true })
     expect(await screen.findByText('Cost flow · model → project')).toBeInTheDocument()
 
     fireEvent.click(screen.getByText('Today'))
@@ -307,7 +304,7 @@ describe('App shortcuts', () => {
     mocks.getOverview.mockResolvedValue(payload)
 
     render(<App />)
-    expect(await screen.findByText('Most expensive sessions')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Metrora AI Control Center')).toBeInTheDocument()
 
     fireEvent.click(screen.getByText('All providers'))
     fireEvent.click(await screen.findByRole('option', { name: 'Grok Build' }))
@@ -327,7 +324,7 @@ describe('App shortcuts', () => {
     mocks.getOverview.mockResolvedValue(payload)
 
     render(<App />)
-    expect(await screen.findByText('Most expensive sessions')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Metrora AI Control Center')).toBeInTheDocument()
 
     fireEvent.click(screen.getByText('All providers'))
     const claudeOption = await screen.findByRole('option', { name: 'Claude' })
@@ -342,7 +339,7 @@ describe('App shortcuts', () => {
 
   it('hides the Claude config picker when the payload carries no claudeConfigs', async () => {
     render(<App />)
-    expect(await screen.findByText('Most expensive sessions')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Metrora AI Control Center')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Claude config source' })).not.toBeInTheDocument()
   })
 
@@ -363,7 +360,7 @@ describe('App shortcuts', () => {
     payload.current.providers = { claude: 10, codex: 2 }
     mocks.getOverview.mockResolvedValue(payload)
     render(<App />)
-    expect(await screen.findByText('Most expensive sessions')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Metrora AI Control Center')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Providers' }))
     fireEvent.click(await screen.findByRole('option', { name: 'Codex' }))
@@ -382,7 +379,7 @@ describe('App shortcuts', () => {
     payload.current.providers = { claude: 10, codex: 2 }
     mocks.getOverview.mockResolvedValue(payload)
     render(<App />)
-    expect(await screen.findByText('Most expensive sessions')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Metrora AI Control Center')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Claude config source' }))
     fireEvent.click(await screen.findByRole('option', { name: 'Default Claude' }))
@@ -414,8 +411,8 @@ describe('App shortcuts', () => {
   it('applies a calendar range to overview and visible section polls', async () => {
     render(<App />)
 
-    fireEvent.keyDown(document, { key: '4', metaKey: true })
-    expect(await screen.findByText('Cost flow · model → project')).toBeInTheDocument()
+    fireEvent.keyDown(document, { key: '3', metaKey: true })
+    expect(await screen.findByLabelText('Daily spend by model')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Choose date range' }))
 
     const to = new Date()
@@ -438,14 +435,14 @@ describe('App shortcuts', () => {
 
   it('shows no daily budget banner when none is configured', async () => {
     render(<App />)
-    expect(await screen.findByText('Most expensive sessions')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Metrora AI Control Center')).toBeInTheDocument()
     expect(screen.queryByText(/daily budget/i)).not.toBeInTheDocument()
   })
 
   it('shows no banner when today spend is under 80% of the budget', async () => {
     localStorage.setItem('metrora.dailyBudget', JSON.stringify({ kind: 'usd', value: 100 }))
     render(<App />)
-    expect(await screen.findByText('Most expensive sessions')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Metrora AI Control Center')).toBeInTheDocument()
     expect(screen.queryByText(/daily budget/i)).not.toBeInTheDocument()
   })
 
@@ -635,7 +632,7 @@ describe('currency correctness', () => {
 
     render(<App />)
     // Boot on the USD ('all') view.
-    expect(await screen.findByText('Most expensive sessions')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Metrora AI Control Center')).toBeInTheDocument()
     expect(screen.queryByText(/€/)).not.toBeInTheDocument()
 
     // Switch to claude: usePolled paints the memoized EUR payload (switching) while
@@ -649,7 +646,7 @@ describe('currency correctness', () => {
 
   it('preserves warmed usage memos and refreshes the active Overview when currency is reset', async () => {
     render(<App />)
-    expect(await screen.findByText('Most expensive sessions')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Metrora AI Control Center')).toBeInTheDocument()
 
     // A warmed entry remains valid because currency is a presentation transform
     // over raw USD accounting and must not invalidate unrelated usage views.

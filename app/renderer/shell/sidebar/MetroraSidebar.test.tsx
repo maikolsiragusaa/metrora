@@ -31,14 +31,13 @@ describe('MetroraSidebar', () => {
     const onNavigate = vi.fn()
     const { container } = render(
       <div style={{ height: '720px' }}>
-        <MetroraSidebar active="settings" onNavigate={onNavigate} status={<span>Today <b>$0.00</b></span>} />
+        <MetroraSidebar active="settings" onNavigate={onNavigate} />
       </div>,
     )
 
     const sidebar = container.querySelector<HTMLElement>('.metrora-sidebar')
     const navigationScroll = sidebar?.querySelector<HTMLElement>('[data-sidebar-region="navigation-scroll"]')
     const utility = sidebar?.querySelector<HTMLElement>('[data-sidebar-region="utility"]')
-    const status = sidebar?.querySelector<HTMLElement>('[data-sidebar-region="status"]')
     const footer = sidebar?.querySelector<HTMLElement>('[data-sidebar-region="footer"]')
     const settings = screen.getByRole('button', { name: /Settings/ })
 
@@ -50,7 +49,7 @@ describe('MetroraSidebar', () => {
     expect(utility).toContainElement(settings)
     expect(settings).toHaveClass('on')
     expect(navigationScroll).not.toContainElement(settings)
-    expect(status).toHaveTextContent('Today')
+    expect(sidebar?.querySelector('[data-sidebar-region="status"]')).toBeNull()
     expect(footer).toHaveTextContent('About')
   })
 
@@ -65,7 +64,7 @@ describe('MetroraSidebar', () => {
     expect(document.querySelector('[data-sidebar-region="utility"]')).toContainElement(screen.getByRole('button', { name: /Settings/ }))
     const models = screen.getByRole('button', { name: /Models/ })
     expect(models).toHaveClass('on')
-    expect(models).toHaveAttribute('title', 'Models · ⌘6')
+    expect(models).toHaveAttribute('title', 'Models · ⌘4')
 
     models.focus()
     await user.keyboard('{Enter}')

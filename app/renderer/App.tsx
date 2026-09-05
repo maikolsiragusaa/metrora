@@ -15,9 +15,7 @@ import { useDesktopScope } from './hooks/useDesktopScope'
 import { useDesktopShortcuts } from './hooks/useDesktopShortcuts'
 import { useDesktopTelemetry } from './hooks/useDesktopTelemetry'
 import { useOverviewRuntime } from './hooks/useOverviewRuntime'
-import type { Polled } from './hooks/usePolled'
 import { PERIOD_LABELS, SECTION_TITLES } from './lib/desktopSections'
-import { formatUsd } from './lib/format'
 import { motionClass } from './lib/motion'
 import { persistRefreshValue, readRefreshValue, refreshValueToMs, RefreshCadenceContext, type RefreshCadence } from './lib/refreshCadence'
 import { shortcutLabel, shortcutRangeLabel } from './lib/shortcuts'
@@ -34,9 +32,10 @@ import { SpendContent } from './sections/Spend'
 import { WorkspaceContent } from './sections/Workspace'
 import { Bench } from './sections/Bench'
 import { Code } from './sections/Code'
-import type { MenubarPayload } from './lib/types'
 import { MetroraShell } from './shell/MetroraShell'
 import { MetroraSidebar } from './shell/sidebar/MetroraSidebar'
+import { Activity } from './sections/Activity'
+import { Companion } from './sections/Companion'
 
 export { overviewMemoKey } from './hooks/useProviderPrefetch'
 export { topCategoryByModel, usageSnapshotProps } from './hooks/useDesktopTelemetry'
@@ -146,7 +145,7 @@ function AppMain() {
 
   return (
     <MetroraShell
-      sidebar={<MetroraSidebar active={section} onNavigate={navigate} status={<StatusLine polled={overview} />} />}
+      sidebar={<MetroraSidebar active={section} onNavigate={navigate} />}
     >
       <ToastHost />
       <Splash hasData={overview.data != null} hasError={overview.error != null} />
@@ -154,9 +153,11 @@ function AppMain() {
       <div className="ct">
         <div className={overview.switching ? 'switch-line on' : 'switch-line'} aria-hidden="true" />
         <UpdateBanner />
-        {section !== 'code' && section !== 'bench' && <DailyBudgetBanner payload={overview.data ?? null} provider={provider} />}
+        {section !== 'code' && section !== 'bench' && section !== 'companion' && <DailyBudgetBanner payload={overview.data ?? null} provider={provider} />}
         <ErrorBoundary key={section}>
-        {section === 'code' ? (
+        {section === 'companion' ? (
+          <Companion refreshToken={refreshToken} onRefresh={refreshVisible} refreshing={overview.loading} />
+        ) : section === 'code' ? (
           <Code />
         ) : section === 'bench' ? (
           <Bench />
@@ -190,7 +191,9 @@ function AppMain() {
             />
             <div className={motionClass('body', 'section-fade')}>
               {section === 'overview' ? (
-                <OverviewContent period={period} provider={provider} range={customRange} overview={overview} refreshToken={refreshToken} onNavigate={navigate} ready={ready} />
+                <OverviewContent period={period} provider={provider} range={customRange} overview={overview} refreshToken={refreshToken} onNavigate={navigate} controlCenter ready={ready} />
+              ) : section === 'activity' ? (
+                <Activity overview={overview} onNavigate={navigate} />
               ) : section === 'sessions' ? (
                 <Sessions
                   period={period}
@@ -222,10 +225,10 @@ function AppMain() {
           </>
         )}
         </ErrorBoundary>
-        {section !== 'settings' && section !== 'code' && section !== 'bench' && (
+        {section !== 'settings' && section !== 'code' && section !== 'bench' && section !== 'companion' && (
           <Hint
             items={[
-              { k: shortcutRangeLabel('1', '8'), label: 'Navigate' },
+              { k: shortcutRangeLabel('1', '7'), label: 'Navigate' },
               { k: shortcutLabel(','), label: 'Settings' },
               { k: shortcutLabel('R'), label: 'Refresh' },
             ]}
@@ -235,19 +238,6 @@ function AppMain() {
       </div>
     </MetroraShell>
   )
-}
-
-function StatusLine({ polled }: { polled: Polled<MenubarPayload> }) {
-  if (polled.data) {
-    return (
-      <>
-        {polled.data.current.label} <b>{formatUsd(polled.data.current.cost)}</b>
-      </>
-    )
-  }
-  if (polled.error?.kind === 'not-found') return <>CLI not found</>
-  if (polled.loading) return <>scanning…</>
-  return <>—</>
 }
 
 function SectionPlaceholder({ title }: { title: string }) {

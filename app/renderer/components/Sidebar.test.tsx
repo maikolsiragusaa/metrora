@@ -6,29 +6,28 @@ import { describe, expect, it, vi } from 'vitest'
 import { Sidebar } from './Sidebar'
 
 describe('Sidebar', () => {
-  it('renders every destination exactly once in task-oriented groups', () => {
+  it('renders the control-center destinations in primary and utility groups', () => {
     render(<Sidebar active="overview" onNavigate={() => {}} />)
 
     expect(screen.getByRole('navigation', { name: 'Metrora navigation' })).toBeInTheDocument()
     const home = screen.getByRole('group', { name: 'Home' })
-    const activity = screen.getByRole('group', { name: 'Activity' })
-    const analyze = screen.getByRole('group', { name: 'Analyze' })
-    const control = screen.getByRole('group', { name: 'Control' })
-    const product = screen.getByRole('group', { name: 'Product' })
+    const primary = screen.getByRole('group', { name: 'Activity' })
+    const utility = screen.getByRole('group', { name: 'Companion' })
 
     expect(within(home).getByRole('button', { name: /Home.*⌘1/ })).toBeInTheDocument()
-    expect(within(activity).getAllByRole('button').map(item => item.textContent)).toEqual(['Sessions⌘2', 'Pull requests⌘3'])
-    expect(within(analyze).getAllByRole('button').map(item => item.textContent)).toEqual([
-      'Spend⌘4',
-      'Insights⌘5',
-      'Models⌘6',
-      'Compare⌘7',
+    expect(within(primary).getAllByRole('button').map(item => item.textContent)).toEqual([
+      'Activity⌘2',
+      'Models⌘4',
+      'Spend⌘3',
+      'Capacity⌘6',
+      'Bench⌘5',
+      'Workspace⌘7',
       'Code',
-      'Bench',
     ])
-    expect(within(control).getAllByRole('button').map(item => item.textContent)).toEqual(['Capacity', 'Workspace⌘8'])
-    expect(within(product).getByRole('button', { name: /Settings.*⌘,/ })).toBeInTheDocument()
-    expect(screen.getAllByRole('button')).toHaveLength(14)
+    expect(within(utility).getAllByRole('button').map(item => item.textContent)).toEqual(['Companion', 'Settings⌘,'])
+    expect(screen.queryByRole('button', { name: /Insights/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Compare/ })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button')).toHaveLength(12)
   })
 
   it('routes by click and keyboard without changing section ids', async () => {
@@ -39,10 +38,10 @@ describe('Sidebar', () => {
     await user.click(screen.getByRole('button', { name: /Spend/ }))
     expect(onNavigate).toHaveBeenCalledWith('spend')
 
-    const compare = screen.getByRole('button', { name: /Compare/ })
-    compare.focus()
+    const activity = screen.getByRole('button', { name: /Activity/ })
+    activity.focus()
     await user.keyboard('{Enter}')
-    expect(onNavigate).toHaveBeenCalledWith('compare')
+    expect(onNavigate).toHaveBeenCalledWith('activity')
   })
 
   it('marks the active item with the current-page contract', () => {

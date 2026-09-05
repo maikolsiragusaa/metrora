@@ -21,6 +21,8 @@ import type {
   Period,
   YieldJsonReport,
 } from '../lib/types'
+import type { Section } from '../lib/desktopNavigation'
+import { ControlCenterHome } from './ControlCenterHome'
 import { deriveEfficiency } from './overviewEfficiency'
 import { OverviewHomeSummary } from './OverviewHomeSummary'
 import { deriveOverviewDecision } from './overviewDecision'
@@ -317,6 +319,7 @@ export function OverviewContent({
   overview,
   refreshToken = 0,
   onNavigate,
+  controlCenter = false,
   ready = true,
 }: {
   period: Period
@@ -324,7 +327,8 @@ export function OverviewContent({
   range?: DateRange | null
   overview: Polled<MenubarPayload>
   refreshToken?: number
-  onNavigate?: (section: 'optimize' | 'sessions') => void
+  onNavigate?: (section: Section) => void
+  controlCenter?: boolean
   ready?: boolean
 }) {
   const actReport = usePolled<ActReportJson>(() => metrora.getActReport(), [refreshToken], { enabled: ready, memoKey: 'overview-act' })
@@ -371,6 +375,48 @@ export function OverviewContent({
   const projectScopeName = projectScopeActive
     ? data.projectScope?.options.find(option => option.id === selectedProjectId)?.name ?? null
     : null
+
+  if (controlCenter) {
+    return (
+      <div className="ov-dashboard">
+        {error && <StaleBanner error={error} />}
+        {!error && data.freshness?.reconciliation === 'degraded' && (
+          <div role="status" className="stale-banner">
+            Showing canonical last-good data · source reconciliation is incomplete
+          </div>
+        )}
+
+        <ControlCenterHome
+          current={data.current}
+          scope={data.current.label}
+          providerLabel={providerLabel}
+          onNavigate={onNavigate}
+        />
+
+        <div className="control-center-share-row">
+          <div>
+            <strong>Share this recap</strong>
+            <span>Create a privacy-safe PNG from the exact local scope you are viewing.</span>
+          </div>
+          <button className="btn" type="button" onClick={() => setShareOpen(true)}>Create share card</button>
+        </div>
+
+        {shareOpen && (
+          <ShareCardModal
+            payload={data}
+            period={period}
+            range={range}
+            providerLabel={providerLabel}
+            projectScopeActive={projectScopeActive}
+            projectScopeName={projectScopeName}
+            stale={Boolean(error)}
+            onClose={() => setShareOpen(false)}
+          />
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="ov-dashboard">
       {error && <StaleBanner error={error} />}
