@@ -80,34 +80,39 @@ OpenCode is third-party upstream software and remains independently maintained. 
 
 ## Metrora Tools inside Code
 
-The point of Metrora Tools is to let an accepted runtime ask Metrora-specific factual questions **without moving accounting or evidence logic into the runtime adapter**.
+Metrora Tools let the accepted Code runtime ask Metrora-specific factual questions **without moving accounting or evidence logic into the runtime adapter**.
 
-The first physically accepted proof is the bounded `metrora_usage_snapshot` integration:
+The retained compatibility tool is `metrora_usage_snapshot`. The accepted canonical Code subset is:
+
+```text
+metrora_get_spend_snapshot
+metrora_get_model_efficiency
+metrora_get_overview_snapshot
+metrora_get_project_drivers
+metrora_get_session_highlights
+metrora_get_coverage_report
+metrora_get_bench_evidence
+```
+
+The path stays intentionally thin:
 
 ```text
 question inside Code
       ↓
-OpenCode chooses a Metrora-specific tool
+OpenCode selects a Metrora custom tool
       ↓
-Metrora returns bounded factual evidence
+argv-only bridge invokes metrora tools call
+      ↓
+canonical Metrora Tool registry
+      ↓
+bounded factual evidence
       ↓
 OpenCode explains the result
 ```
 
-The broader direction is to expose high-value canonical Metrora capabilities through the shared Tool contracts — not to create dozens of duplicate Code-only mini APIs.
+The custom-tool modules do not read Metrora storage directly and do not implement Code-specific accounting. `get_quota_snapshot` remains part of the canonical registry/MCP contract, but it is not exposed as a new Code tool until the consuming path can use the real Capacity authority truthfully.
 
-Examples of canonical factual families already represented in the Metrora Tool layer include:
-
-- spend/Usage evidence;
-- model/economics evidence;
-- overview/context evidence;
-- Project drivers;
-- Session highlights;
-- coverage/freshness;
-- Bench evidence;
-- provider Capacity where the consuming authority can supply it truthfully.
-
-A model may explain a Tool result. It may not silently replace Metrora's canonical measurement, scope or unavailable-state semantics.
+Founder physical acceptance has exercised the canonical spend, model-efficiency and Bench-evidence tools through the embedded Code surface. A model may explain a Tool result; it may not silently replace Metrora's canonical measurement, scope or unavailable-state semantics.
 
 ## MCP: interoperability without becoming the proxy
 

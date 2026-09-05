@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, chmodSync 
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join, isAbsolute, relative, win32, posix } from 'node:path'
 
-import { spawnCli, spawnCliAction, spawnEnvFor, spawnSpecFor, killAll, shutdownCli, resetCliShutdownForTests, CliError, nodeManagerDirs, notFoundStage, resolveMetroraPath, resolveTarget } from './cli'
+import { resolveMetroraToolBridgeSpec, spawnCli, spawnCliAction, spawnEnvFor, spawnSpecFor, killAll, shutdownCli, resetCliShutdownForTests, CliError, nodeManagerDirs, notFoundStage, resolveMetroraPath, resolveTarget } from './cli'
 
 let dir: string
 const originalBin = process.env.METRORA_BIN
@@ -302,6 +302,41 @@ describe('spawnSpecFor (bundled CLI runs via Electron-as-node)', () => {
 
     const result = (await spawnCli(['status'])) as { ranAsNode: boolean; firstArg: string }
     expect(result).toEqual({ ranAsNode: true, firstArg: 'status' })
+  })
+})
+
+describe('resolveMetroraToolBridgeSpec', () => {
+  it('serializes an argv-only bundled bridge and keeps the environment narrow', () => {
+    delete process.env.METRORA_BIN
+    delete process.env.VITE_DEV_SERVER_URL
+    process.env.METRORA_PATH_DIRS = ''
+    process.env.METRORA_CLI_PATH_FILE = join(dir, 'no-persisted-path')
+    const entry = join(dir, 'launch.js')
+    writeFileSync(entry, '// bundled CLI\n')
+    process.env.METRORA_BUNDLED_CLI = entry
+
+    const serialized = resolveMetroraToolBridgeSpec()
+    expect(serialized).toBeTruthy()
+    const bridge = JSON.parse(serialized!) as { command: string[]; environment: Record<string, string> }
+    expect(bridge.command).toEqual([process.execPath, entry, 'tools', 'call'])
+    expect(bridge.environment).toEqual({ ELECTRON_RUN_AS_NODE: '1' })
+    expect(serialized).not.toContain('PATH')
+    expect(serialized).not.toContain('METRORA_SERVER_PASSWORD')
+  })
+
+  it('keeps a native external bridge direct and does not invent a shell', () => {
+    const native = fakeBin('metrora-native.exe', 'process.stdout.write("{}")', 'external')
+    const serialized = resolveMetroraToolBridgeSpec()
+    expect(JSON.parse(serialized!)).toEqual({ command: [native, 'tools', 'call'], environment: {} })
+  })
+
+  it('returns no bridge when the canonical CLI cannot be resolved', () => {
+    delete process.env.METRORA_BIN
+    delete process.env.VITE_DEV_SERVER_URL
+    delete process.env.METRORA_BUNDLED_CLI
+    process.env.METRORA_PATH_DIRS = ''
+    process.env.METRORA_CLI_PATH_FILE = join(dir, 'no-persisted-path')
+    expect(resolveMetroraToolBridgeSpec()).toBeNull()
   })
 })
 

@@ -23,6 +23,12 @@ export type SpawnPriority = 'interactive' | 'background'
 export type CliTarget = { kind: 'external'; bin: string } | { kind: 'bundled'; entry: string }
 type SpawnSpec = { bin: string; args: string[]; env: NodeJS.ProcessEnv }
 
+/** The only data the OpenCode custom-tool transport is allowed to inherit. */
+export type MetroraToolBridgeSpec = {
+  command: string[]
+  environment: Record<string, string>
+}
+
 export type NotFoundStage =
   | 'bin-not-absolute'
   | 'bin-not-executable'
@@ -192,6 +198,30 @@ export function spawnSpecFor(target: CliTarget, args: string[]): SpawnSpec {
     }
   }
   return { bin: target.bin, args, env: spawnEnvFor(target.bin) }
+}
+
+/**
+ * Resolve the read-only Tools bridge once in Electron's main process. The
+ * custom tool receives an argv vector, never a shell command, plus the one
+ * runtime flag needed when the packaged CLI is launched by Electron.
+ */
+export function resolveMetroraToolBridgeSpec(): string | null {
+  const target = resolveTarget()
+  if (!target) return null
+  const spec = spawnSpecFor(target, ['tools', 'call'])
+  const command = [spec.bin, ...spec.args]
+  if (command.length === 3) {
+    if (!isAbsolute(command[0]!) || command[1] !== 'tools' || command[2] !== 'call') return null
+  } else if (command.length === 4) {
+    if (!isAbsolute(command[0]!) || !isAbsolute(command[1]!) || command[2] !== 'tools' || command[3] !== 'call') return null
+  } else {
+    return null
+  }
+  const environment: Record<string, string> = {}
+  if (spec.env.ELECTRON_RUN_AS_NODE === '1') environment.ELECTRON_RUN_AS_NODE = '1'
+  const bridge: MetroraToolBridgeSpec = { command, environment }
+  const serialized = JSON.stringify(bridge)
+  return Buffer.byteLength(serialized, 'utf8') <= 8 * 1024 ? serialized : null
 }
 
 function readPersistedPath(): string | null {

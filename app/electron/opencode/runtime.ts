@@ -9,7 +9,7 @@ import { readPreferredOpenCodePort, runtimePaths, writePreferredOpenCodePort, wr
 import { sanitizeUsageSnapshot } from './snapshot'
 import {
   OPENCODE_COMMIT,
-  OPENCODE_CUSTOM_TOOL_ID,
+  OPENCODE_CUSTOM_TOOL_IDS,
   OPENCODE_LOOPBACK_HOST,
   OPENCODE_VERSION,
   OpenCodeError,
@@ -55,6 +55,8 @@ export type OpenCodeRuntimeOptions = {
   acquirePort?: () => Promise<number>
   isLoopbackPortAvailable?: (port: number) => Promise<boolean>
   readUsageSnapshot?: () => Promise<unknown>
+  /** Serialized argv-only bridge for the private Metrora custom tools. */
+  toolBridgeSpec?: string | null
   now?: () => number
   randomPassword?: () => string
   healthTimeoutMs?: number
@@ -95,8 +97,9 @@ export function createLaunchEnvironment(options: {
   paths: OpenCodeRuntimePaths
   username: string
   password: string
+  toolBridgeSpec?: string | null
 }): NodeJS.ProcessEnv {
-  return {
+  const environment: NodeJS.ProcessEnv = {
     ...(options.baseEnv ?? process.env),
     OPENCODE_SERVER_USERNAME: options.username,
     OPENCODE_SERVER_PASSWORD: options.password,
@@ -105,6 +108,8 @@ export function createLaunchEnvironment(options: {
     OPENCODE_DISABLE_AUTOUPDATE: '1',
     METRORA_USAGE_SNAPSHOT_FILE: options.paths.snapshotPath,
   }
+  if (options.toolBridgeSpec) environment.METRORA_TOOL_BRIDGE_SPEC = options.toolBridgeSpec
+  return environment
 }
 
 export async function freeLoopbackPort(): Promise<number> {
@@ -269,7 +274,7 @@ export class OpenCodeRuntime {
         args,
         {
           cwd: this.options.workingDirectory ?? this.options.appPath,
-          env: createLaunchEnvironment({ paths, username: SERVER_USERNAME, password }),
+          env: createLaunchEnvironment({ paths, username: SERVER_USERNAME, password, toolBridgeSpec: this.options.toolBridgeSpec }),
           stdio: ['ignore', 'ignore', 'ignore'],
           windowsHide: true,
         },
@@ -291,9 +296,9 @@ export class OpenCodeRuntime {
       if (reportedVersion !== OPENCODE_VERSION) {
         throw new OpenCodeError('version-mismatch', `OpenCode version verification failed; expected ${OPENCODE_VERSION}.`)
       }
-      const registered = await this.verifyCustomTool(origin, auth, abort.signal)
+      const registered = await this.verifyCustomTools(origin, auth, abort.signal)
       this.customToolRegistered = registered
-      if (!registered) throw new OpenCodeError('custom-tool', `OpenCode did not register ${OPENCODE_CUSTOM_TOOL_ID}.`)
+      if (!registered) throw new OpenCodeError('custom-tool', 'OpenCode did not register the expected Metrora custom tools.')
       if (abort.signal.aborted) throw new OpenCodeError('cancelled', 'OpenCode startup cancelled.')
 
       this.connection = { origin, username: SERVER_USERNAME, password }
@@ -344,13 +349,15 @@ export class OpenCodeRuntime {
     throw new OpenCodeError('timeout', 'OpenCode server did not become healthy.')
   }
 
-  private async verifyCustomTool(origin: string, authorization: string, signal: AbortSignal): Promise<boolean> {
+  private async verifyCustomTools(origin: string, authorization: string, signal: AbortSignal): Promise<boolean> {
     const fetchImpl = this.options.fetchImpl ?? ((url, init) => fetch(url, init))
     const response = await fetchImpl(`${origin}/experimental/tool/ids`, { headers: { Authorization: authorization }, signal: abortAfter(signal, REQUEST_TIMEOUT_MS) })
     if (!response.ok) throw new OpenCodeError('custom-tool', 'OpenCode tool discovery was unavailable.')
     const value = await responseJson(response)
     if (!Array.isArray(value)) throw new OpenCodeError('custom-tool', 'OpenCode tool discovery returned an invalid response.')
-    return value.slice(0, 1_000).every(item => typeof item === 'string') && value.includes(OPENCODE_CUSTOM_TOOL_ID)
+    const registered = value.slice(0, 1_000)
+    return registered.every(item => typeof item === 'string')
+      && OPENCODE_CUSTOM_TOOL_IDS.every(toolId => registered.includes(toolId))
   }
 
   private async acquireServerPort(paths: OpenCodeRuntimePaths): Promise<number> {

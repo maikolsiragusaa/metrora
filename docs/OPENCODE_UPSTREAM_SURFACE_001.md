@@ -104,25 +104,39 @@ Surface metadata can remain separate from provider/accounting identity when need
 
 The accepted foundation includes a bounded Metrora custom-tool path inside OpenCode.
 
-The first physically validated proof is:
+The retained compatibility tool is:
 
 `metrora_usage_snapshot`
 
-It exposes a small sanitized read-only projection of current Metrora usage so a user can ask a Metrora-specific factual question inside Code and let OpenCode answer from Metrora evidence.
+The accepted canonical read-only Code tools are:
+
+```text
+metrora_get_spend_snapshot
+metrora_get_model_efficiency
+metrora_get_overview_snapshot
+metrora_get_project_drivers
+metrora_get_session_highlights
+metrora_get_coverage_report
+metrora_get_bench_evidence
+```
+
+Each new OpenCode tool is only a description/schema plus a bounded argv-only bridge to `metrora tools call`. The canonical `src/tools` registry remains the factual authority; the Code adapter does not reimplement accounting, Models, Projects, Sessions or Bench evidence.
 
 ```text
 user question in Code
       ↓
-OpenCode tool selection
+OpenCode selects a Metrora custom tool
       ↓
-bounded Metrora Tool/projection
+argv-only bridge
       ↓
-canonical Metrora evidence
+canonical Metrora Tool registry
+      ↓
+bounded factual evidence
       ↓
 OpenCode explanation
 ```
 
-The direction is to expand useful Metrora-specific factual capabilities by reusing the canonical Metrora Tool/evidence registry rather than copying accounting logic into OpenCode adapters.
+`get_quota_snapshot` remains available through the canonical registry/MCP contract but is not exposed as a Code custom tool until the consuming path can use the real Capacity authority truthfully. Metrora does not estimate quota from measured spend.
 
 Prompt/response bodies, source code, credentials and unrestricted local paths remain outside the default Metrora factual Tool boundary.
 
@@ -148,7 +162,7 @@ Future inbound external control/remote supervision remains separately gated and 
 
 ## Physical acceptance
 
-The foundation has been physically exercised through the embedded Code surface, including representative checks for:
+The Code foundation has been physically exercised through the embedded surface, including representative checks for:
 
 - shell/terminal;
 - file read/edit/write;
@@ -165,7 +179,7 @@ The foundation has been physically exercised through the embedded Code surface, 
 
 The host prewarm/persistent-view behavior was also physically accepted.
 
-These results establish the Code foundation. They do not imply that every future OpenCode version or every new Metrora Tool is automatically accepted without its own regression/physical check.
+The expanded canonical Metrora Tool path was then physically validated through the embedded Code surface for spend, model-efficiency and Bench evidence after bounded transport/output fixes. These results establish the current foundation; they do not imply that every future OpenCode version or every new Metrora Tool is automatically accepted without its own regression/physical check.
 
 ## Non-goals
 

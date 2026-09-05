@@ -136,6 +136,26 @@ Pairing is explicit and revocable. Combined-device reporting is separate from th
 | `metrora menubar` | Install the retained macOS menubar development surface. |
 | `metrora antigravity-hook` | Install or remove supported Antigravity CLI usage capture. |
 
+### Canonical Tools adapter
+
+The read-only Code bridge and other bounded integrations use the same
+canonical registry through the CLI adapter:
+
+```bash
+metrora tools call get_spend_snapshot --args-json '{"period":"today"}'
+metrora tools call get_model_efficiency --args-json '{}' --period week --provider claude --project-id all
+```
+
+`--args-json` must be one bounded JSON object. Startup scope defaults to
+`--period all --provider all --project-id all`; tool arguments may only use the
+filters declared by the canonical contract. Success writes result content JSON
+to stdout only. Malformed/unknown calls and unavailable startup failures write
+a safe bounded diagnostic to stderr and return a non-zero status. This adapter
+does not invoke configuration-changing commands or Bench runs, and does not expose raw prompts,
+responses, source, credentials or filesystem paths. `get_quota_snapshot` is
+available to the canonical CLI/MCP contract, while the new OpenCode Code
+subset intentionally does not register it.
+
 The macOS menubar and other retained platform surfaces are not official Metrora distributions until their platform-specific release boundary passes.
 
 ## Identity boundary
