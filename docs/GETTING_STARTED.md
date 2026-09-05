@@ -1,23 +1,60 @@
 # Getting started
 
-Metrora for Windows is available on the **Microsoft Store**, published by Vensent. The Store package is the supported public Windows distribution. You can also build Metrora from source for development, inspection and contribution.
+Metrora is available through official Store channels and can also be built from source for development, inspection and contribution.
+
+- **Windows:** [Microsoft Store](https://apps.microsoft.com/detail/9NXSZFQSBBDX)
+- **Android:** [Google Play](https://play.google.com/store/apps/details?id=eu.metrora.app)
+- **Source:** this repository
+
+Ordinary local use does not require a Metrora account or a mandatory AI-request proxy.
+
+## Install on Windows
+
+The Microsoft Store package is the supported public Windows distribution, published by Vensent.
 
 [Get Metrora from Microsoft Store](https://apps.microsoft.com/detail/9NXSZFQSBBDX)
 
-Repository source may be newer than the currently published Store package. Source builds must therefore be identified by their exact commit/version and must not be treated as Store-signed packages.
+The current live Store line is RC11 (`1.0.0-rc.11`, Desktop `1.0.0.11`, Store package `1.0.1.0`). The package contains the Desktop application and bundled Metrora CLI runtime; ordinary users do not need a separate Node.js installation.
 
-## Requirements
+Repository source may be newer than the currently published Store package. A source checkout or locally generated package must therefore be identified by its exact commit/version and must not be presented as Store-signed authority.
+
+## Install the Android companion
+
+Metrora for Android is live on Google Play under application ID `eu.metrora.app`.
+
+[Get Metrora on Google Play](https://play.google.com/store/apps/details?id=eu.metrora.app)
+
+Android is a companion to an explicitly paired Metrora Desktop. It consumes bounded Desktop-generated projections and does not independently become the collector, pricing engine, accounting authority or canonical history source.
+
+The production-signed direct GitHub APK channel also remains available for users who intentionally choose direct installation or Obtainium. The current documented direct release is [`0.1.0-alpha.3`](https://github.com/maikolsiragusaa/metrora/releases/tag/android-v0.1.0-alpha.3); direct-channel release history and integrity details are documented separately rather than making this getting-started guide a release ledger.
+
+See [Android public distribution](ANDROID_PUBLIC_DISTRIBUTION_V1.md), [Android companion foundation](ANDROID_COMPANION_FOUNDATION.md) and [Local companion API](LOCAL_COMPANION_API.md).
+
+## First look at Metrora Desktop
+
+The product is organized around four jobs:
+
+```text
+Observe  → Usage · Activity · Sessions · Projects
+Compare  → Models · economics · Bench · coverage
+Code     → upstream OpenCode hosted inside Metrora
+Control  → Capacity · budgets · Project context · explicit local controls
+```
+
+The **Code** destination embeds the upstream OpenCode runtime/Web UI. OpenCode owns ordinary coding sessions, agents, tools, files, shell and Git mechanics; Metrora owns the surrounding host, facts, evidence and product context.
+
+See [Architecture](architecture.md), [OpenCode upstream surface](OPENCODE_UPSTREAM_SURFACE_001.md) and [Ecosystem surfaces](ECOSYSTEM_SURFACES.md).
+
+## Build from source
 
 For repository development and source evaluation use:
 
 - Git;
 - Node.js 22.15 or newer;
 - npm;
-- at least one supported AI tool with local usage records.
+- at least one supported AI tool with local usage records for meaningful collector output.
 
-The package metadata retains a lower CLI engine floor for compatibility, but repository builds and CI use the stricter development runtime. Contributors and evaluators should use Node.js 22.15 or newer.
-
-## Build the CLI
+Clone and build the CLI:
 
 ```bash
 git clone https://github.com/maikolsiragusaa/metrora.git
@@ -26,13 +63,13 @@ npm ci
 npm run build:cli
 ```
 
-Show the canonical command surface through the development runner:
+Show the canonical command surface:
 
 ```bash
 npm run dev -- --help
 ```
 
-The root npm package is intentionally private. Do not treat npm publication or an inherited package name as an official Metrora distribution channel.
+The root npm package is intentionally private. npm publication or an inherited package identity is not an official Metrora distribution channel.
 
 ## Run the first report
 
@@ -42,13 +79,13 @@ Open the interactive terminal dashboard:
 npm run dev
 ```
 
-Generate a plain-text overview for the current month:
+Generate an overview:
 
 ```bash
 npm run dev -- overview
 ```
 
-Filter to one provider:
+Filter to a provider:
 
 ```bash
 npm run dev -- overview --provider codex
@@ -66,30 +103,30 @@ Open the local browser dashboard:
 npm run dev -- web
 ```
 
-The web dashboard is served from the local machine. It is not a hosted account service.
+The browser dashboard is served from the local machine. It is not a hosted Metrora account service.
 
 ## Confirm what Metrora found
 
-Run provider diagnostics when a tool is missing or the totals appear incomplete:
+If a tool is missing or totals look incomplete, inspect discovery and evidence before assuming zero:
 
 ```bash
 npm run dev -- doctor
 npm run dev -- doctor --provider codex
 ```
 
-Use the token audit for a closer comparison between source evidence and displayed totals:
+For a closer comparison between source evidence and displayed totals:
 
 ```bash
 npm run dev -- audit --provider codex
 ```
 
-A provider may expose measured token counts, cumulative counters, derived deltas or only enough content for an estimate. Metrora keeps those evidence classes distinguishable rather than treating every source as equally precise.
+A provider may expose measured token counts, cumulative counters, derived deltas or only enough content for an estimate. Metrora keeps these evidence classes distinguishable.
 
-See [Supported tools](SUPPORTED_TOOLS.md) and the relevant file under [`docs/providers`](providers/).
+See [Supported tools](SUPPORTED_TOOLS.md) and [`docs/providers`](providers/).
 
-## Explore common workflows
+## Common CLI workflows
 
-### Review sessions
+### Sessions
 
 ```bash
 npm run dev -- sessions
@@ -97,28 +134,29 @@ npm run dev -- sessions --provider claude
 npm run dev -- sessions --format json
 ```
 
-### Compare models
+### Models and comparison
 
 ```bash
+npm run dev -- models
 npm run dev -- compare
 npm run dev -- compare --provider codex
 ```
 
-### Find optimization opportunities
+### Diagnostics and optimization
 
 ```bash
+npm run dev -- doctor
 npm run dev -- optimize
 npm run dev -- optimize --provider claude
-npm run dev -- optimize --format json
 ```
 
-Configuration-changing optimization actions are opt-in, backed up and journaled. Review a dry run before applying changes:
+Configuration-changing optimization actions are explicit. Review a dry run before applying a supported change:
 
 ```bash
 npm run dev -- optimize --apply --dry-run
 ```
 
-### Configure budgets
+### Budgets
 
 ```bash
 npm run dev -- budget --monthly 100
@@ -126,16 +164,18 @@ npm run dev -- budget --check
 npm run dev -- budget --list
 ```
 
-### Export data
+### Export
 
 ```bash
 npm run dev -- export --format json
 npm run dev -- export --format csv --from 2026-08-01 --to 2026-08-05
 ```
 
-Exports should be reviewed before sharing. Prompts, responses, source code, patches and secrets are outside the default analytical export boundary, but project and environment metadata may still be sensitive in a particular context.
+Review exports before sharing. Ordinary analytical exports exclude prompt/response bodies, source code, patches and secrets, but Project/environment metadata can still be sensitive in context.
 
-## Build the desktop application
+The complete command surface is in [CLI reference](CLI_REFERENCE.md).
+
+## Build the Desktop application
 
 ```bash
 npm --prefix app ci
@@ -144,23 +184,13 @@ npm --prefix app run typecheck
 npm --prefix app run build
 ```
 
-Development builds are not official Store-signed releases. Windows is the first supported public desktop distribution, and the Microsoft Store package is the recommended Windows install path. The current live Store line is RC11 (`1.0.0-rc.11`, Desktop `1.0.0.11`, Store package `1.0.1.0`). Repository packaging commands remain development and verification tools rather than alternate public distribution channels.
+Development builds are not official Store-signed releases. Repository packaging commands remain development/verification tools rather than alternate public Store authority.
 
-See [Windows distribution](WINDOWS_DISTRIBUTION.md), [Versioning authority](VERSIONING.md) and [`RELEASING.md`](../RELEASING.md).
+The Desktop build also stages the pinned upstream OpenCode runtime used by the Code surface. Future OpenCode updates are reviewed/pinned deliberately rather than following an unverified `latest` binary.
 
-## Android companion
+See [Windows distribution](WINDOWS_DISTRIBUTION.md), [Versioning](VERSIONING.md) and [`RELEASING.md`](../RELEASING.md).
 
-The current public GitHub pre-release is [`0.1.0-alpha.3`](https://github.com/maikolsiragusaa/metrora/releases/tag/android-v0.1.0-alpha.3), distributed as a production-signed direct APK for `eu.metrora.app` with `versionCode = 3`. `0.1.0-alpha.1` remains immutable historical release evidence; `0.1.0-alpha.2` was never published.
-
-The current RC11 Microsoft Store Desktop includes the companion runtime used by alpha.3, so ordinary Windows users can pair the Android companion with the Store installation. The Android companion remains read-focused and does not become a second collection, pricing, accounting or history authority.
-
-For direct installation:
-
-- download `Metrora-Android-0.1.0-alpha.3.apk` from the alpha.3 GitHub Release;
-- verify the attached manifest and `SHA256SUMS` if desired;
-- Obtainium users can track the repository's `android-v*` releases.
-
-Google Play publication is planned within 30 days. Until that channel is actually live, the production-signed GitHub APK remains the current public Android distribution authority. F-Droid remains separately gated.
+## Android development
 
 For repository Android development use:
 
@@ -168,38 +198,34 @@ For repository Android development use:
 - Gradle 9.6.1, or the project-supported equivalent;
 - Android SDK Platform 36.
 
-The canonical contributor checks are:
+Canonical contributor checks include:
 
 ```bash
 gradle -p android --no-daemon :app:testGithubDebugUnitTest :app:lint :app:assembleGithubDebug
 ```
 
-To validate the unsigned distribution channels used by the repository workflow:
+To validate repository distribution variants:
 
 ```bash
 gradle -p android --no-daemon :app:assembleGithubRelease :app:assembleFdroidRelease :app:bundlePlayRelease
 ```
 
-The dedicated non-production QA identity is used only for trusted same-repository physical-acceptance CI and is not required for these commands. Production, QA, F-Droid and Play signing remain separate; no private signing material belongs in Git.
-
-See [Android public distribution v1](ANDROID_PUBLIC_DISTRIBUTION_V1.md), [Android companion foundation](ANDROID_COMPANION_FOUNDATION.md) and [Local companion API v1](LOCAL_COMPANION_API.md).
+Production, QA, direct, F-Droid and Play signing boundaries remain separate. No private signing material belongs in Git, public issues, pull requests or ordinary logs.
 
 ## Local files and compatibility
 
-The current package publishes only the `metrora` command. Fresh installations
-use canonical Metrora config and cache roots and do not infer retired
-pre-release roots, aliases or pointers. Existing canonical analytics and
-history are preserved; historical Workspace and signed-evidence identifiers
-remain a separate technical boundary documented in
-[`TECHNICAL_IDENTITY_COMPATIBILITY.md`](TECHNICAL_IDENTITY_COMPATIBILITY.md).
+The current package publishes only the `metrora` command. Fresh installations use canonical Metrora config/cache roots and do not infer retired pre-release roots, aliases or pointers.
+
+Historical Workspace/signed-evidence identifiers may remain where changing them would break installed state. They are compatibility details, not current product branding. See [Technical identity compatibility](TECHNICAL_IDENTITY_COMPATIBILITY.md).
 
 ## Troubleshooting
 
-1. Confirm Node.js and npm versions.
-2. Run `npm ci` again from a clean checkout.
+1. Confirm the relevant Store/source version first.
+2. For source builds, confirm Node.js/npm versions and run `npm ci` from a clean checkout.
 3. Run `npm run dev -- doctor`.
 4. Open the provider document for the affected tool.
-5. Verify the tool has actually written local session or usage data.
-6. Use synthetic or sanitized evidence when opening a public issue.
+5. Confirm the provider/client actually wrote local evidence in the selected period.
+6. Keep missing/unavailable evidence distinct from zero.
+7. Use synthetic or sanitized evidence when opening a public issue.
 
 Security vulnerabilities must be reported privately according to [`SECURITY.md`](../SECURITY.md).
