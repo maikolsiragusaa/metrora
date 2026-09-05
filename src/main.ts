@@ -46,8 +46,7 @@ import { clearPlan, readConfig, readPlan, readPlans, saveConfig, savePlan, getCo
 import { clampResetDay, getPlanUsageOrNull, getPlanUsages, type PlanUsage } from './plan-usage.js'
 import { getPresetPlan, isPlanId, isPlanProvider, PLAN_IDS, PLAN_PROVIDERS, planDisplayName } from './plans.js'
 import { createRequire } from 'node:module'
-import { registerMetroraMcpCommands } from './mcp/cli.js'
-import { registerMetroraToolCommands } from './tools/cli.js'
+import { registerMetroraMcpCommands } from './mcp/cli.js'; import { registerMetroraToolCommands } from './tools/cli.js'
 
 const require = createRequire(import.meta.url); const { version } = require('../package.json')
 import { loadCurrency, getCurrency, isValidCurrencyCode } from './currency.js'
@@ -2293,8 +2292,7 @@ program
     await runAgyStatusLineHook()
   })
 
-registerMetroraMcpCommands(program, version)
-registerMetroraToolCommands(program)
+registerMetroraMcpCommands(program, version); registerMetroraToolCommands(program)
 
 program
   .command('doctor')
