@@ -1,11 +1,13 @@
-import type { CSSProperties } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 
 import { EmptyNote } from '../components/EmptyState'
 import { ProviderLogo } from '../components/ProviderLogo'
 import { formatCompact, formatDayShort, formatUsd, shortenProjectPath } from '../lib/format'
 import type { Section } from '../lib/desktopNavigation'
+import { metrora } from '../lib/ipc'
 import { quotaProviderName } from '../lib/quota-providers'
 import type { MenubarPayload, QuotaProvider } from '../lib/types'
+import { displayNameFromWorkspaceStatus, greetingForHour } from '../lib/home-greeting'
 import heroMountains from '../assets/home/hero-mountains.png'
 import opencodeCard from '../assets/home/card-opencode.png'
 import companionCard from '../assets/home/card-companion.png'
@@ -57,7 +59,34 @@ export function ControlCenterHome({ current, scope, providerLabel, quota, onNavi
   const models = current.topModels.slice(0, 5)
   const sessions = current.topSessions.slice(0, 4)
   const maxModelCost = Math.max(...models.map(model => model.cost), 0)
-  const capacityRows = (quota ?? []).flatMap(provider => provider.windows.slice(0, 2).map(window => ({ provider, window }))).slice(0, 4)
+  const capacityGroups = (quota ?? [])
+    .map(provider => ({ provider, windows: provider.windows.slice(0, 2) }))
+    .filter(group => group.windows.length > 0)
+    .slice(0, 4)
+  const [greeting, setGreeting] = useState(() => greetingForHour(new Date().getHours()))
+  const [displayName, setDisplayName] = useState<string | null>(null)
+
+  useEffect(() => {
+    const updateGreeting = () => setGreeting(greetingForHour(new Date().getHours()))
+    updateGreeting()
+    const timer = window.setInterval(updateGreeting, 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    const getWorkspaceStatus = (metrora as { getWorkspaceStatus?: () => Promise<unknown> }).getWorkspaceStatus
+    if (typeof getWorkspaceStatus !== 'function') return () => { cancelled = true }
+
+    void getWorkspaceStatus()
+      .then(status => {
+        if (!cancelled) setDisplayName(displayNameFromWorkspaceStatus(status))
+      })
+      .catch(() => {
+        if (!cancelled) setDisplayName(null)
+      })
+    return () => { cancelled = true }
+  }, [])
 
   return (
     <div className="control-center-home" aria-label="Metrora AI Control Center">
@@ -66,7 +95,7 @@ export function ControlCenterHome({ current, scope, providerLabel, quota, onNavi
           <div className="control-center-hero__topline">
             <span className="eyebrow">{scope}</span>
           </div>
-          <h1>Metrora</h1>
+          <h1><span>{greeting}</span>{displayName ? <><span>, </span><em>{displayName}</em></> : null}</h1>
           <p className="control-center-hero__title">Your AI Control Center.</p>
           <p className="control-center-hero__copy">Observe usage, compare models, and control capacity.</p>
         </div>
@@ -132,14 +161,23 @@ export function ControlCenterHome({ current, scope, providerLabel, quota, onNavi
 
         <div className="control-center-panel control-center-panel--capacity">
           <div className="control-center-panel__head"><div><span className="eyebrow">Capacity</span><h2>Provider signals</h2></div><button className="control-center-link" type="button" onClick={() => onNavigate?.('plans')}>View all →</button></div>
-          {capacityRows.length ? (
+          {capacityGroups.length ? (
             <div className="control-center-capacity-list" aria-label="Provider-reported capacity">
-              {capacityRows.map(({ provider, window }) => {
-                const used = Math.max(0, Math.min(1, window.usedFraction))
+              {capacityGroups.map(({ provider, windows }) => {
                 return (
-                  <div className="control-center-capacity-row" key={`${provider.provider}-${window.id}`}>
-                    <span className="control-center-capacity-row__identity"><ProviderLogo provider={provider.provider} size={18} /><span><strong>{quotaProviderName(provider.provider)}</strong><small>{window.label}{provider.freshness === 'stale' ? ' · stale' : ''}</small></span></span>
-                    <span className="control-center-capacity-row__usage"><span className="control-center-capacity-row__track"><span style={{ width: `${used * 100}%` }} /></span><strong>{percent(used)}</strong></span>
+                  <div className="control-center-capacity-group" key={provider.provider}>
+                    <div className="control-center-capacity-group__provider"><ProviderLogo provider={provider.provider} size={18} /><strong>{quotaProviderName(provider.provider)}</strong></div>
+                    <div className="control-center-capacity-group__windows">
+                      {windows.map(window => {
+                        const used = Math.max(0, Math.min(1, window.usedFraction))
+                        return (
+                          <div className="control-center-capacity-group__window" key={`${provider.provider}-${window.id}`}>
+                            <span className="control-center-capacity-group__window-label">{window.label}{provider.freshness === 'stale' ? <small>stale</small> : null}</span>
+                            <span className="control-center-capacity-row__usage"><span className="control-center-capacity-row__track"><span style={{ width: `${used * 100}%` }} /></span><strong>{percent(used)}</strong></span>
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
                 )
               })}
