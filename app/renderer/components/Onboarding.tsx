@@ -250,7 +250,7 @@ function DiscoverStep({ overview, ready, onContinue, onSkip }: {
 
       {overview.error && <div className="onboarding-inline-status onboarding-inline-status-error" role="status"><Icon name="info" size={18} /> <span>{overview.data ? 'The last local snapshot is available; some sources may need another scan.' : 'Local source discovery is unavailable right now.'}</span></div>}
 
-      <div className="onboarding-source-grid" aria-live="polite">
+      <div className={`onboarding-source-grid ${entries.length > 6 ? 'onboarding-source-grid-many' : ''}`} aria-live="polite">
         {entries.length > 0 ? entries.map(entry => (
           <SourceCard key={entry.id} entry={entry} status={refreshing ? 'refreshing' : overview.error ? 'available' : 'detected'} />
         )) : (

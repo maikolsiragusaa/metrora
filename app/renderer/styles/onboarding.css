@@ -15,7 +15,8 @@
   position: fixed;
   z-index: 3100;
   inset: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   isolation: isolate;
   color: #f5f5ff;
   background-color: #080d24;
@@ -41,6 +42,7 @@
 .onboarding-content {
   display: flex;
   width: 100%;
+  min-width: 0;
   min-height: 100%;
   box-sizing: border-box;
   flex-direction: column;
@@ -49,7 +51,7 @@
   /* The Windows renderer viewport is shorter than the outer window by the
      native chrome inset. Keep the Welcome composition inside that usable
      height so a full-size window does not gain a page scrollbar. */
-  padding: 73px 24px 15px;
+  padding: 73px 24px 5px;
 }
 
 .onboarding-stepper {
@@ -139,6 +141,7 @@
   width: min(820px, calc(100vw - 48px));
   max-width: 100%;
   max-height: calc(100vh - 112px);
+  min-width: 0;
   min-height: 0;
   flex: 0 1 auto;
   outline: none;
@@ -150,11 +153,13 @@
 .onboarding-card {
   display: flex;
   width: 100%;
+  min-width: 0;
   max-height: 100%;
   box-sizing: border-box;
   flex-direction: column;
   align-items: center;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   border: 1px solid rgba(113, 148, 225, .70);
   border-radius: 24px;
   background: linear-gradient(145deg, rgba(13, 24, 60, .82), rgba(6, 14, 42, .76));
@@ -446,6 +451,32 @@
   border-radius: 10px;
   background: linear-gradient(140deg, rgba(18, 31, 72, .72), rgba(9, 19, 51, .66));
 }
+
+/* A real installation can expose more sources than the reference layout's
+   six-card example. Keep the complete canonical list visible by increasing
+   the grid density rather than creating a tall scrollable card. */
+.onboarding-source-grid-many {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.onboarding-source-grid-many .onboarding-source-card {
+  min-height: 76px;
+  gap: 9px;
+  padding: 9px 10px;
+}
+
+.onboarding-source-grid-many .onboarding-source-logo {
+  width: 34px;
+  height: 34px;
+  flex-basis: 34px;
+}
+
+.onboarding-source-grid-many .onboarding-source-copy { gap: 3px; }
+.onboarding-source-grid-many .onboarding-source-copy strong { font-size: 14px; }
+.onboarding-source-grid-many .onboarding-source-state { font-size: 12px; }
+.onboarding-source-grid-many .onboarding-source-copy small { font-size: 10.5px; }
+.onboarding-source-grid-many .onboarding-source-status { width: 17px; height: 17px; flex-basis: 17px; }
 
 .onboarding-source-logo {
   display: inline-flex;
@@ -902,6 +933,198 @@
   .onboarding-card-ready { padding: 28px 18px 22px; }
   .onboarding-summary-grid { grid-template-columns: 1fr; }
   .onboarding-benefit-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Desktop windows with a compact usable height still keep every onboarding
+   step visible at once. The card content compresses before scrolling becomes
+   necessary; this breakpoint is below the normal full-screen renderer height
+   but above the phone-sized layout below it. */
+@media (min-width: 721px) and (max-height: 840px) {
+  .onboarding-surface { overflow-y: hidden; }
+  .onboarding-content { gap: 14px; padding: 38px 20px 5px; }
+  .onboarding-stepper { min-height: 52px; }
+  .onboarding-step { gap: 7px; }
+  .onboarding-card-frame { max-height: calc(100vh - 109px); }
+  .onboarding-card { overflow-y: hidden; }
+
+  .onboarding-card-welcome { padding: 42px 52px 24px; }
+  .onboarding-card-welcome .onboarding-heading { margin-top: 18px; }
+  .onboarding-feature-row-welcome { margin-top: 30px; margin-bottom: 28px; }
+  .onboarding-account-actions { margin-top: 17px; }
+  .onboarding-footnote { margin-top: 18px; }
+
+  .onboarding-card-discover { min-height: 0; padding: 18px 26px 13px; }
+  .onboarding-card-discover .onboarding-heading { margin-top: 14px; }
+  .onboarding-source-grid { margin-top: 16px; }
+  .onboarding-card-discover .onboarding-primary { margin-top: 11px; }
+  .onboarding-card-discover .onboarding-text-button { margin-top: 2px; }
+  .onboarding-source-grid-many .onboarding-source-card { min-height: 68px; padding: 7px 9px; }
+  .onboarding-source-grid-many .onboarding-source-logo { width: 30px; height: 30px; flex-basis: 30px; }
+  .onboarding-source-grid-many .onboarding-source-copy strong { font-size: 13px; }
+  .onboarding-source-grid-many .onboarding-source-state { font-size: 11px; }
+
+  .onboarding-card-companion { padding: 10px 25px 2px 22px; }
+  .onboarding-phone { max-height: 560px; transform: translate(-18px, -15px); }
+  .onboarding-companion-content .onboarding-heading { margin-top: 5px; }
+  .onboarding-pairing-panel { min-height: 220px; margin-top: 12px; padding: 12px 14px 10px; }
+  .onboarding-feature-row-companion { margin-top: 15px; }
+  .onboarding-card-companion .onboarding-primary { margin-top: 7px; }
+  .onboarding-card-companion .onboarding-text-button { margin-top: 0; }
+
+  .onboarding-card-ready { padding: 10px 65px 4px; }
+  .onboarding-card-ready .onboarding-heading { margin-top: 11px; }
+  .onboarding-summary-grid { gap: 8px; margin-top: 12px; }
+  .onboarding-summary-card { min-height: 80px; height: 80px; padding: 11px 16px; }
+  .onboarding-benefit-row { gap: 10px; margin-top: 14px; padding-top: 14px; }
+  .onboarding-card-ready .onboarding-primary { margin-top: 15px; }
+  .onboarding-card-ready .onboarding-text-button { margin-top: 7px; }
+  .onboarding-closing-line { margin-top: 11px; }
+}
+
+/* Keep the same no-scroll contract on smaller desktop windows. At this size
+   the entry layout becomes denser, while preserving the same hierarchy and
+   action order as the reference screens. */
+@media (min-width: 721px) and (max-height: 760px) {
+  .onboarding-content { gap: 10px; padding: 22px 16px 4px; }
+  .onboarding-stepper { min-height: 46px; }
+  .onboarding-step { gap: 6px; font-size: 14px; }
+  .onboarding-step-marker { width: 22px; height: 22px; }
+  .onboarding-step:not(:first-child)::before { top: 11px; }
+  .onboarding-card-frame { max-height: calc(100vh - 84px); }
+
+  .onboarding-card-welcome { padding: 30px 44px 15px; }
+  .onboarding-card-welcome .onboarding-brand-mark { width: 116px; height: 116px; border-radius: 20px; }
+  .onboarding-card-welcome .onboarding-brand-name { font-size: 28px; }
+  .onboarding-card-welcome .onboarding-heading { margin-top: 14px; }
+  .onboarding-heading-welcome h1 { font-size: 40px; }
+  .onboarding-heading-welcome p { font-size: 24px; }
+  .onboarding-feature-row-welcome { margin-top: 24px; margin-bottom: 22px; }
+  .onboarding-account-actions { margin-top: 12px; }
+  .onboarding-footnote { margin-top: 12px; }
+
+  .onboarding-card-discover { padding: 14px 22px 8px; }
+  .onboarding-card-discover .onboarding-brand-mark { width: 78px; height: 78px; border-radius: 14px; }
+  .onboarding-card-discover .onboarding-brand-name { font-size: 24px; }
+  .onboarding-card-discover .onboarding-heading { margin-top: 8px; }
+  .onboarding-card-discover .onboarding-heading h1 { font-size: 38px; }
+  .onboarding-card-discover .onboarding-heading p { font-size: 17px; }
+  .onboarding-source-grid { margin-top: 10px; }
+  .onboarding-source-grid-many .onboarding-source-card { min-height: 58px; padding: 5px 8px; }
+  .onboarding-source-grid-many .onboarding-source-logo { width: 26px; height: 26px; flex-basis: 26px; }
+  .onboarding-source-grid-many .onboarding-source-copy strong { font-size: 12px; }
+  .onboarding-source-grid-many .onboarding-source-state { font-size: 10px; }
+  .onboarding-card-discover .onboarding-primary { margin-top: 6px; }
+  .onboarding-card-discover .onboarding-text-button { margin-top: 0; }
+
+  .onboarding-card-companion { padding: 6px 18px 0 16px; }
+  .onboarding-phone { max-height: 480px; transform: translate(-10px, -10px); }
+  .onboarding-companion-content .onboarding-heading { margin-top: 3px; }
+  .onboarding-heading-companion h1 { font-size: 34px; }
+  .onboarding-heading-companion p { font-size: 16px; }
+  .onboarding-pairing-panel { min-height: 190px; margin-top: 8px; padding: 6px 10px; }
+  .onboarding-pairing-panel .set-share-onboarding-empty { min-height: 120px; }
+  .onboarding-pairing-panel .onboarding-google-play { min-height: 48px; }
+  .onboarding-feature-row-companion { margin-top: 9px; }
+  .onboarding-card-companion .onboarding-primary { margin-top: 4px; }
+  .onboarding-card-companion .onboarding-text-button { margin-top: 0; }
+
+  .onboarding-card-ready { padding: 5px 54px 2px; }
+  .onboarding-card-ready .onboarding-brand-mark { width: 64px; height: 64px; }
+  .onboarding-card-ready .onboarding-brand-name { font-size: 24px; }
+  .onboarding-card-ready .onboarding-heading { margin-top: 8px; }
+  .onboarding-heading-ready h1 { font-size: 38px; }
+  .onboarding-heading-ready p { font-size: 17px; }
+  .onboarding-summary-grid { gap: 6px; margin-top: 8px; }
+  .onboarding-summary-card { min-height: 68px; height: 68px; padding: 8px 13px; }
+  .onboarding-summary-copy strong { font-size: 24px; }
+  .onboarding-benefit-row { gap: 8px; margin-top: 10px; padding-top: 10px; }
+  .onboarding-card-ready .onboarding-primary { margin-top: 10px; }
+  .onboarding-card-ready .onboarding-text-button { margin-top: 3px; }
+  .onboarding-closing-line { margin-top: 7px; }
+}
+
+/* Emergency compact desktop tier for very short embedded windows. It keeps
+   the browser surface scroll-free without hiding any action or status. */
+@media (min-width: 721px) and (max-height: 640px) {
+  .onboarding-content { gap: 8px; padding: 12px 12px 4px; }
+  .onboarding-stepper { min-height: 38px; }
+  .onboarding-step { gap: 5px; font-size: 12px; }
+  .onboarding-step-marker { width: 20px; height: 20px; }
+  .onboarding-step:not(:first-child)::before { top: 10px; }
+  .onboarding-card-frame { max-height: calc(100vh - 64px); }
+
+  .onboarding-card-welcome { padding: 18px 30px 10px; }
+  .onboarding-card-welcome .onboarding-brand-mark { width: 90px; height: 90px; border-radius: 16px; }
+  .onboarding-card-welcome .onboarding-brand { gap: 8px; }
+  .onboarding-card-welcome .onboarding-brand-name { font-size: 24px; }
+  .onboarding-card-welcome .onboarding-heading { margin-top: 8px; }
+  .onboarding-heading-welcome h1 { font-size: 34px; }
+  .onboarding-heading-welcome p { font-size: 20px; }
+  .onboarding-feature-row-welcome { margin-top: 15px; margin-bottom: 14px; }
+  .onboarding-feature-row-welcome .onboarding-feature { min-height: 45px; padding-right: 10px; padding-left: 10px; }
+  .onboarding-feature-copy strong { font-size: 14px; }
+  .onboarding-feature-copy > span { font-size: 12px; }
+  .onboarding-account-actions { margin-top: 8px; }
+  .onboarding-account-action { min-height: 48px; }
+  .onboarding-footnote { margin-top: 8px; }
+
+  .onboarding-card-discover { padding: 9px 18px 5px; }
+  .onboarding-card-discover .onboarding-brand-mark { width: 64px; height: 64px; }
+  .onboarding-card-discover .onboarding-brand-name { font-size: 22px; }
+  .onboarding-card-discover .onboarding-heading { margin-top: 5px; }
+  .onboarding-card-discover .onboarding-heading h1 { font-size: 32px; }
+  .onboarding-card-discover .onboarding-heading p { font-size: 14px; }
+  .onboarding-source-grid { margin-top: 6px; gap: 5px; }
+  .onboarding-source-grid-many { gap: 5px; }
+  .onboarding-source-grid-many .onboarding-source-card { min-height: 50px; padding: 4px 6px; }
+  .onboarding-source-grid-many .onboarding-source-logo { width: 22px; height: 22px; flex-basis: 22px; }
+  .onboarding-source-grid-many .onboarding-source-copy { gap: 1px; }
+  .onboarding-source-grid-many .onboarding-source-copy strong { font-size: 11px; }
+  .onboarding-source-grid-many .onboarding-source-state { font-size: 9px; }
+  .onboarding-source-grid-many .onboarding-source-copy small { font-size: 9px; }
+  .onboarding-source-grid-many .onboarding-source-status { width: 14px; height: 14px; flex-basis: 14px; }
+  .onboarding-card-discover .onboarding-primary { min-height: 46px; margin-top: 4px; }
+  .onboarding-card-discover .onboarding-text-button { min-height: 24px; margin-top: 0; }
+
+  .onboarding-card-companion { padding: 3px 12px 0; }
+  .onboarding-companion-layout { grid-template-columns: 220px minmax(0, 1fr); gap: 12px; }
+  .onboarding-phone { max-height: 360px; transform: translate(-6px, -4px); }
+  .onboarding-companion-content .onboarding-heading { margin-top: 1px; }
+  .onboarding-heading-companion h1 { font-size: 28px; }
+  .onboarding-heading-companion p { font-size: 13px; }
+  .onboarding-pairing-panel { min-height: 150px; margin-top: 5px; padding: 4px 7px; }
+  .onboarding-pairing-panel .set-share-onboarding-empty { min-height: 95px; }
+  .onboarding-pairing-panel .onboarding-google-play { min-height: 42px; }
+  .onboarding-feature-row-companion { margin-top: 5px; gap: 6px; }
+  .onboarding-feature-row-companion .onboarding-feature { gap: 5px; }
+  .onboarding-feature-row-companion .onboarding-feature-copy strong { font-size: 10px; }
+  .onboarding-feature-row-companion .onboarding-feature-copy > span { font-size: 9px; }
+  .onboarding-card-companion .onboarding-primary { min-height: 46px; margin-top: 3px; }
+  .onboarding-card-companion .onboarding-text-button { min-height: 24px; margin-top: 0; }
+
+  .onboarding-card-ready { padding: 2px 36px 0; }
+  .onboarding-card-ready .onboarding-brand-mark { width: 54px; height: 54px; border-radius: 11px; }
+  .onboarding-card-ready .onboarding-brand { gap: 5px; }
+  .onboarding-card-ready .onboarding-brand-name { font-size: 22px; }
+  .onboarding-card-ready .onboarding-heading { margin-top: 5px; }
+  .onboarding-heading-ready h1 { font-size: 32px; }
+  .onboarding-heading-ready p { font-size: 14px; }
+  .onboarding-summary-grid { gap: 5px; margin-top: 5px; }
+  .onboarding-summary-card { min-height: 56px; height: 56px; gap: 9px; padding: 6px 9px; }
+  .onboarding-summary-icon { width: 28px; height: 28px; flex-basis: 28px; }
+  .onboarding-summary-icon svg { width: 22px; height: 22px; }
+  .onboarding-summary-copy { column-gap: 7px; row-gap: 1px; }
+  .onboarding-summary-copy strong { font-size: 20px; }
+  .onboarding-summary-copy > span { font-size: 11px; }
+  .onboarding-summary-copy small { font-size: 9px; }
+  .onboarding-benefit-row { gap: 5px; margin-top: 6px; padding-top: 7px; }
+  .onboarding-benefit-row .onboarding-feature { gap: 5px; }
+  .onboarding-benefit-row .onboarding-feature-copy strong { font-size: 10px; }
+  .onboarding-benefit-row .onboarding-feature-copy > span { font-size: 9px; }
+  .onboarding-benefit-row .onboarding-feature-icon svg { width: 20px; height: 20px; }
+  .onboarding-card-ready .onboarding-primary { min-height: 46px; margin-top: 6px; }
+  .onboarding-card-ready .onboarding-text-button { min-height: 24px; margin-top: 0; }
+  .onboarding-closing-line { margin-top: 4px; font-size: 14px; }
 }
 
 @media (max-width: 430px) {

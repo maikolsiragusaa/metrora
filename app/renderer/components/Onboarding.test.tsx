@@ -87,6 +87,24 @@ describe('Onboarding', () => {
     expect(refreshFresh).toHaveBeenCalledOnce()
   })
 
+  it('densifies a large canonical source list instead of creating a tall scrollable card', () => {
+    const details = Array.from({ length: 12 }, (_, index) => ({
+      id: `provider-${index}`,
+      label: `Provider ${index}`,
+      cost: 12 - index,
+    }))
+    const data = payload({
+      providers: Object.fromEntries(details.map(entry => [entry.id, entry.cost])),
+      providerDetails: details,
+    })
+    render(<Onboarding overview={overview(data)} ready onDone={() => {}} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continue locally' }))
+
+    expect(document.querySelector('.onboarding-source-grid-many')).toBeInTheDocument()
+    expect(screen.getAllByText('Local source')).toHaveLength(12)
+  })
+
   it('shows truthful empty and partial discovery states', () => {
     const empty = payload({ providerDetails: [], providers: {} })
     const { rerender } = render(<Onboarding overview={overview(empty)} ready onDone={() => {}} />)
