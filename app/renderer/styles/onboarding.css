@@ -1998,7 +1998,7 @@
 }
 
 .onboarding-card-frame {
-  width: min(820px, calc(100vw - 48px)) !important;
+  width: min(916px, calc(100vw - 48px)) !important;
   height: auto !important;
   max-height: calc(100vh - 112px) !important;
   overflow: visible;
@@ -2010,7 +2010,7 @@
 }
 
 .onboarding-card-frame-companion,
-.onboarding-card-frame-ready { width: min(874px, calc(100vw - 48px)) !important; }
+.onboarding-card-frame-ready { width: min(976px, calc(100vw - 48px)) !important; }
 
 .onboarding-stepper {
   width: min(690px, 100%);
@@ -2038,11 +2038,11 @@
    visual footprint. Shorter windows use the dense tiers above instead of
    allowing the card to introduce a scrollbar. */
 @media (min-width: 721px) and (min-height: 901px) {
-  .onboarding-card-welcome { min-height: 722px !important; }
-  .onboarding-card-discover { min-height: 723px !important; }
-  .onboarding-card-code { min-height: 722px !important; }
-  .onboarding-card-companion { min-height: 729px !important; }
-  .onboarding-card-ready { min-height: 733px !important; }
+  .onboarding-card-welcome { min-height: min(806px, calc(100vh - 168px)) !important; }
+  .onboarding-card-discover { min-height: min(807px, calc(100vh - 168px)) !important; }
+  .onboarding-card-code { min-height: min(806px, calc(100vh - 168px)) !important; }
+  .onboarding-card-companion { min-height: min(814px, calc(100vh - 168px)) !important; }
+  .onboarding-card-ready { min-height: min(819px, calc(100vh - 168px)) !important; }
 }
 
 @media (min-width: 721px) and (max-height: 900px) {
@@ -2079,4 +2079,27 @@
   .onboarding-card-frame { height: auto !important; }
   .onboarding-card { height: auto; flex: 0 0 auto; }
   .onboarding-code-inner { height: auto; }
+}
+
+/* Keep the enlarged desktop surface present in the shorter Electron window as
+   well. The compact typography above is designed to fit inside this rail; do
+   not collapse the glass panel back to the content's intrinsic height. */
+@media (min-width: 721px) and (max-height: 900px) {
+  .onboarding-card-frame {
+    height: min(806px, calc(100vh - 119px)) !important;
+    max-height: calc(100vh - 119px) !important;
+  }
+
+  .onboarding-card {
+    height: 100% !important;
+    max-height: 100%;
+    flex: 1 1 auto;
+  }
+}
+
+@media (min-width: 721px) and (max-height: 760px) {
+  .onboarding-card-frame {
+    height: calc(100vh - 82px) !important;
+    max-height: calc(100vh - 82px) !important;
+  }
 }
