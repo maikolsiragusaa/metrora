@@ -30,6 +30,9 @@ const mocks = vi.hoisted(() => ({
   getYield: vi.fn(),
   getDevices: vi.fn(),
   getDevicesScan: vi.fn(),
+  getShareStatus: vi.fn(),
+  startShare: vi.fn(),
+  openExternal: vi.fn(),
   getIdentity: vi.fn(),
   cliStatus: vi.fn(),
   getPriceOverrides: vi.fn(),
@@ -151,6 +154,9 @@ function installDefaultMocks() {
     details: [],
   })
   mocks.getIdentity.mockResolvedValue({ name: 'Metrora Mac', fingerprint: 'AA:BB:CC' })
+  mocks.getShareStatus.mockResolvedValue({ sharing: false, name: 'Metrora Desktop', port: 0, host: null, addresses: [], connectPayload: null, always: false, peers: 0, pending: [] })
+  mocks.startShare.mockResolvedValue({ sharing: false, name: 'Metrora Desktop', port: 0, host: null, addresses: [], connectPayload: null, always: false, peers: 0, pending: [] })
+  mocks.openExternal.mockResolvedValue(undefined)
   mocks.cliStatus.mockResolvedValue({ found: false, path: null })
   mocks.getDevicesScan.mockResolvedValue({ found: [] })
   mocks.getDevices.mockResolvedValue({
@@ -500,7 +506,15 @@ describe('first-run onboarding', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Continue locally' }))
     expect(await screen.findByRole('heading', { name: 'We found your AI tools' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Skip for now' }))
+    expect(await screen.findByRole('heading', { name: 'Code with freedom.' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    expect(await screen.findByRole('heading', { name: 'Take Metrora with you' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Skip for now' }))
     expect(await screen.findByRole('heading', { name: 'You’re ready' })).toBeInTheDocument()
+    await waitFor(() => expect(mocks.getOverview).toHaveBeenCalledWith('lifetime', 'all'))
+    // The onboarding inventory is lifetime-only; the persisted Home scope stays
+    // exactly where the user left it.
+    expect(localStorage.getItem('metrora.defaultPeriod')).toBe('30days')
 
     fireEvent.click(screen.getByRole('button', { name: 'Open Metrora' }))
     await waitFor(() => expect(localStorage.getItem('metrora.onboarding.version')).toBe('1'))

@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Polled } from '../hooks/usePolled'
 import type { MenubarPayload, QuotaProvider, ShareStatus } from '../lib/types'
 
 const bridge = vi.hoisted(() => ({
+  getOverview: vi.fn<(period: string, provider: string) => Promise<MenubarPayload>>(),
   getQuota: vi.fn<() => Promise<QuotaProvider[]>>(),
   cliStatus: vi.fn<() => Promise<{ found: boolean; path: string | null }>>(),
   getShareStatus: vi.fn<() => Promise<ShareStatus>>(),
@@ -56,6 +57,10 @@ function overview(data: MenubarPayload | null = payload(), overrides: Partial<Po
 }
 
 describe('Onboarding', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
   it('matches the welcome composition and keeps account actions unavailable', () => {
     const onDone = vi.fn()
     render(<Onboarding overview={overview()} ready onDone={onDone} />)
@@ -84,7 +89,24 @@ describe('Onboarding', () => {
     expect(screen.getByText('Claude')).toBeInTheDocument()
     expect(screen.queryByText('OpenCode')).not.toBeInTheDocument()
     expect(screen.queryByText('Ollama')).not.toBeInTheDocument()
-    expect(refreshFresh).toHaveBeenCalledOnce()
+    expect(refreshFresh).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    expect(screen.getByRole('heading', { name: 'Code with freedom.' })).toBeInTheDocument()
+  })
+
+  it('uses the lifetime inventory without mutating Home scope or probing Code readiness', () => {
+    const home = payload({ providerDetails: [{ id: 'today-only', label: 'Today only', cost: 0 }] })
+    const lifetime = payload({ providerDetails: [{ id: 'lifetime-source', label: 'Lifetime source', cost: 0 }] })
+    const refreshFresh = vi.fn()
+    render(<Onboarding overview={overview(home, { refreshFresh })} inventory={overview(lifetime)} ready onDone={() => {}} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continue locally' }))
+
+    expect(screen.getByText('Lifetime source')).toBeInTheDocument()
+    expect(screen.queryByText('Today only')).not.toBeInTheDocument()
+    expect(refreshFresh).not.toHaveBeenCalled()
+    expect(bridge.cliStatus).not.toHaveBeenCalled()
   })
 
   it('densifies a large canonical source list instead of creating a tall scrollable card', () => {
@@ -125,6 +147,7 @@ describe('Onboarding', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Continue locally' }))
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
     expect(await screen.findByRole('heading', { name: 'Take Metrora with you' })).toBeInTheDocument()
     expect(screen.getByText('Pair with Android')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Skip for now' })).toBeInTheDocument()
@@ -138,7 +161,6 @@ describe('Onboarding', () => {
 
   it('renders ready facts from the snapshot and provider quota authority', async () => {
     bridge.getQuota.mockResolvedValue([])
-    bridge.cliStatus.mockResolvedValue({ found: false, path: null })
     const data = {
       ...payload({
         sessions: 5,
@@ -154,6 +176,7 @@ describe('Onboarding', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Continue locally' }))
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Skip for now' }))
 
     expect(await screen.findByRole('heading', { name: 'You’re ready' })).toBeInTheDocument()
@@ -161,6 +184,9 @@ describe('Onboarding', () => {
     expect(screen.getByText('No provider-reported quota available')).toBeInTheDocument()
     expect(screen.getAllByText('Unavailable').length).toBeGreaterThan(0)
     expect(screen.queryByText('16 GB')).not.toBeInTheDocument()
+    expect(screen.getByText('Code workspace')).toBeInTheDocument()
+    expect(screen.queryByText('Code ready')).not.toBeInTheDocument()
+    expect(bridge.cliStatus).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole('button', { name: 'Open Metrora' }))
     expect(onDone).toHaveBeenCalledOnce()

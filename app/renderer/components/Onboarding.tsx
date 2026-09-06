@@ -13,11 +13,12 @@ import { ShareConnectSurface } from './ShareConnectSurface'
 
 const GOOGLE_PLAY_URL = 'https://play.google.com/store/apps/details?id=eu.metrora.app'
 
-type StepId = 'welcome' | 'discover' | 'companion' | 'ready'
+type StepId = 'welcome' | 'discover' | 'code' | 'companion' | 'ready'
 
 const ONBOARDING_STEPS: Array<{ id: StepId; label: string }> = [
   { id: 'welcome', label: 'Welcome' },
   { id: 'discover', label: 'Discover' },
+  { id: 'code', label: 'Code' },
   { id: 'companion', label: 'Companion' },
   { id: 'ready', label: 'Ready' },
 ]
@@ -88,6 +89,8 @@ function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
 
 export type OnboardingProps = {
   overview: Polled<MenubarPayload>
+  /** Lifetime inventory read; kept separate from the user's Home scope. */
+  inventory?: Polled<MenubarPayload>
   ready: boolean
   onDone: () => void
   onOpenSettings?: () => void
@@ -106,10 +109,6 @@ function OnboardingStepper({ current }: { current: StepId }) {
   const currentIndex = ONBOARDING_STEPS.findIndex(step => step.id === current)
   return (
     <ol className="onboarding-stepper" aria-label="Onboarding progress">
-      <li className="onboarding-step onboarding-step-done">
-        <span className="onboarding-step-marker"><Icon name="check" size={15} /></span>
-        <span className="onboarding-step-label">Splash</span>
-      </li>
       {ONBOARDING_STEPS.map((step, index) => {
         const completed = index < currentIndex
         const active = step.id === current
@@ -238,7 +237,7 @@ function DiscoverStep({ overview, ready, onContinue, onSkip }: {
     ? 'Metrora could not read the local source index yet. You can continue and retry from the app.'
     : overview.data === null
       ? 'Metrora is scanning your device and connecting local sources to build your AI control center.'
-      : 'Metrora found the local sources reported by its canonical usage snapshot.'
+      : 'Metrora found the local sources reported by its lifetime inventory.'
 
   return (
     <section className="onboarding-card onboarding-card-discover" aria-labelledby="onboarding-title">
@@ -266,6 +265,82 @@ function DiscoverStep({ overview, ready, onContinue, onSkip }: {
 
       <PrimaryButton onClick={onContinue} disabled={!ready}>Continue</PrimaryButton>
       <button type="button" className="onboarding-text-button" onClick={onSkip}>Skip for now</button>
+    </section>
+  )
+}
+
+function OpenCodeBrand({ size = 20, className = '' }: { size?: number; className?: string }) {
+  return (
+    <span className={['onboarding-opencode-brand', className].filter(Boolean).join(' ')} aria-label="OpenCode">
+      <ProviderLogo provider="opencode" size={size} />
+      <span>opencode</span>
+    </span>
+  )
+}
+
+function CodeWorkspacePreview() {
+  return (
+    <div className="onboarding-code-workspace" role="img" aria-label="OpenCode workspace preview">
+      <aside className="onboarding-code-sidebar">
+        <div className="onboarding-code-sidebar-brand"><OpenCodeBrand size={16} /></div>
+        <div className="onboarding-code-nav-item active"><Icon name="folder" size={15} /><span>Workspace</span></div>
+        <div className="onboarding-code-nav-item"><Icon name="grid" size={15} /><span>Sessions</span></div>
+        <div className="onboarding-code-nav-item"><Icon name="person" size={15} /><span>Agents</span></div>
+        <div className="onboarding-code-nav-item"><Icon name="database" size={15} /><span>Files</span></div>
+        <div className="onboarding-code-nav-item"><Icon name="server" size={15} /><span>Tools</span></div>
+        <div className="onboarding-code-nav-item"><Icon name="laptop" size={15} /><span>Terminal</span></div>
+      </aside>
+      <div className="onboarding-code-workspace-main">
+        <div className="onboarding-code-tabbar">
+          <span className="onboarding-code-tab">workspace <i>×</i></span>
+          <span className="onboarding-code-window-actions"><i /><i /><i /></span>
+        </div>
+        <div className="onboarding-code-editor">
+          <div><span aria-hidden="true" /><code><em># a focused workspace</em></code></div>
+          <div><span aria-hidden="true" /><code><b>function</b> <strong>run</strong>() {'{'}</code></div>
+          <div><span aria-hidden="true" /><code>&nbsp;&nbsp;<b>return</b> <mark>ready</mark></code></div>
+          <div><span aria-hidden="true" /><code>{'}'}</code></div>
+        </div>
+        <div className="onboarding-code-terminal"><span>local workspace</span><b>&gt;</b><i /></div>
+      </div>
+    </div>
+  )
+}
+
+function CodeBenefit({ icon, title, body }: { icon: IconName | 'metrora'; title: string; body: string }) {
+  return (
+    <div className="onboarding-code-benefit">
+      <span className="onboarding-code-benefit-icon">
+        {icon === 'metrora' ? <MetroraMark size={30} /> : <Icon name={icon} size={30} />}
+      </span>
+      <strong>{title}</strong>
+      <span>{body}</span>
+    </div>
+  )
+}
+
+function CodeStep({ onContinue }: { onContinue: () => void }) {
+  return (
+    <section className="onboarding-card onboarding-card-code" aria-labelledby="onboarding-title">
+      <div className="onboarding-code-inner">
+        <span className="onboarding-code-kicker">CODE</span>
+        <header className="onboarding-heading onboarding-heading-code">
+          <h1 id="onboarding-title">Code with freedom.</h1>
+          <p className="onboarding-code-powered">Powered by <OpenCodeBrand size={25} /></p>
+          <p className="onboarding-code-intro">Bring your models, your tools, your ideas.<br />All in one place.</p>
+        </header>
+
+        <CodeWorkspacePreview />
+
+        <div className="onboarding-code-benefits">
+          <CodeBenefit icon="server" title="Bring your models" body="Use supported providers and local runtimes." />
+          <CodeBenefit icon="code" title="Real coding workspace" body="Files, shell, Git, tools, and sessions." />
+          <CodeBenefit icon="metrora" title="Metrora context included" body="Use Metrora's factual tools alongside execution." />
+        </div>
+
+        <PrimaryButton onClick={onContinue}>Continue</PrimaryButton>
+        <p className="onboarding-code-footer">You can always open Code later from the main app.</p>
+      </div>
     </section>
   )
 }
@@ -356,7 +431,7 @@ function CompanionStep({ onContinue, onSkip, onConnectionChange }: {
   )
 }
 
-type ReadyFacts = { quota: QuotaProvider[] | null; cliReady: boolean | null; loading: boolean }
+type ReadyFacts = { quota: QuotaProvider[] | null; loading: boolean }
 
 function countLabel(value: number | null): string {
   return value === null ? 'Unavailable' : value.toLocaleString('en-US')
@@ -385,7 +460,7 @@ function SummaryCard({ icon, tone, value, label, detail }: { icon: IconName; ton
   return (
     <article className="onboarding-summary-card">
       <span className={`onboarding-summary-icon ${tone}`}><Icon name={icon} size={28} /></span>
-      <span className="onboarding-summary-copy"><strong>{value}</strong><span>{label}</span><small>{detail}</small></span>
+      <span className={`onboarding-summary-copy ${value.length > 8 ? 'onboarding-summary-copy-long' : ''}`}><strong>{value}</strong><span>{label}</span><small>{detail}</small></span>
     </article>
   )
 }
@@ -401,8 +476,6 @@ function ReadyStep({ overview, facts, companionConnected, onDone, onOpenSettings
   const unavailable = data === null
   const quota = hasQuotaEvidence(facts.quota)
   const capacityValue = quota === null ? 'Checking…' : quota ? 'Available' : 'Unavailable'
-  const cliValue = facts.cliReady === null ? 'Checking…' : facts.cliReady ? 'Code ready' : 'Unavailable'
-
   return (
     <section className="onboarding-card onboarding-card-ready" aria-labelledby="onboarding-title">
       <BrandLockup compact />
@@ -414,7 +487,7 @@ function ReadyStep({ overview, facts, companionConnected, onDone, onOpenSettings
       </header>
 
       <div className="onboarding-summary-grid">
-        <SummaryCard icon="phone" tone="tone-blue" value={countLabel(data?.current.sessions ?? null)} label="Sessions found" detail={data?.current.sessions ? 'Past work and conversations' : 'No sessions in the selected scope'} />
+        <SummaryCard icon="phone" tone="tone-blue" value={countLabel(data?.current.sessions ?? null)} label="Sessions found" detail={data?.current.sessions ? 'Past work in the lifetime inventory' : 'No sessions in the lifetime inventory'} />
         <SummaryCard icon="grid" tone="tone-purple" value={countLabel(modelCount(data))} label="Models observed" detail={modelCount(data) === null ? 'Not available in this snapshot' : 'From the canonical model accounting'} />
         <SummaryCard icon="folder" tone="tone-green" value={countLabel(sourceProjectCount(data))} label="Projects detected" detail={sourceProjectCount(data) === null ? 'Project catalog unavailable' : 'Local source projects'} />
         <SummaryCard icon="database" tone="tone-yellow" value={capacityValue} label="Capacity signals" detail={quota ? 'Provider-reported evidence available' : quota === null ? 'Checking provider authority' : 'No provider-reported quota available'} />
@@ -423,7 +496,7 @@ function ReadyStep({ overview, facts, companionConnected, onDone, onOpenSettings
       <div className="onboarding-benefit-row">
         <Feature icon="shield" tone="tone-blue" title="Local-first" body="Your data stays on your device." />
         <Feature icon="person" tone="tone-purple" title="No account required" body="Privacy by design. Just you." />
-        <Feature icon="code" tone="tone-green" title={cliValue} body={facts.cliReady ? 'Start building right away.' : 'CLI status is unavailable.'} />
+        <Feature icon="code" tone="tone-green" title="Code workspace" body="Open Code anytime from the main app." />
         <Feature icon="link" tone="tone-violet" title={companionConnected ? 'Companion connected' : 'Companion later'} body={companionConnected ? 'A device is connected locally.' : 'Connect a device anytime.'} />
       </div>
 
@@ -438,30 +511,33 @@ function ReadyStep({ overview, facts, companionConnected, onDone, onOpenSettings
  * First-run entry surface. It intentionally owns only the local onboarding
  * presentation; completion is persisted by App through onboardingState.ts.
  */
-export function Onboarding({ overview, ready, onDone, onOpenSettings }: OnboardingProps) {
+export function Onboarding({ overview, inventory: inventoryProp, ready, onDone, onOpenSettings }: OnboardingProps) {
   const [step, setStep] = useState<StepId>('welcome')
   const [companionConnected, setCompanionConnected] = useState(false)
-  const [facts, setFacts] = useState<ReadyFacts>({ quota: null, cliReady: null, loading: false })
+  const [facts, setFacts] = useState<ReadyFacts>({ quota: null, loading: false })
   const cardRef = useRef<HTMLElement | null>(null)
+  const inventory = inventoryProp ?? overview
 
   const goToDiscover = useCallback(() => {
     setStep('discover')
-    overview.refreshFresh()
-  }, [overview.refreshFresh])
+  }, [])
+  const goToCode = useCallback(() => setStep('code'), [])
   const goToCompanion = useCallback(() => setStep('companion'), [])
   const goToReady = useCallback(() => setStep('ready'), [])
 
   useEffect(() => {
     if (step !== 'ready') return
     let active = true
-    setFacts({ quota: null, cliReady: null, loading: true })
-    void Promise.allSettled([metrora.getQuota(), metrora.cliStatus()]).then(([quotaResult, cliResult]) => {
+    setFacts({ quota: null, loading: true })
+    void metrora.getQuota().then(quota => {
       if (!active) return
       setFacts({
-        quota: quotaResult.status === 'fulfilled' ? quotaResult.value : [],
-        cliReady: cliResult.status === 'fulfilled' ? cliResult.value.found : false,
+        quota,
         loading: false,
       })
+    }).catch(() => {
+      if (!active) return
+      setFacts({ quota: [], loading: false })
     })
     return () => { active = false }
   }, [step])
@@ -479,7 +555,8 @@ export function Onboarding({ overview, ready, onDone, onOpenSettings }: Onboardi
     } else if (event.key === 'ArrowRight') {
       event.preventDefault()
       if (step === 'welcome') goToDiscover()
-      else if (step === 'discover' && ready) goToCompanion()
+      else if (step === 'discover' && ready) goToCode()
+      else if (step === 'code') goToCompanion()
       else if (step === 'companion') goToReady()
     }
   }
@@ -489,23 +566,34 @@ export function Onboarding({ overview, ready, onDone, onOpenSettings }: Onboardi
   const card = step === 'welcome' ? (
     <WelcomeStep onContinue={goToDiscover} />
   ) : step === 'discover' ? (
-    <DiscoverStep overview={overview} ready={ready} onContinue={goToCompanion} onSkip={goToReady} />
+    <DiscoverStep overview={inventory} ready={ready} onContinue={goToCode} onSkip={goToCode} />
+  ) : step === 'code' ? (
+    <CodeStep onContinue={goToCompanion} />
   ) : step === 'companion' ? (
     <CompanionStep onContinue={goToReady} onSkip={goToReady} onConnectionChange={setCompanionConnected} />
   ) : (
-    <ReadyStep overview={overview} facts={facts} companionConnected={companionConnected} onDone={onDone} onOpenSettings={onOpenSettings} />
+    <ReadyStep overview={inventory} facts={facts} companionConnected={companionConnected} onDone={onDone} onOpenSettings={onOpenSettings} />
   )
 
   return createPortal(
     <div className={motionClass('onboarding-surface', 'onboarding-surface-in')} role="dialog" aria-modal="true" aria-labelledby="onboarding-title" onKeyDown={onKeyDown}>
       <div className="onboarding-content">
-        <OnboardingStepper current={step} />
+        <div className="onboarding-scene-brand" aria-label="Metrora">
+          <MetroraMark size={31} />
+          <span>Metrora</span>
+        </div>
+        <div className="onboarding-scene-tagline" aria-hidden="true">
+          <span>Your AI landscape.</span>
+          <span>Under control.</span>
+          <i />
+        </div>
         <div
           className={motionClass(`onboarding-card-frame onboarding-card-frame-${step}`, 'onboarding-card-in')}
           key={step}
           ref={node => { cardRef.current = node }}
           tabIndex={-1}
         >
+          <OnboardingStepper current={step} />
           {card}
         </div>
       </div>

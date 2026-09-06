@@ -14,9 +14,11 @@ import { rangeLabel, TopBar } from './components/TopBar'
 import { useDesktopScope } from './hooks/useDesktopScope'
 import { useDesktopShortcuts } from './hooks/useDesktopShortcuts'
 import { useOverviewRuntime } from './hooks/useOverviewRuntime'
+import { usePolled } from './hooks/usePolled'
 import { PERIOD_LABELS, SECTION_TITLES } from './lib/desktopSections'
 import { motionClass } from './lib/motion'
 import { completeOnboarding, shouldShowOnboarding } from './lib/onboardingState'
+import { metrora } from './lib/ipc'
 import { persistRefreshValue, readRefreshValue, refreshValueToMs, RefreshCadenceContext, type RefreshCadence } from './lib/refreshCadence'
 import { shortcutLabel, shortcutRangeLabel } from './lib/shortcuts'
 import { readStorage } from './lib/storage'
@@ -99,6 +101,14 @@ function AppMain() {
     setDetectedProviders,
   })
   const [onboardingVisible, setOnboardingVisible] = useState(shouldShowOnboarding)
+  // Onboarding inventory is intentionally a separate lifetime read. It keeps
+  // the user's Home period/provider/project scope untouched while reusing the
+  // same canonical menubar-json authority as the rest of the desktop.
+  const onboardingInventory = usePolled(
+    () => metrora.getOverview('lifetime', 'all'),
+    [],
+    { intervalMs: 60_000, enabled: onboardingVisible },
+  )
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
@@ -165,6 +175,7 @@ function AppMain() {
         <Splash hasData={overview.data != null} hasError={overview.error != null} />
         <Onboarding
           overview={overview}
+          inventory={onboardingInventory}
           ready={ready}
           onDone={finishLocalOnboarding}
           onOpenSettings={openSettingsFromOnboarding}
