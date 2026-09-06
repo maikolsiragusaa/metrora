@@ -34,7 +34,14 @@ function ConnectionQr({ payload }: { payload: string }) {
   ) : <div className="set-share-qr set-share-qr-loading" role="status">Preparing QR…</div>
 }
 
-export function ShareConnectSurface({ shareStatus }: { shareStatus: Polled<ShareStatus> }) {
+export function ShareConnectSurface({
+  shareStatus,
+  onboarding = false,
+}: {
+  shareStatus: Polled<ShareStatus>
+  /** Use the onboarding composition without exposing a second sharing toggle. */
+  onboarding?: boolean
+}) {
   const [busy, setBusy] = useState(false)
   const [responding, setResponding] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
@@ -82,20 +89,63 @@ export function ShareConnectSurface({ shareStatus }: { shareStatus: Polled<Share
     }
   }
 
+  if (onboarding) {
+    return (
+      <div className="set-share-surface set-share-surface-onboarding" aria-live="polite">
+        {data?.sharing && data.connectPayload ? (
+          <div className="set-share-onboarding-live">
+            <div className="set-share-qr-wrap"><ConnectionQr payload={data.connectPayload} /></div>
+            <div className="set-share-onboarding-details">
+              <b>Scan with your Android device</b>
+              <p className="set-cap">Open Metrora on Android and scan this QR code to pair.</p>
+              <p className="set-share-address">{data.host ?? 'Local network'}:{data.port}</p>
+              {data.networkWarning && <p className="set-share-warning">{data.networkWarning}</p>}
+              <button className="btnp set-share-copy" onClick={() => void copyPayload()}>{copied ? 'Copied connection payload' : 'Copy connection payload'}</button>
+            </div>
+          </div>
+        ) : (
+          <div className="set-share-onboarding-empty">
+            <b>Pair with Android</b>
+            <p className="set-cap">{!data
+              ? shareStatus.error ? 'Pairing status is unavailable. You can retry or skip for now.' : 'Reading sharing status…'
+              : 'Choose Pair now to start the local connection service and receive a live QR code.'}</p>
+          </div>
+        )}
+
+        {data?.pending.length ? (
+          <div className="set-share-pending">
+            <b>Pairing request</b>
+            {data.pending.map(pairing => (
+              <div className="set-share-pending-row" key={pairing.id}>
+                <div className="lx"><b>{pairing.name}</b><span>Compare code <code>{pairing.code}</code> on both devices.</span></div>
+                <span className="set-share-actions">
+                  <button className="btnp btnp-primary" disabled={responding !== null} onClick={() => void respondToPairing(pairing.id, true)}>Approve</button>
+                  <button className="btnp" disabled={responding !== null} onClick={() => void respondToPairing(pairing.id, false)}>Decline</button>
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    )
+  }
+
   return (
     <div className="set-share-surface" aria-live="polite">
       <div className="set-share-head">
         <div>
-          <b className="set-share-title">Connect phone</b>
-          <p className="set-cap">Scan this code in Metrora Android, then compare the six-digit code on both devices.</p>
+          <b className="set-share-title">{onboarding ? 'Pair with Android' : 'Connect phone'}</b>
+          <p className="set-cap">{onboarding
+            ? 'Scan the live code in Metrora Android. Any approval code is supplied by the local pairing protocol.'
+            : 'Scan this code in Metrora Android, then compare the six-digit code on both devices.'}</p>
         </div>
-        {data && <button className="btnp" disabled={busy} onClick={() => void toggleSharing()}>{busy ? 'Updating…' : data.sharing ? 'Stop sharing' : 'Start sharing'}</button>}
+        {data && !onboarding && <button className="btnp" disabled={busy} onClick={() => void toggleSharing()}>{busy ? 'Updating…' : data.sharing ? 'Stop sharing' : 'Start sharing'}</button>}
       </div>
 
       {!data ? (
-        <p className="set-cap">Reading sharing status…</p>
+        <p className="set-cap">{shareStatus.error ? 'Pairing status is unavailable. You can retry or skip for now.' : 'Reading sharing status…'}</p>
       ) : !data.sharing || !data.connectPayload ? (
-        <p className="set-cap">Start sharing to show a local connection QR code.</p>
+        <p className="set-cap">{onboarding ? 'Choose Pair now to start the local connection service and receive a live code.' : 'Start sharing to show a local connection QR code.'}</p>
       ) : (
         <>
           <div className="set-share-qr-wrap"><ConnectionQr payload={data.connectPayload} /></div>
