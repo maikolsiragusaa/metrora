@@ -46,7 +46,10 @@
   flex-direction: column;
   align-items: center;
   gap: 25px;
-  padding: 73px 24px 38px;
+  /* The Windows renderer viewport is shorter than the outer window by the
+     native chrome inset. Keep the Welcome composition inside that usable
+     height so a full-size window does not gain a page scrollbar. */
+  padding: 73px 24px 15px;
 }
 
 .onboarding-stepper {
