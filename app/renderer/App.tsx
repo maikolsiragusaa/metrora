@@ -150,7 +150,7 @@ function AppMain() {
       <ToastHost />
       <Splash hasData={overview.data != null} hasError={overview.error != null} />
       {onboardingStatus && <Onboarding defaultEnabled={onboardingStatus.defaultEnabled} onDone={finishOnboarding} />}
-      <div className="ct">
+      <div className={`ct ct-${section}`} data-metrora-section={section}>
         <div className={overview.switching ? 'switch-line on' : 'switch-line'} aria-hidden="true" />
         <UpdateBanner />
         {section !== 'code' && section !== 'bench' && section !== 'companion' && <DailyBudgetBanner payload={overview.data ?? null} provider={provider} />}

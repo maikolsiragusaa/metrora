@@ -153,7 +153,6 @@ export function MetroraSidebar({
   const [aboutOpen, setAboutOpen] = useState(false)
   const [commandOpen, setCommandOpen] = useState(false)
   const navigationScrollRef = useRef<HTMLDivElement>(null)
-  const commandShortcut = shortcutLabel('K')
   const primaryGroups = DESKTOP_NAVIGATION_GROUPS.filter(group => group.placement === 'primary')
   const utilityGroups = DESKTOP_NAVIGATION_GROUPS.filter(group => group.placement === 'utility')
 
@@ -206,19 +205,6 @@ export function MetroraSidebar({
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d={collapsed ? 'm9 5 7 7-7 7' : 'm15 5-7 7 7 7'} /></svg>
           </button>
         </div>
-
-        <button
-          type="button"
-          className="metrora-sidebar__search"
-          data-sidebar-region="search"
-          aria-label="Search sections"
-          title={`Search sections (${commandShortcut})`}
-          onClick={() => setCommandOpen(true)}
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.3" /><path d="m16 16 4.5 4.5" /></svg>
-          <span className={sidebarNavLabelClassName(collapsed)}>Search</span>
-          <kbd className={collapsed ? 'metrora-sr-only' : ''}>{commandShortcut}</kbd>
-        </button>
 
         <Divider className="metrora-sidebar__divider" />
         <nav aria-label="Metrora navigation" className="metrora-sidebar__navigation" data-sidebar-region="navigation">

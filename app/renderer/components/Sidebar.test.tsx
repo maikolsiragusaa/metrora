@@ -27,7 +27,7 @@ describe('Sidebar', () => {
     expect(within(utility).getAllByRole('button').map(item => item.textContent)).toEqual(['Companion', 'Settings⌘,'])
     expect(screen.queryByRole('button', { name: /Insights/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Compare/ })).not.toBeInTheDocument()
-    expect(screen.getAllByRole('button')).toHaveLength(12)
+    expect(screen.getAllByRole('button')).toHaveLength(11)
   })
 
   it('routes by click and keyboard without changing section ids', async () => {

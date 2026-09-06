@@ -378,7 +378,7 @@ export function OverviewContent({
 
   if (controlCenter) {
     return (
-      <div className="ov-dashboard">
+      <div className="ov-dashboard ov-dashboard--control-center">
         {error && <StaleBanner error={error} />}
         {!error && data.freshness?.reconciliation === 'degraded' && (
           <div role="status" className="stale-banner">
@@ -391,15 +391,8 @@ export function OverviewContent({
           scope={data.current.label}
           providerLabel={providerLabel}
           onNavigate={onNavigate}
+          onShare={() => setShareOpen(true)}
         />
-
-        <div className="control-center-share-row">
-          <div>
-            <strong>Share this recap</strong>
-            <span>Create a privacy-safe PNG from the exact local scope you are viewing.</span>
-          </div>
-          <button className="btn" type="button" onClick={() => setShareOpen(true)}>Create share card</button>
-        </div>
 
         {shareOpen && (
           <ShareCardModal

@@ -43,7 +43,7 @@ describe('MetroraSidebar', () => {
 
     expect(sidebar).toHaveAttribute('data-collapsed', 'false')
     expect(sidebar?.querySelector('[data-sidebar-region="header"]')).toBeInTheDocument()
-    expect(sidebar?.querySelector('[data-sidebar-region="search"]')).toBeInTheDocument()
+    expect(sidebar?.querySelector('[data-sidebar-region="search"]')).toBeNull()
     expect(navigationScroll).toHaveClass('metrora-sidebar__nav-scroll')
     expect(navigationScroll).toContainElement(screen.getByRole('button', { name: /Home/ }))
     expect(utility).toContainElement(settings)
@@ -71,17 +71,17 @@ describe('MetroraSidebar', () => {
     expect(onNavigate).toHaveBeenCalledWith('models')
   })
 
-  it('opens the Metrora section search without adding a second navigation model', async () => {
-    const user = userEvent.setup()
+  it('keeps section search in the global command menu without a duplicate sidebar search', async () => {
     const onNavigate = vi.fn()
     render(<MetroraSidebar active="overview" onNavigate={onNavigate} />)
 
-    await user.click(screen.getByRole('button', { name: 'Search sections' }))
+    expect(screen.queryByRole('button', { name: 'Search sections' })).not.toBeInTheDocument()
+    fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
     const dialog = screen.getByRole('dialog', { name: 'Navigate' })
     expect(dialog).toBeInTheDocument()
     const input = within(dialog).getByRole('searchbox', { name: 'Search Metrora sections' })
-    await user.type(input, 'Settings')
-    await user.keyboard('{Enter}')
+    fireEvent.change(input, { target: { value: 'Settings' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
 
     expect(onNavigate).toHaveBeenCalledWith('settings')
     expect(screen.queryByRole('dialog', { name: 'Navigate' })).not.toBeInTheDocument()
