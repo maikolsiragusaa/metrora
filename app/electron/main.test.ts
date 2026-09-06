@@ -14,7 +14,7 @@ vi.mock('electron', () => ({
   shell: { openExternal: vi.fn() },
 }))
 
-import { createApplicationMenuTemplate, createBeforeQuitHandler, createBridgeHandlers, createOpenCodeWebPreferences, OPENCODE_WEB_PARTITION, shouldInstallApplicationMenu } from './main'
+import { createApplicationMenuTemplate, createBeforeQuitHandler, createBridgeHandlers, createOpenCodeWebPreferences, OPENCODE_WEB_PARTITION, shouldInstallApplicationMenu, windowChromeOverlay } from './main'
 import { CliError } from './cli'
 import type { DesktopShareRuntime, DesktopShareStatus } from './share-runtime'
 import { Telemetry } from './telemetry'
@@ -43,6 +43,14 @@ describe('OpenCode WebContentsView configuration', () => {
     expect(preferences).toMatchObject({ contextIsolation: true, nodeIntegration: false, sandbox: true })
     expect(preferences).not.toHaveProperty('preload')
     expect(JSON.stringify(preferences)).not.toMatch(/username|password|credential/iu)
+  })
+})
+
+describe('Windows title-bar overlay', () => {
+  it('uses theme-aware native controls and collapses cleanly in Auto hide mode', () => {
+    expect(windowChromeOverlay('dark')).toEqual({ color: '#00000000', symbolColor: '#f5f7ff', height: 30 })
+    expect(windowChromeOverlay('light')).toEqual({ color: '#00000000', symbolColor: '#2f3545', height: 30 })
+    expect(windowChromeOverlay('dark', 'auto')).toEqual({ color: '#00000000', symbolColor: '#00000000', height: 1 })
   })
 })
 

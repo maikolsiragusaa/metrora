@@ -103,6 +103,24 @@ export const PROGRESS_CHANNEL = 'metrora:progress'
 // IPC channel pushing update-availability status to open windows (launch + 24h).
 export const UPDATE_CHANNEL = 'metrora:update'
 
+const WINDOW_TITLEBAR_HEIGHT = 30
+export type WindowChromeMode = 'always' | 'auto'
+
+const windowChromeModes = new WeakMap<BrowserWindow, WindowChromeMode>()
+const windowChromeThemes = new WeakMap<BrowserWindow, 'dark' | 'light'>()
+
+export function windowChromeOverlay(theme: 'dark' | 'light', mode: WindowChromeMode = 'always') {
+  const hidden = mode === 'auto'
+  return {
+    // Keep the native controls over the renderer surface. An opaque overlay
+    // would recreate the disconnected black/white title strip the Home shell
+    // is deliberately designed to remove.
+    color: '#00000000',
+    symbolColor: hidden ? '#00000000' : theme === 'dark' ? '#f5f7ff' : '#2f3545',
+    height: hidden ? 1 : WINDOW_TITLEBAR_HEIGHT,
+  } as const
+}
+
 function broadcastProgress(event: unknown): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue
@@ -184,6 +202,34 @@ function registerHandlers(): void {
       return false
     }
   }
+  ipcMain.handle('metrora:setWindowChromeTheme', (event, theme: unknown) => {
+    if (!isTrustedRendererSender(event)) {
+      return { ok: false, error: { kind: 'unauthorized', message: 'Trusted Metrora renderer required.' } }
+    }
+    if (theme !== 'dark' && theme !== 'light') {
+      return { ok: false, error: { kind: 'bad-args', message: 'Invalid window chrome theme.' } }
+    }
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || process.platform !== 'win32') return { ok: true, value: false }
+    const resolvedTheme = theme as 'dark' | 'light'
+    windowChromeThemes.set(win, resolvedTheme)
+    win.setTitleBarOverlay(windowChromeOverlay(resolvedTheme, windowChromeModes.get(win) ?? 'always'))
+    return { ok: true, value: true }
+  })
+  ipcMain.handle('metrora:setWindowChromeMode', (event, mode: unknown) => {
+    if (!isTrustedRendererSender(event)) {
+      return { ok: false, error: { kind: 'unauthorized', message: 'Trusted Metrora renderer required.' } }
+    }
+    if (mode !== 'always' && mode !== 'auto') {
+      return { ok: false, error: { kind: 'bad-args', message: 'Invalid window chrome mode.' } }
+    }
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || process.platform !== 'win32') return { ok: true, value: false }
+    const resolvedMode = mode as WindowChromeMode
+    windowChromeModes.set(win, resolvedMode)
+    win.setTitleBarOverlay(windowChromeOverlay(windowChromeThemes.get(win) ?? (nativeTheme.shouldUseDarkColors ? 'dark' : 'light'), resolvedMode))
+    return { ok: true, value: true }
+  })
   for (const [channel, handler] of Object.entries(handlers)) {
     for (const alias of ipcChannelAliases(channel)) {
       ipcMain.handle(alias, (event, ...args) => {
@@ -262,15 +308,20 @@ function installApplicationMenu(): void {
 }
 
 function createWindow(): BrowserWindow {
+  const initialChromeTheme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
   const win = new BrowserWindow({
     width: 1200,
     height: 820,
     minWidth: 900,
     minHeight: 600,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0e1013' : '#f5f6f8',
-    // macOS: integrated title bar (traffic lights float over the sidebar), like
-    // Linear/Hermes. Windows/Linux keep their native frame + window controls.
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    backgroundColor: initialChromeTheme === 'dark' ? '#0e1013' : '#f5f6f8',
+    // macOS and Windows use an integrated title bar while retaining native
+    // window controls. Linux keeps the platform frame because Electron does
+    // not expose the same reliable overlay contract there.
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : process.platform === 'win32' ? 'hidden' : 'default',
+    titleBarOverlay: process.platform === 'win32'
+      ? windowChromeOverlay(initialChromeTheme)
+      : undefined,
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -285,6 +336,8 @@ function createWindow(): BrowserWindow {
       backgroundThrottling: true,
     },
   })
+  windowChromeModes.set(win, 'always')
+  windowChromeThemes.set(win, initialChromeTheme)
 
   let prewarmScheduled = false
   const scheduleOpenCodePrewarm = () => {

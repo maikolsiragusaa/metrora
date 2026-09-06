@@ -1,5 +1,53 @@
 /* Metrora's shared desktop frame and foundation primitives. */
 
+.metrora-window-frame {
+    position: relative;
+    display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--metrora-surface-app);
+}
+
+.metrora-window-titlebar {
+  display: none;
+}
+
+:root[data-platform='win32'] .metrora-window-titlebar {
+    position: absolute;
+    z-index: 20;
+    top: 0;
+    right: 0;
+    left: 0;
+    display: flex;
+    width: 100%;
+    height: 30px;
+    min-height: 30px;
+    flex: 0 0 30px;
+  align-items: center;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--metrora-border-subtle);
+  background: var(--metrora-surface-app);
+  color: var(--metrora-text-muted);
+  -webkit-app-region: drag;
+}
+
+.metrora-window-titlebar__brand {
+  pointer-events: none;
+  font-size: 11px;
+  font-weight: var(--metrora-weight-semibold);
+  letter-spacing: .01em;
+  line-height: 1;
+}
+
+:root[data-platform='win32'] .metrora-shell {
+    height: 100%;
+    flex: 1 1 auto;
+}
+
 .metrora-shell {
   display: flex;
   width: 100%;
@@ -401,22 +449,6 @@
   padding-top: 10px;
   border-top: 1px solid var(--metrora-border-subtle);
 }
-
-.metrora-sidebar__status {
-  display: flex;
-  flex: 0 0 auto;
-  min-height: 33px;
-  align-items: center;
-  gap: 5px;
-  padding: 9px 8px 0;
-  color: var(--metrora-text-muted);
-  font-family: var(--metrora-font-mono);
-  font-size: var(--metrora-text-xs);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.metrora-sidebar__status b { color: var(--metrora-text-primary); font-weight: var(--metrora-weight-medium); }
 
 .metrora-sidebar__footer-divider { margin-top: 8px; }
 
@@ -977,8 +1009,7 @@
   .metrora-sidebar:not([data-collapsed='true']) .metrora-sidebar__search kbd,
   .metrora-sidebar:not([data-collapsed='true']) .metrora-sidebar__label,
   .metrora-sidebar:not([data-collapsed='true']) .metrora-sidebar__nav-item .k,
-  .metrora-sidebar:not([data-collapsed='true']) .nav-group-label,
-  .metrora-sidebar:not([data-collapsed='true']) .metrora-sidebar__status { display: none; }
+  .metrora-sidebar:not([data-collapsed='true']) .nav-group-label { display: none; }
   .metrora-sidebar:not([data-collapsed='true']) .metrora-sidebar__nav-item { justify-content: center; gap: 0; padding: 0; overflow: visible; }
   .metrora-sidebar:not([data-collapsed='true']) .metrora-sidebar__footer { justify-content: center; }
   .metrora-sidebar:not([data-collapsed='true']) .metrora-sidebar__footer .social { display: none; }

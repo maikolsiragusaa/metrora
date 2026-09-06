@@ -30,6 +30,7 @@ const FULL_ANALYTICS_SCOPE: DesktopSectionCapabilities = {
 
 export const DESKTOP_SECTION_CAPABILITIES: Record<Section, DesktopSectionCapabilities> = {
   overview: { ...FULL_ANALYTICS_SCOPE, claudeConfig: true },
+  activity: { ...FULL_ANALYTICS_SCOPE, claudeConfig: true },
   sessions: FULL_ANALYTICS_SCOPE,
   pullRequests: { ...FULL_ANALYTICS_SCOPE, claudeConfig: true },
   spend: FULL_ANALYTICS_SCOPE,
@@ -46,6 +47,13 @@ export const DESKTOP_SECTION_CAPABILITIES: Record<Section, DesktopSectionCapabil
     globalRefresh: true,
   },
   workspace: {
+    period: false,
+    customRange: false,
+    provider: false,
+    claudeConfig: false,
+    globalRefresh: true,
+  },
+  companion: {
     period: false,
     customRange: false,
     provider: false,

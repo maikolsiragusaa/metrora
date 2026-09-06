@@ -1,5 +1,6 @@
 export const SECTION_IDS = [
   'overview',
+  'activity',
   'sessions',
   'pullRequests',
   'spend',
@@ -10,6 +11,7 @@ export const SECTION_IDS = [
   'bench',
   'plans',
   'workspace',
+  'companion',
   'settings',
 ] as const
 
@@ -23,7 +25,7 @@ export type DesktopNavigationItem = {
 }
 
 export type DesktopNavigationGroup = {
-  id: 'home' | 'activity' | 'analyze' | 'control' | 'product'
+  id: 'home' | 'primary' | 'utility'
   label: string | null
   placement: 'primary' | 'utility'
   sections: readonly Section[]
@@ -31,25 +33,25 @@ export type DesktopNavigationGroup = {
 
 export const DESKTOP_NAVIGATION_ITEMS: Record<Section, DesktopNavigationItem> = {
   overview: { id: 'overview', label: 'Home', title: 'Home', shortcut: '1' },
-  sessions: { id: 'sessions', label: 'Sessions', title: 'Sessions', shortcut: '2' },
-  pullRequests: { id: 'pullRequests', label: 'Pull requests', title: 'Pull requests', shortcut: '3' },
-  spend: { id: 'spend', label: 'Spend', title: 'Spend', shortcut: '4' },
-  optimize: { id: 'optimize', label: 'Insights', title: 'Insights', shortcut: '5' },
-  models: { id: 'models', label: 'Models', title: 'Models', shortcut: '6' },
-  compare: { id: 'compare', label: 'Compare', title: 'Compare', shortcut: '7' },
+  activity: { id: 'activity', label: 'Activity', title: 'Activity', shortcut: '2' },
+  sessions: { id: 'sessions', label: 'Sessions', title: 'Sessions', shortcut: '' },
+  pullRequests: { id: 'pullRequests', label: 'Pull requests', title: 'Pull requests', shortcut: '' },
+  spend: { id: 'spend', label: 'Spend', title: 'Spend', shortcut: '3' },
+  optimize: { id: 'optimize', label: 'Insights', title: 'Insights', shortcut: '' },
+  models: { id: 'models', label: 'Models', title: 'Models', shortcut: '4' },
+  compare: { id: 'compare', label: 'Compare', title: 'Compare', shortcut: '' },
   code: { id: 'code', label: 'Code', title: 'Code', shortcut: '' },
-  bench: { id: 'bench', label: 'Bench', title: 'Local Bench', shortcut: '' },
-  plans: { id: 'plans', label: 'Capacity', title: 'Provider plans', shortcut: '' },
-  workspace: { id: 'workspace', label: 'Workspace', title: 'Personal workspace', shortcut: '8' },
+  bench: { id: 'bench', label: 'Bench', title: 'Local Bench', shortcut: '5' },
+  plans: { id: 'plans', label: 'Capacity', title: 'Provider plans', shortcut: '6' },
+  workspace: { id: 'workspace', label: 'Workspace', title: 'Personal workspace', shortcut: '7' },
+  companion: { id: 'companion', label: 'Companion', title: 'Metrora Companion', shortcut: '' },
   settings: { id: 'settings', label: 'Settings', title: 'Settings', shortcut: ',' },
 }
 
 export const DESKTOP_NAVIGATION_GROUPS: readonly DesktopNavigationGroup[] = [
   { id: 'home', label: null, placement: 'primary', sections: ['overview'] },
-  { id: 'activity', label: 'Activity', placement: 'primary', sections: ['sessions', 'pullRequests'] },
-  { id: 'analyze', label: 'Analyze', placement: 'primary', sections: ['spend', 'optimize', 'models', 'compare', 'code', 'bench'] },
-  { id: 'control', label: 'Control', placement: 'primary', sections: ['plans', 'workspace'] },
-  { id: 'product', label: 'Product', placement: 'utility', sections: ['settings'] },
+  { id: 'primary', label: null, placement: 'primary', sections: ['activity', 'models', 'spend', 'plans', 'bench', 'workspace', 'code'] },
+  { id: 'utility', label: null, placement: 'utility', sections: ['companion', 'settings'] },
 ]
 
 export const DESKTOP_NAVIGATION_ORDER: readonly Section[] = DESKTOP_NAVIGATION_GROUPS.flatMap(group => group.sections)

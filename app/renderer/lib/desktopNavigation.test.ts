@@ -28,24 +28,27 @@ describe('desktop navigation authority', () => {
     }
   })
 
-  it('keeps Code in Analyze and Capacity in Control without exposing Capacity as a shortcut', () => {
+  it('exposes the control-center destinations while retaining internal routes', () => {
     expect(DESKTOP_NAVIGATION_GROUPS).toEqual([
       { id: 'home', label: null, placement: 'primary', sections: ['overview'] },
-      { id: 'activity', label: 'Activity', placement: 'primary', sections: ['sessions', 'pullRequests'] },
-      { id: 'analyze', label: 'Analyze', placement: 'primary', sections: ['spend', 'optimize', 'models', 'compare', 'code', 'bench'] },
-      { id: 'control', label: 'Control', placement: 'primary', sections: ['plans', 'workspace'] },
-      { id: 'product', label: 'Product', placement: 'utility', sections: ['settings'] },
+      { id: 'primary', label: null, placement: 'primary', sections: ['activity', 'models', 'spend', 'plans', 'bench', 'workspace', 'code'] },
+      { id: 'utility', label: null, placement: 'utility', sections: ['companion', 'settings'] },
     ])
     expect(DESKTOP_NAVIGATION_ORDER).toEqual([
-      'overview', 'sessions', 'pullRequests', 'spend', 'optimize', 'models', 'compare', 'code', 'bench', 'plans', 'workspace', 'settings',
+      'overview', 'activity', 'models', 'spend', 'plans', 'bench', 'workspace', 'code', 'companion', 'settings',
     ])
+    expect(DESKTOP_NAVIGATION_ORDER).not.toContain('optimize')
+    expect(DESKTOP_NAVIGATION_ORDER).not.toContain('compare')
+    expect(DESKTOP_NAVIGATION_ORDER).not.toContain('sessions')
+    expect(DESKTOP_NAVIGATION_ORDER).not.toContain('pullRequests')
     expect(DESKTOP_NAVIGATION_ITEMS.optimize.label).toBe('Insights')
     expect(DESKTOP_NAVIGATION_ITEMS.code.label).toBe('Code')
     expect(DESKTOP_NAVIGATION_ITEMS.bench.title).toBe('Local Bench')
     expect(DESKTOP_NAVIGATION_ITEMS.plans.id).toBe('plans')
     expect(DESKTOP_NAVIGATION_ITEMS.plans.label).toBe('Capacity')
-    expect(DESKTOP_NAVIGATION_ITEMS.plans.shortcut).toBe('')
-    expect(DESKTOP_NAVIGATION_ITEMS.workspace.shortcut).toBe('8')
+    expect(DESKTOP_NAVIGATION_ITEMS.plans.shortcut).toBe('6')
+    expect(DESKTOP_NAVIGATION_ITEMS.workspace.shortcut).toBe('7')
+    expect(DESKTOP_NAVIGATION_ITEMS.companion.label).toBe('Companion')
     expect(DESKTOP_NAVIGATION_ITEMS.settings.shortcut).toBe(',')
   })
 })

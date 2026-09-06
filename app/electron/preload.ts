@@ -87,6 +87,8 @@ const bridge = {
   opencodeActivate: (bounds: OpenCodeBounds) => invoke('metrora:opencodeActivate', bounds) as Promise<OpenCodeRuntimeStatus>,
   opencodeUpdateBounds: (bounds: OpenCodeBounds) => invoke('metrora:opencodeBounds', bounds) as Promise<boolean>,
   opencodeDeactivate: () => invoke('metrora:opencodeDeactivate') as Promise<boolean>,
+  setWindowChromeTheme: (theme: 'dark' | 'light') => invoke('metrora:setWindowChromeTheme', theme) as Promise<boolean>,
+  setWindowChromeMode: (mode: 'always' | 'auto') => invoke('metrora:setWindowChromeMode', mode) as Promise<boolean>,
 
   getWorkspaceStatus: () => invoke('metrora:getWorkspaceStatus'),
   retryWorkspaceStatus: () => invoke('metrora:retryWorkspaceStatus'),

@@ -36,7 +36,7 @@ describe('Metrora About modal', () => {
     renderAbout()
 
     expect(screen.getByRole('dialog', { name: 'Metrora' })).toBeInTheDocument()
-    expect(screen.getByText('Local-first intelligence for AI usage, cost and efficiency.')).toBeInTheDocument()
+    expect(screen.getByText('AI Control Center · local-first intelligence for AI usage, cost and efficiency.')).toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('active distribution channel')
     expect(screen.getByRole('status')).toHaveTextContent('does not use a separate in-app updater')
     expect(screen.getByText('Metrora · Published by Vensent')).toBeInTheDocument()

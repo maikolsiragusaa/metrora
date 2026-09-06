@@ -18,7 +18,6 @@ import {
   SIDEBAR_ROW_INTERACTIVE_CLASS,
   sidebarHeaderRowClassName,
   sidebarNavLabelClassName,
-  sidebarNavListClassName,
   sidebarNavRowClassName,
 } from '../../ui/primitives/sidebar-layout'
 import { SidebarIconSlot } from './SidebarIconSlot'
@@ -26,6 +25,9 @@ import { SidebarIconSlot } from './SidebarIconSlot'
 const NAV_ICONS: Record<Section, ReactNode> = {
   overview: (
     <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1" /><rect x="14" y="3" width="7" height="5" rx="1" /><rect x="14" y="12" width="7" height="9" rx="1" /><rect x="3" y="16" width="7" height="5" rx="1" /></svg>
+  ),
+  activity: (
+    <svg viewBox="0 0 24 24"><path d="M4 17V9"/><path d="M9 20V5"/><path d="M14 14V8"/><path d="M19 18V3"/></svg>
   ),
   sessions: (
     <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="4" rx="1"/><rect x="4" y="10" width="16" height="4" rx="1"/><rect x="4" y="16" width="16" height="4" rx="1"/></svg>
@@ -46,7 +48,7 @@ const NAV_ICONS: Record<Section, ReactNode> = {
     <svg viewBox="0 0 24 24"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="M16 21l4-4-4-4"/><path d="M20 17H4"/></svg>
   ),
   code: (
-    <svg viewBox="0 0 24 24"><path d="M5 5.5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-6l-4 3v-3H5a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2Z"/><path d="M8 11h8M8 14h5"/></svg>
+    <svg viewBox="0 0 24 24"><path d="m8.5 6-5 6 5 6"/><path d="m15.5 6 5 6-5 6"/><path d="m13.5 4-3 16"/></svg>
   ),
   bench: (
     <svg viewBox="0 0 24 24"><path d="M4 19h16"/><path d="M6 17v-5M12 17V7M18 17v-9"/><path d="M4 5h16"/></svg>
@@ -56,6 +58,9 @@ const NAV_ICONS: Record<Section, ReactNode> = {
   ),
   workspace: (
     <svg viewBox="0 0 24 24"><path d="M12 3 4.5 6v5.5c0 4.6 2.9 7.7 7.5 9.5 4.6-1.8 7.5-4.9 7.5-9.5V6L12 3z"/><path d="M8.5 12h7M12 8.5v7"/></svg>
+  ),
+  companion: (
+    <svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="M10 5h4M11 18.5h2"/><path d="M4 10.5h2M18 10.5h2"/></svg>
   ),
   settings: (
     <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
@@ -136,13 +141,11 @@ function NavigationGroup({
 export function MetroraSidebar({
   active,
   onNavigate,
-  status,
   initialCollapsed,
   onCollapsedChange,
 }: {
   active: Section
   onNavigate: (section: Section) => void
-  status?: ReactNode
   initialCollapsed?: boolean
   onCollapsedChange?: (collapsed: boolean) => void
 }) {
@@ -150,7 +153,6 @@ export function MetroraSidebar({
   const [aboutOpen, setAboutOpen] = useState(false)
   const [commandOpen, setCommandOpen] = useState(false)
   const navigationScrollRef = useRef<HTMLDivElement>(null)
-  const commandShortcut = shortcutLabel('K')
   const primaryGroups = DESKTOP_NAVIGATION_GROUPS.filter(group => group.placement === 'primary')
   const utilityGroups = DESKTOP_NAVIGATION_GROUPS.filter(group => group.placement === 'utility')
 
@@ -162,7 +164,12 @@ export function MetroraSidebar({
       }
     }
     document.addEventListener('keydown', onShortcut)
-    return () => document.removeEventListener('keydown', onShortcut)
+    const onCommandRequest = () => setCommandOpen(true)
+    document.addEventListener('metrora:open-command-menu', onCommandRequest)
+    return () => {
+      document.removeEventListener('keydown', onShortcut)
+      document.removeEventListener('metrora:open-command-menu', onCommandRequest)
+    }
   }, [])
 
   useEffect(() => {
@@ -199,19 +206,6 @@ export function MetroraSidebar({
           </button>
         </div>
 
-        <button
-          type="button"
-          className="metrora-sidebar__search"
-          data-sidebar-region="search"
-          aria-label="Search sections"
-          title={`Search sections (${commandShortcut})`}
-          onClick={() => setCommandOpen(true)}
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.3" /><path d="m16 16 4.5 4.5" /></svg>
-          <span className={sidebarNavLabelClassName(collapsed)}>Search</span>
-          <kbd className={collapsed ? 'metrora-sr-only' : ''}>{commandShortcut}</kbd>
-        </button>
-
         <Divider className="metrora-sidebar__divider" />
         <nav aria-label="Metrora navigation" className="metrora-sidebar__navigation" data-sidebar-region="navigation">
           <div ref={navigationScrollRef} className="metrora-sidebar__nav-scroll" data-sidebar-region="navigation-scroll">
@@ -230,7 +224,6 @@ export function MetroraSidebar({
           </div>
         </nav>
 
-        {status !== undefined && <div className="metrora-sidebar__status status" data-sidebar-region="status" aria-live="polite">{status}</div>}
         <Divider className="metrora-sidebar__divider metrora-sidebar__footer-divider" />
         <div className="metrora-sidebar__footer foot" data-sidebar-region="footer">
           <a

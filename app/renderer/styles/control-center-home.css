@@ -1,0 +1,2440 @@
+/* Control-center shell convergence layer. These tokens are intentionally
+   local to the new shell/home surface so legacy analytical sections keep their
+   established data visual language while the frame moves toward the approved
+   reference. */
+:root {
+  --cc-canvas: #f5f7fc;
+  --cc-sidebar: #fbfcff;
+  --cc-panel: #ffffff;
+  --cc-panel-raised: #f8f9ff;
+  --cc-border: rgba(38, 42, 86, .11);
+  --cc-border-strong: rgba(38, 42, 86, .2);
+  --cc-text: #151936;
+  --cc-muted: #69718b;
+  --cc-subtle: #8c94a9;
+  --cc-primary: #5b45e8;
+  --cc-primary-bright: #8b70ff;
+  --cc-primary-soft: rgba(91, 69, 232, .1);
+  --cc-cyan: #43c5e9;
+  --cc-shadow: 0 16px 42px rgba(31, 39, 86, .07);
+  --cc-shadow-small: 0 8px 22px rgba(31, 39, 86, .06);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --cc-canvas: #07090d;
+    --cc-sidebar: #090b10;
+    --cc-panel: #0f141c;
+    --cc-panel-raised: #151b25;
+    --cc-border: rgba(164, 177, 205, .15);
+    --cc-border-strong: rgba(164, 177, 205, .28);
+    --cc-text: #f5f7ff;
+    --cc-muted: #9aa5ba;
+    --cc-subtle: #68758d;
+    --cc-primary: #a083ff;
+    --cc-primary-bright: #b99dff;
+    --cc-primary-soft: rgba(148, 111, 255, .17);
+    --cc-cyan: #6bdde0;
+    --cc-shadow: 0 24px 54px rgba(0, 0, 0, .36);
+    --cc-shadow-small: 0 12px 30px rgba(0, 0, 0, .26);
+  }
+}
+
+:root[data-theme='dark'] {
+  --cc-canvas: #07090d;
+  --cc-sidebar: #090b10;
+  --cc-panel: #0f141c;
+  --cc-panel-raised: #151b25;
+  --cc-border: rgba(164, 177, 205, .15);
+  --cc-border-strong: rgba(164, 177, 205, .28);
+  --cc-text: #f5f7ff;
+  --cc-muted: #9aa5ba;
+  --cc-subtle: #68758d;
+  --cc-primary: #a083ff;
+  --cc-primary-bright: #b99dff;
+  --cc-primary-soft: rgba(148, 111, 255, .17);
+  --cc-cyan: #6bdde0;
+  --cc-shadow: 0 24px 54px rgba(0, 0, 0, .36);
+  --cc-shadow-small: 0 12px 30px rgba(0, 0, 0, .26);
+}
+
+.metrora-shell,
+.metrora-shell__main,
+.metrora-shell .ct,
+.metrora-shell .body,
+.metrora-shell .bar {
+  background: var(--cc-canvas);
+  color: var(--cc-text);
+}
+
+.metrora-shell {
+  --metrora-sidebar-expanded: 204px;
+}
+
+.metrora-sidebar {
+  background: var(--cc-sidebar);
+  border-color: var(--cc-border);
+}
+
+.metrora-sidebar__surface {
+  padding: 14px 10px 12px;
+}
+
+.metrora-sidebar__header-row {
+  position: relative;
+  height: 44px;
+  min-height: 44px;
+  padding-left: 8px;
+}
+
+.metrora-sidebar__brand {
+  color: var(--cc-text);
+  font-size: 14px;
+  letter-spacing: -.025em;
+}
+
+/* The legacy .app selector adds a bottom pad for the old landing shell. The
+   new rail owns its own header geometry; keeping this reset explicit prevents
+   the collapsed mark from drifting away from the icon axis. */
+.metrora-sidebar__brand.app {
+  gap: 9px;
+  padding: 0;
+}
+
+.metrora-sidebar[data-collapsed='true'] .metrora-sidebar__collapse-button {
+  position: absolute;
+  top: 8px;
+  right: -17px;
+}
+
+.metrora-sidebar__search {
+  margin-top: 10px;
+  border-color: var(--cc-border);
+  background: color-mix(in srgb, var(--cc-panel) 72%, transparent);
+  color: var(--cc-muted);
+}
+
+.metrora-sidebar__search:hover,
+.metrora-sidebar__collapse-button:hover {
+  border-color: var(--cc-border-strong);
+  background: var(--cc-primary-soft);
+  color: var(--cc-text);
+}
+
+.metrora-sidebar__nav-scroll {
+  scrollbar-gutter: stable;
+}
+
+.metrora-sidebar[data-collapsed='true'] .metrora-sidebar__nav-scroll {
+  /* Equal gutters keep the icon axis fixed when the native Windows scrollbar
+     appears or disappears at supported window heights. */
+  scrollbar-gutter: stable both-edges;
+}
+
+.metrora-sidebar__nav-primary,
+.metrora-sidebar__nav-utility {
+  gap: 8px;
+}
+
+.metrora-sidebar__nav-group {
+  gap: 4px;
+}
+
+.metrora-sidebar__nav-item {
+  height: 38px;
+  min-height: 38px;
+  border-radius: 9px;
+  color: var(--cc-muted);
+  transition: background 180ms ease, color 180ms ease, transform 180ms ease;
+}
+
+.metrora-sidebar__nav-item:hover,
+.metrora-sidebar__nav-item.is-idle:hover {
+  background: var(--cc-primary-soft);
+  color: var(--cc-text);
+}
+
+.metrora-sidebar__nav-item.on {
+  background: var(--cc-primary-soft);
+  color: var(--cc-text);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--cc-primary-bright) 14%, transparent);
+}
+
+.metrora-sidebar__nav-item.on::before {
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  background: var(--cc-primary);
+}
+
+.metrora-sidebar__nav-item.on svg {
+  stroke: var(--cc-primary-bright);
+}
+
+.metrora-sidebar__nav-utility-region {
+  padding-top: 12px;
+  border-color: var(--cc-border);
+}
+
+.metrora-sidebar__footer-divider {
+  margin-top: 10px;
+}
+
+.metrora-sidebar__footer .about,
+.metrora-sidebar__footer .social a {
+  color: var(--cc-muted);
+}
+
+.metrora-sidebar__footer .about:hover,
+.metrora-sidebar__footer .social a:hover {
+  background: var(--cc-primary-soft);
+  color: var(--cc-text);
+}
+
+.metrora-shell .bar {
+  min-height: 58px;
+  padding: 10px clamp(18px, 2.4vw, 30px);
+  border-color: var(--cc-border);
+}
+
+@media (min-width: 1121px) {
+  /* The renderer receives the client area below the native Windows title bar,
+     so the reference's top-bar coordinates are applied from y=0 here. */
+  .metrora-shell .bar-home {
+    height: clamp(64px, 8.8vh, 90px);
+    min-height: clamp(64px, 8.8vh, 90px);
+    align-items: flex-start;
+    padding: 15px 41px 27px 30px;
+  }
+
+  .metrora-shell .bar-home .bar-command {
+    height: clamp(42px, 4.7vh, 48px);
+  }
+
+  .metrora-shell .bar-home .btn,
+  .metrora-shell .bar-home .pop,
+  .metrora-shell .bar-home .calendar-trigger,
+  .metrora-shell .bar-home .seg {
+    min-height: clamp(42px, 4.7vh, 48px);
+  }
+
+  .control-center-hero__actions,
+  .control-center-hero__meta {
+    display: none;
+  }
+
+  .metrora-shell .bar-home .t,
+  .metrora-shell .bar-home .scope,
+  .metrora-shell .bar-home .open-code-button {
+    display: none;
+  }
+
+  .metrora-shell .bar-home .bar-command {
+    min-width: min(390px, 34vw);
+  }
+
+  .metrora-shell .bar-home .refresh-button {
+    width: 36px;
+    min-width: 36px;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .metrora-shell .bar-home .refresh-button::before {
+    color: currentColor;
+    content: '↻';
+    font-size: 17px;
+    line-height: 1;
+  }
+}
+
+.metrora-shell .bar .t {
+  color: var(--cc-text);
+  font-size: 15px;
+}
+
+.metrora-shell .bar .scope {
+  color: var(--cc-muted);
+}
+
+.bar-command {
+  display: inline-flex;
+  min-width: 164px;
+  height: 34px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 9px;
+  border: 1px solid var(--cc-border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--cc-panel) 82%, transparent);
+  color: var(--cc-muted);
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.bar-command:hover {
+  border-color: var(--cc-border-strong);
+  background: var(--cc-primary-soft);
+  color: var(--cc-text);
+}
+
+.bar-command svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 1.7;
+}
+
+.bar-command span {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bar-command kbd {
+  flex: 0 0 auto;
+  padding: 3px 5px;
+  border: 1px solid var(--cc-border);
+  border-radius: 5px;
+  color: var(--cc-subtle);
+  font-family: var(--metrora-font-mono);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.metrora-shell .bar .btn,
+.metrora-shell .bar .pop,
+.metrora-shell .bar .calendar-trigger {
+  border-color: var(--cc-border);
+  background: var(--cc-panel);
+  color: var(--cc-muted);
+  border-radius: 9px;
+}
+
+.metrora-shell .bar .btn:hover,
+.metrora-shell .bar .pop:hover,
+.metrora-shell .bar .calendar-trigger:hover {
+  border-color: var(--cc-border-strong);
+  background: var(--cc-primary-soft);
+  color: var(--cc-text);
+}
+
+.metrora-shell .bar .open-code-button {
+  border-color: color-mix(in srgb, var(--cc-primary) 30%, var(--cc-border));
+  color: var(--cc-primary);
+}
+
+.metrora-shell .seg {
+  border: 1px solid var(--cc-border);
+  background: color-mix(in srgb, var(--cc-panel) 72%, transparent);
+  border-radius: 9px;
+}
+
+.metrora-shell .seg .on {
+  background: var(--cc-primary-soft);
+  color: var(--cc-text);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--cc-primary-bright) 18%, transparent);
+}
+
+.metrora-shell .body {
+  padding: 12px clamp(18px, 2.4vw, 30px) 12px;
+}
+
+.control-center-home,
+.control-center-section {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.control-center-share-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 26px;
+  padding: 0 2px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.control-center-share-row > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.control-center-share-row strong {
+  color: var(--cc-text);
+  font-size: 10.5px;
+}
+
+.control-center-share-row span {
+  color: var(--cc-muted);
+  font-size: 9.5px;
+}
+
+.control-center-hero {
+  position: relative;
+  height: 158px;
+  min-height: 158px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--cc-primary-bright) 24%, var(--cc-border));
+  border-radius: 20px;
+  background-image: linear-gradient(90deg, rgba(9, 12, 35, .94) 0%, rgba(10, 15, 45, .82) 42%, rgba(10, 15, 45, .16) 100%), var(--control-center-hero-image);
+  background-position: center, center;
+  background-size: cover;
+  box-shadow: var(--cc-shadow);
+}
+
+.control-center-hero__content {
+  justify-content: flex-start;
+}
+
+.control-center-hero::after {
+  position: absolute;
+  right: 7%;
+  bottom: -70px;
+  width: 280px;
+  height: 150px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--cc-primary-bright) 28%, transparent);
+  content: '';
+  filter: blur(44px);
+  opacity: .65;
+  pointer-events: none;
+}
+
+.control-center-hero__content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  max-width: 640px;
+  min-height: 158px;
+  height: 100%;
+  flex-direction: column;
+  justify-content: center;
+  padding: 20px clamp(24px, 3.2vw, 36px);
+  color: #f7f5ff;
+}
+
+.eyebrow {
+  color: var(--cc-primary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.control-center-hero .eyebrow,
+.control-center-promo .eyebrow {
+  color: #b6a8ff;
+}
+
+.control-center-hero h1 {
+  margin: 5px 0 0;
+  color: #fff;
+  font-size: clamp(30px, 3vw, 40px);
+  font-weight: 720;
+  letter-spacing: -.055em;
+  line-height: .98;
+}
+
+.control-center-hero__title {
+  margin: 4px 0 0;
+  color: #d4cbff;
+  font-size: clamp(17px, 1.7vw, 22px);
+  font-weight: 600;
+  letter-spacing: -.025em;
+}
+
+.control-center-hero__copy {
+  max-width: 440px;
+  margin: 6px 0 0;
+  color: rgba(245, 243, 255, .76);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.control-center-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 20px;
+}
+
+.control-center-button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  font-size: 11.5px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.control-center-button:hover { transform: translateY(-1px); }
+
+.control-center-button--primary {
+  background: linear-gradient(135deg, var(--cc-primary), var(--cc-primary-bright));
+  color: #fff;
+  box-shadow: 0 8px 20px rgba(78, 55, 214, .28);
+}
+
+.control-center-button--quiet {
+  border-color: rgba(255, 255, 255, .25);
+  background: rgba(255, 255, 255, .08);
+  color: #f3f1ff;
+}
+
+.control-center-button--small {
+  min-height: 31px;
+  background: var(--cc-primary-soft);
+  color: var(--cc-primary);
+}
+
+.control-center-hero__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin-top: 16px;
+  color: rgba(232, 229, 255, .64);
+  font-family: var(--metrora-font-mono);
+  font-size: 10px;
+}
+
+.control-center-stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.control-center-stat {
+  display: flex;
+  min-height: 92px;
+  flex-direction: column;
+  justify-content: center;
+  padding: 13px 14px;
+  border: 1px solid var(--cc-border);
+  border-radius: 13px;
+  background: var(--cc-panel);
+  box-shadow: var(--cc-shadow-small);
+}
+
+.control-center-stat > span,
+.control-center-stat > small {
+  color: var(--cc-muted);
+  font-size: 10.5px;
+}
+
+.control-center-stat strong {
+  margin-top: 5px;
+  color: var(--cc-text);
+  font-size: clamp(18px, 1.8vw, 23px);
+  font-weight: 680;
+  letter-spacing: -.04em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.control-center-stat small {
+  margin-top: 4px;
+  font-size: 10px;
+}
+
+.control-center-stat--action {
+  background: linear-gradient(135deg, var(--cc-panel), color-mix(in srgb, var(--cc-primary-soft) 70%, var(--cc-panel)));
+}
+
+.control-center-stat--action strong {
+  color: var(--cc-primary);
+  font-size: 17px;
+  letter-spacing: -.02em;
+}
+
+.control-center-stat--action button {
+  align-self: flex-start;
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--cc-primary);
+  font-size: 10.5px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.control-center-grid {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr .9fr;
+  gap: 10px;
+}
+
+.control-center-panel {
+  min-width: 0;
+  min-height: 319px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 15px;
+  border: 1px solid var(--cc-border);
+  border-radius: 15px;
+  background: var(--cc-panel);
+  box-shadow: var(--cc-shadow-small);
+}
+
+.control-center-panel__head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.control-center-panel h2,
+.control-center-promo h2 {
+  margin: 5px 0 0;
+  color: var(--cc-text);
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -.035em;
+  line-height: 1.1;
+}
+
+.control-center-link {
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--cc-primary);
+  font-size: 10.5px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.control-center-list,
+.control-center-model-list {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 3px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.control-center-list-row,
+.activity-row {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 6px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--cc-text);
+  text-align: left;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.control-center-list-row:hover,
+.activity-row:hover {
+  border-color: var(--cc-border);
+  background: var(--cc-panel-raised);
+}
+
+.control-center-list-row__main,
+.activity-row__main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.control-center-list-row strong,
+.activity-row strong {
+  overflow: hidden;
+  font-size: 11.5px;
+  font-weight: 620;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.control-center-list-row small,
+.activity-row small,
+.control-center-model small {
+  color: var(--cc-muted);
+  font-size: 10px;
+}
+
+.control-center-list-row__value,
+.activity-row__value {
+  flex: 0 0 auto;
+  color: var(--cc-text);
+  font-family: var(--metrora-font-mono);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.control-center-model {
+  padding: 6px 0 3px;
+}
+
+.control-center-model__label {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.control-center-model__label strong,
+.control-center-model__label span {
+  overflow: hidden;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.control-center-model__label span { color: var(--cc-text); font-family: var(--metrora-font-mono); font-weight: 500; }
+
+.control-center-model__track {
+  height: 6px;
+  margin: 7px 0 5px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: var(--cc-panel-raised);
+}
+
+.control-center-model__track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--cc-primary), var(--cc-cyan));
+}
+
+.control-center-empty-card {
+  display: flex;
+  min-height: 176px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 8px;
+}
+
+.control-center-empty-card__icon {
+  color: var(--cc-primary);
+  font-size: 30px;
+  line-height: 1;
+}
+
+.control-center-empty-card strong {
+  max-width: 210px;
+  margin-top: 15px;
+  color: var(--cc-text);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.control-center-empty-card p {
+  max-width: 245px;
+  margin: 8px 0 16px;
+  color: var(--cc-muted);
+  font-size: 10.5px;
+  line-height: 1.55;
+}
+
+.control-center-promos {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.control-center-promo {
+  position: relative;
+  min-height: 172px;
+  overflow: hidden;
+  border: 1px solid var(--cc-border);
+  border-radius: 15px;
+  background-color: #11142c;
+  background-image: var(--control-center-promo-image);
+  background-position: center;
+  background-size: cover;
+  box-shadow: var(--cc-shadow-small);
+}
+
+.control-center-promo__hit-area {
+  position: absolute;
+  inset: 0;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.control-center-promo__hit-area:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -5px;
+}
+
+.control-center-section__intro {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.control-center-section__intro h1 {
+  margin: 8px 0 0;
+  color: var(--cc-text);
+  font-size: clamp(24px, 3vw, 38px);
+  letter-spacing: -.05em;
+  line-height: 1;
+}
+
+.control-center-section__intro p {
+  max-width: 580px;
+  margin: 9px 0 0;
+  color: var(--cc-muted);
+  font-size: 12px;
+}
+
+.activity-section__scope {
+  flex: 0 0 auto;
+  padding: 8px 10px;
+  border: 1px solid var(--cc-border);
+  border-radius: 8px;
+  color: var(--cc-muted);
+  font-family: var(--metrora-font-mono);
+  font-size: 10px;
+}
+
+.activity-section__metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 11px;
+}
+
+.activity-section__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.activity-section__grid .panel {
+  min-width: 0;
+  border-color: var(--cc-border);
+  border-radius: 14px;
+  background: var(--cc-panel);
+  box-shadow: var(--cc-shadow-small);
+}
+
+.activity-section__grid .phead {
+  min-height: 52px;
+  border-color: var(--cc-border);
+  background: var(--cc-panel-raised);
+}
+
+.activity-section__grid .phead b { color: var(--cc-text); }
+.activity-section__grid .pbody { padding: 10px; }
+.activity-row--static { cursor: default; }
+
+.companion-body .panel {
+  border-color: var(--cc-border);
+  border-radius: 14px;
+  background: var(--cc-panel);
+  box-shadow: var(--cc-shadow-small);
+}
+
+.companion-body .phead {
+  border-color: var(--cc-border);
+  background: var(--cc-panel-raised);
+}
+
+.companion-body .phead b { color: var(--cc-text); }
+
+.code-section {
+  flex-direction: column;
+  background: var(--cc-canvas);
+}
+
+.code-section__header {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px clamp(18px, 3vw, 34px);
+  border-bottom: 1px solid var(--cc-border);
+  background: var(--cc-canvas);
+}
+
+.code-section__header > div {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.code-section__header strong { color: var(--cc-text); font-size: 13px; }
+.code-section__header > span { color: var(--cc-muted); font-size: 10.5px; }
+
+.metrora-shell .code-view-host { background: var(--cc-canvas); }
+
+@media (max-width: 1120px) {
+  .metrora-shell .bar {
+    min-height: 76px;
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .metrora-shell .bar .sp { display: none; }
+  .bar-command {
+    width: 42px;
+    min-width: 42px;
+    flex: 0 0 42px;
+    justify-content: center;
+    padding: 0;
+  }
+  .bar-command span,
+  .bar-command kbd { display: none; }
+  .metrora-shell .bar .scope { max-width: none; flex: 1 1 auto; }
+  .control-center-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .control-center-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .control-center-panel--capacity { grid-column: 1 / -1; min-height: 220px; }
+  .control-center-empty-card { min-height: 150px; }
+  .activity-section__grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 780px) {
+  .metrora-shell .bar { min-height: 58px; padding: 12px 16px; }
+  .bar-command { min-width: 42px; width: 42px; padding: 0; justify-content: center; }
+  .bar-command span,
+  .bar-command kbd { display: none; }
+  .control-center-hero { min-height: 320px; }
+  .control-center-hero__content { min-height: 320px; padding: 28px 24px; }
+  .control-center-stats,
+  .control-center-grid,
+  .control-center-promos,
+  .activity-section__metrics { grid-template-columns: 1fr 1fr; }
+  .control-center-share-row { align-items: flex-start; flex-direction: column; }
+  .control-center-panel--capacity { grid-column: auto; }
+  .control-center-promo { min-height: 230px; }
+  .control-center-section__intro { align-items: flex-start; flex-direction: column; }
+}
+
+@media (max-width: 520px) {
+  .control-center-stats,
+  .control-center-grid,
+  .control-center-promos,
+  .activity-section__metrics { grid-template-columns: 1fr; }
+  .control-center-panel--capacity { grid-column: auto; }
+  .control-center-hero { min-height: 360px; }
+  .control-center-hero__content { min-height: 360px; }
+  .control-center-hero__actions { flex-direction: column; align-items: flex-start; }
+  .control-center-button { width: max-content; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .metrora-sidebar__nav-item,
+  .bar-command,
+  .control-center-button,
+  .control-center-list-row,
+  .activity-row { transition: none; }
+  .control-center-button:hover { transform: none; }
+}
+
+@media (min-width: 1121px) {
+  .control-center-grid {
+    grid-template-columns: 1.14fr 1fr .76fr;
+  }
+}
+
+/* Keep the desktop geometry overrides after the shared shell/mobile rules so
+   the approved Home proportions win in the cascade. */
+@media (min-width: 1121px) {
+  .metrora-shell .body {
+    padding: 0 53px 12px 30px;
+  }
+
+  .metrora-shell .body > * {
+    max-width: none;
+    margin-right: 0;
+    margin-left: 0;
+  }
+
+  .control-center-home {
+    gap: 0;
+  }
+
+  .control-center-hero {
+    height: clamp(118px, 15.4vh, 158px);
+    min-height: clamp(118px, 15.4vh, 158px);
+    margin-bottom: clamp(8px, 1.1vh, 11px);
+  }
+
+  .control-center-hero__actions,
+  .control-center-hero__meta {
+    display: none;
+  }
+
+  .control-center-stats {
+    gap: clamp(10px, 1.55vh, 16px);
+    min-height: clamp(64px, 9.5vh, 97px);
+    margin-bottom: clamp(8px, 1.95vh, 20px);
+  }
+
+  .control-center-stat {
+    min-height: clamp(64px, 9.5vh, 97px);
+  }
+
+  .control-center-grid {
+    grid-template-columns: 1.13fr 1fr .78fr;
+    gap: clamp(8px, 1.55vh, 16px);
+    margin-bottom: clamp(8px, 1.85vh, 19px);
+  }
+
+  .control-center-panel {
+    min-height: clamp(205px, 31.2vh, 319px);
+  }
+
+  .control-center-promos {
+    grid-template-columns: 1.08fr 1fr .94fr;
+    gap: clamp(10px, 1.55vh, 16px);
+    min-height: clamp(120px, 16.8vh, 172px);
+  }
+
+  .control-center-promo {
+    min-height: clamp(120px, 16.8vh, 172px);
+  }
+}
+
+@media (max-width: 1120px) {
+  .metrora-shell .bar-home .t,
+  .metrora-shell .bar-home .scope,
+  .metrora-shell .bar-home .open-code-button {
+    display: none;
+  }
+
+  .metrora-shell .bar-home .refresh-button {
+    width: 42px;
+    min-width: 42px;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .metrora-shell .bar-home .refresh-button::before {
+    color: currentColor;
+    content: '↻';
+    font-size: 17px;
+    line-height: 1;
+  }
+}
+
+/* The packaged Windows window is commonly rendered at 1280 x 697 CSS pixels
+   on a 150% display. Keep the reference composition in one frame at that
+   size, while retaining a denser fallback for a narrower desktop window. */
+@media (min-width: 1121px) and (max-width: 1340px),
+       (min-width: 1121px) and (max-height: 900px) {
+  .metrora-shell {
+    --metrora-sidebar-expanded: 192px;
+  }
+
+  .metrora-shell .bar-home {
+    height: clamp(64px, 8.8vh, 76px);
+    min-height: clamp(64px, 8.8vh, 76px);
+    align-items: center;
+    padding: 8px 20px;
+  }
+
+  .metrora-shell .bar-home .bar-command {
+    width: min(390px, 34vw);
+    min-width: min(390px, 34vw);
+    height: clamp(42px, 6.2vh, 48px);
+  }
+
+  .metrora-shell .bar-home .btn,
+  .metrora-shell .bar-home .pop,
+  .metrora-shell .bar-home .calendar-trigger,
+  .metrora-shell .bar-home .seg {
+    min-height: clamp(42px, 6.2vh, 48px);
+  }
+
+  .metrora-shell .bar-home .refresh-button {
+    width: 36px;
+    min-width: 36px;
+  }
+
+  .metrora-shell .body {
+    padding: 4px 20px 0;
+  }
+
+  .control-center-home {
+    gap: 0;
+  }
+
+  .control-center-hero {
+    height: 118px;
+    min-height: 118px;
+    margin-bottom: 8px;
+    border-radius: 16px;
+  }
+
+  .control-center-hero__content {
+    min-height: 118px;
+    padding: 14px 20px;
+  }
+
+  .control-center-hero h1 {
+    font-size: 30px;
+  }
+
+  .control-center-hero__title {
+    font-size: 17px;
+  }
+
+  .control-center-hero__copy {
+    margin-top: 5px;
+    font-size: 10.5px;
+  }
+
+  .control-center-stats {
+    gap: 10px;
+    min-height: 64px;
+    margin-bottom: 8px;
+  }
+
+  .control-center-stat {
+    min-height: 64px;
+    padding: 7px 9px;
+  }
+
+  .control-center-stat strong {
+    margin-top: 4px;
+    font-size: 17px;
+  }
+
+  .control-center-stat small {
+    margin-top: 3px;
+  }
+
+  .control-center-stat--action strong {
+    font-size: 14px;
+    white-space: nowrap;
+  }
+
+  .control-center-stat--action button {
+    margin-top: 4px;
+    font-size: 9.5px;
+  }
+
+  .control-center-grid {
+    grid-template-columns: 1.13fr 1fr .78fr;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .control-center-panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-height: 205px;
+    padding: 10px;
+    border-radius: 13px;
+  }
+
+  .control-center-panel__head {
+    margin-bottom: 6px;
+  }
+
+  .control-center-panel h2 {
+    font-size: 14px;
+  }
+
+  .control-center-list,
+  .control-center-model-list {
+    gap: 2px;
+  }
+
+  .control-center-list-row {
+    padding: 3px 3px;
+    line-height: 1.2;
+  }
+
+  .control-center-list-row__main {
+    gap: 2px;
+  }
+
+  .control-center-list-row strong {
+    font-size: 10.5px;
+  }
+
+  .control-center-list-row small {
+    font-size: 9px;
+  }
+
+  .control-center-model {
+    padding: 3px 0 1px;
+    line-height: 1.2;
+  }
+
+  .control-center-model__track {
+    margin: 5px 0 3px;
+  }
+
+  .control-center-model small {
+    font-size: 9px;
+  }
+
+  .control-center-empty-card {
+    min-height: 110px;
+    padding: 4px;
+  }
+
+  .control-center-empty-card__icon {
+    font-size: 24px;
+  }
+
+  .control-center-empty-card strong {
+    margin-top: 8px;
+    font-size: 11px;
+    line-height: 1.2;
+  }
+
+  .control-center-empty-card p {
+    margin: 5px 0 8px;
+    font-size: 9.5px;
+    line-height: 1.3;
+  }
+
+  .control-center-empty-card .control-center-button--small {
+    min-height: 25px;
+    font-size: 9px;
+  }
+
+  .control-center-promos {
+    grid-template-columns: 1.08fr 1fr .94fr;
+    gap: 10px;
+    min-height: 120px;
+  }
+
+  .control-center-promo {
+    min-height: 120px;
+    border-radius: 13px;
+  }
+
+  .control-center-share-row {
+    min-height: 24px;
+    height: 24px;
+  }
+
+  .control-center-share-row strong {
+    font-size: 9.5px;
+  }
+
+  .control-center-share-row span {
+    font-size: 8.5px;
+  }
+
+  .control-center-share-row .btn {
+    min-height: 22px;
+    padding: 2px 8px;
+    font-size: 9px;
+  }
+}
+
+/* At the smallest large-desktop width the full context search field competes
+   with every real scope control. Retain the icon affordance only there; the
+   1280 CSS-pixel Windows frame keeps the mockup-like field. */
+@media (min-width: 1121px) and (max-width: 1230px) {
+  .metrora-shell .bar-home .bar-command {
+    width: 42px;
+    min-width: 42px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .metrora-shell .bar-home .bar-command span,
+  .metrora-shell .bar-home .bar-command kbd {
+    display: none;
+  }
+}
+
+/* Final desktop shell geometry. The Home surface is deliberately sized as a
+   single viewport composition; only the inner activity/model lists may scroll
+   when the available height is unusually small. */
+.metrora-shell .ct-overview > .hint {
+  display: none;
+}
+
+.metrora-shell .ct-overview .body {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.metrora-shell .ct-overview .body > .ov-dashboard--control-center {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0;
+}
+
+.ov-dashboard--control-center > .control-center-home {
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.control-center-home {
+  gap: 0;
+}
+
+.control-center-hero {
+  border-color: transparent;
+  background-image: linear-gradient(180deg, rgba(7, 9, 13, .08) 0%, rgba(7, 9, 13, .12) 44%, rgba(7, 9, 13, .9) 100%), linear-gradient(90deg, rgba(5, 7, 11, .98) 0%, rgba(5, 7, 11, .82) 36%, rgba(5, 7, 11, .2) 74%, rgba(5, 7, 11, .08) 100%), var(--control-center-hero-image);
+  background-position: center, center, center;
+  background-size: cover;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .07);
+}
+
+.control-center-hero__topline {
+  position: absolute;
+  top: 20px;
+  right: clamp(30px, 3.4vw, 48px);
+  left: clamp(30px, 3.4vw, 48px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.control-center-hero__share {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  border: 1px solid rgba(255, 255, 255, .2);
+  border-radius: 7px;
+  background: rgba(5, 7, 11, .42);
+  color: rgba(245, 247, 255, .78);
+  font-size: 10px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.control-center-hero__share:hover,
+.control-center-hero__share:focus-visible {
+  border-color: rgba(185, 157, 255, .72);
+  background: rgba(160, 131, 255, .18);
+  color: #fff;
+}
+
+.control-center-hero__share:focus-visible,
+.control-center-promo__action:focus-visible,
+.control-center-stat--action button:focus-visible {
+  outline: 2px solid var(--cc-primary-bright);
+  outline-offset: 2px;
+}
+
+.control-center-stat {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 16px;
+  background: linear-gradient(145deg, var(--cc-panel), color-mix(in srgb, var(--cc-panel-raised) 52%, var(--cc-panel)));
+  box-shadow: var(--cc-shadow-small), inset 0 1px 0 rgba(255, 255, 255, .025);
+}
+
+.control-center-stat__icon {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--cc-primary-bright) 35%, var(--cc-border));
+  border-radius: 10px;
+  background: var(--cc-primary-soft);
+  color: var(--cc-primary-bright);
+  font-family: var(--metrora-font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.control-center-stat .control-center-stat__content {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0;
+}
+
+.control-center-stat .control-center-stat__content > span,
+.control-center-stat .control-center-stat__content > small {
+  color: var(--cc-muted);
+  font-size: 10.5px;
+}
+
+.control-center-stat .control-center-stat__content strong {
+  margin-top: 5px;
+}
+
+.control-center-stat--action .control-center-stat__content strong {
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+.control-center-stat--action button {
+  margin-top: 6px;
+}
+
+.control-center-list-row {
+  justify-content: flex-start;
+}
+
+.control-center-list-row__marker {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  background: var(--cc-primary-soft);
+  color: var(--cc-primary-bright);
+  font-size: 10px;
+}
+
+.control-center-list-row__value {
+  margin-left: auto;
+}
+
+.control-center-model-chart {
+  display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 8px 2px 2px;
+  scrollbar-width: thin;
+}
+
+.control-center-model-chart .control-center-model {
+  display: flex;
+  min-width: 42px;
+  min-height: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 0 2px;
+}
+
+.control-center-model__value {
+  color: var(--cc-text);
+  font-family: var(--metrora-font-mono);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.control-center-model__bar {
+  display: flex;
+  width: 100%;
+  min-height: 90px;
+  flex: 1 1 auto;
+  align-items: flex-end;
+  justify-content: center;
+  border-bottom: 1px solid var(--cc-border);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--cc-panel-raised) 22%, transparent), transparent);
+}
+
+.control-center-model__bar span {
+  display: block;
+  width: min(34px, 72%);
+  min-height: 0;
+  border-radius: 8px 8px 2px 2px;
+  background: linear-gradient(180deg, var(--cc-cyan), var(--cc-primary));
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--cc-primary) 24%, transparent);
+}
+
+.control-center-model-chart .control-center-model > strong {
+  width: 100%;
+  overflow: hidden;
+  color: var(--cc-text);
+  font-size: 9.5px;
+  font-weight: 620;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.control-center-model-chart .control-center-model > small {
+  color: var(--cc-muted);
+  font-size: 8.5px;
+  white-space: nowrap;
+}
+
+.control-center-promo {
+  display: flex;
+  align-items: flex-start;
+  background-color: #0b1018;
+  background-image: var(--control-center-promo-image);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  box-shadow: var(--cc-shadow-small), inset 0 1px 0 rgba(255, 255, 255, .045);
+  transition: border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+}
+
+.control-center-promo:nth-child(1) { background-position: center 48%; }
+.control-center-promo:nth-child(2) { background-position: center 50%; }
+.control-center-promo:nth-child(3) { background-position: center 52%; }
+
+.control-center-promo:hover,
+.control-center-promo:focus-within {
+  border-color: rgba(185, 157, 255, .62);
+  box-shadow: var(--cc-shadow), inset 0 1px 0 rgba(255, 255, 255, .08);
+  transform: translateY(-1px);
+}
+
+@media (min-width: 1121px) {
+  .metrora-shell .bar-home {
+    height: 78px;
+    min-height: 78px;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 26px;
+  }
+
+  .metrora-shell .bar-home .t,
+  .metrora-shell .bar-home .scope,
+  .metrora-shell .bar-home .open-code-button {
+    display: none;
+  }
+
+  .metrora-shell .bar-home .bar-command {
+    width: min(390px, 32vw);
+    min-width: min(390px, 32vw);
+    height: 42px;
+  }
+
+  .metrora-shell .bar-home .btn,
+  .metrora-shell .bar-home .pop,
+  .metrora-shell .bar-home .calendar-trigger,
+  .metrora-shell .bar-home .seg {
+    min-height: 42px;
+  }
+
+  .metrora-shell .bar-home .refresh-button {
+    width: 36px;
+    min-width: 36px;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .metrora-shell .bar-home .refresh-button::before {
+    color: currentColor;
+    content: '↻';
+    font-size: 17px;
+    line-height: 1;
+  }
+
+  .metrora-shell .ct-overview .body {
+    padding: 12px 30px 18px;
+  }
+
+  .control-center-hero {
+    height: clamp(215px, 23vh, 250px);
+    min-height: clamp(215px, 23vh, 250px);
+    border-radius: 22px;
+  }
+
+  .control-center-hero__content {
+    min-height: clamp(215px, 23vh, 250px);
+    max-width: 680px;
+    justify-content: flex-start;
+    padding: 30px clamp(30px, 3.4vw, 48px);
+  }
+
+  .control-center-hero h1 {
+    font-size: clamp(38px, 3.1vw, 48px);
+  }
+
+  .control-center-hero__title {
+    margin-top: 8px;
+    font-size: clamp(22px, 1.8vw, 28px);
+  }
+
+  .control-center-hero__copy {
+    margin-top: 10px;
+    font-size: 13px;
+  }
+
+  .control-center-stats {
+    position: relative;
+    z-index: 2;
+    min-height: 96px;
+    margin: -52px 6px 20px;
+    gap: 16px;
+  }
+
+  .control-center-stat {
+    min-height: 96px;
+  }
+
+  .control-center-grid {
+    min-height: 290px;
+    flex: 1 1 0;
+    grid-template-columns: 1.16fr 1fr .86fr;
+    grid-template-rows: minmax(0, 1fr);
+    gap: 16px;
+    margin-bottom: 18px;
+  }
+
+  .control-center-panel {
+    height: 100%;
+    min-height: 0;
+    padding: 18px;
+    border-radius: 18px;
+  }
+
+  .control-center-panel__head {
+    margin-bottom: 16px;
+  }
+
+  .control-center-panel h2 {
+    font-size: 17px;
+  }
+
+  .control-center-promos {
+    min-height: 172px;
+    flex: 0 0 clamp(150px, 17vh, 172px);
+    grid-template-columns: 1.08fr 1fr .94fr;
+    gap: 16px;
+  }
+
+  .control-center-promo {
+    min-height: 0;
+    border-radius: 18px;
+  }
+}
+
+@media (min-width: 1121px) and (max-height: 900px) {
+  .metrora-shell {
+    --metrora-sidebar-expanded: 192px;
+  }
+
+  .metrora-shell .bar-home {
+    height: 58px;
+    min-height: 58px;
+    padding: 7px 20px;
+  }
+
+  .metrora-shell .bar-home .bar-command {
+    width: min(330px, 29vw);
+    min-width: min(330px, 29vw);
+    height: 36px;
+  }
+
+  .metrora-shell .bar-home .btn,
+  .metrora-shell .bar-home .pop,
+  .metrora-shell .bar-home .calendar-trigger,
+  .metrora-shell .bar-home .seg {
+    min-height: 36px;
+    height: 36px;
+  }
+
+  .metrora-shell .bar-home .seg span {
+    display: inline-flex;
+    min-height: 30px;
+    align-items: center;
+    padding: 0 8px;
+  }
+
+  .metrora-shell .ct-overview .body {
+    padding: 4px 20px 4px;
+  }
+
+  .control-center-hero {
+    height: 184px;
+    min-height: 184px;
+    margin-bottom: 0;
+    width: calc(100% + 40px);
+    margin-left: -20px;
+    border-radius: 0;
+  }
+
+  .control-center-hero__content {
+    min-height: 184px;
+    justify-content: flex-start;
+    padding: 40px 50px 22px;
+  }
+
+  .control-center-hero__topline {
+    right: 50px;
+    left: 50px;
+  }
+
+  .control-center-hero h1 {
+    font-size: 38px;
+  }
+
+  .control-center-hero__title {
+    font-size: 21px;
+  }
+
+  .control-center-hero__copy {
+    margin-top: 8px;
+    font-size: 12px;
+  }
+
+  .control-center-stats {
+    min-height: 78px;
+    margin-top: -38px !important;
+    margin-right: 4px;
+    margin-bottom: 14px;
+    margin-left: 4px;
+    gap: 12px;
+  }
+
+  .control-center-stat {
+    min-height: 78px;
+    gap: 9px;
+    padding: 10px 12px;
+  }
+
+  .control-center-stat__icon {
+    width: 28px;
+    height: 28px;
+    flex-basis: 28px;
+    border-radius: 8px;
+    font-size: 12px;
+  }
+
+  .control-center-stat .control-center-stat__content > span,
+  .control-center-stat .control-center-stat__content > small {
+    font-size: 9px;
+  }
+
+  .control-center-stat .control-center-stat__content strong {
+    margin-top: 3px;
+    font-size: 18px;
+  }
+
+  .control-center-stat--action .control-center-stat__content strong {
+    font-size: 13px;
+  }
+
+  .control-center-stat--action button {
+    margin-top: 3px;
+    font-size: 9px;
+  }
+
+  .control-center-grid {
+    min-height: 209px;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+
+  .control-center-panel {
+    padding: 12px;
+    border-radius: 15px;
+  }
+
+  .control-center-panel__head {
+    margin-bottom: 10px;
+  }
+
+  .control-center-panel h2 {
+    font-size: 14px;
+  }
+
+  .control-center-link {
+    font-size: 9px;
+  }
+
+  .control-center-list-row {
+    padding: 5px 4px;
+  }
+
+  .control-center-list-row__marker {
+    width: 19px;
+    height: 19px;
+    flex-basis: 19px;
+  }
+
+  .control-center-list-row strong {
+    font-size: 10.5px;
+  }
+
+  .control-center-list-row small,
+  .control-center-list-row__value {
+    font-size: 9px;
+  }
+
+  .control-center-model-chart {
+    gap: 6px;
+    padding-top: 4px;
+  }
+
+  .control-center-model__bar {
+    min-height: 64px;
+  }
+
+  .control-center-model__value {
+    font-size: 8px;
+  }
+
+  .control-center-model-chart .control-center-model > strong {
+    font-size: 8px;
+  }
+
+  .control-center-model-chart .control-center-model > small {
+    font-size: 7.5px;
+  }
+
+  .control-center-empty-card {
+    min-height: 0;
+    padding: 4px;
+  }
+
+  .control-center-empty-card__icon {
+    font-size: 25px;
+  }
+
+  .control-center-empty-card strong {
+    margin-top: 9px;
+    font-size: 12px;
+  }
+
+  .control-center-empty-card p {
+    margin: 6px 0 10px;
+    font-size: 9.5px;
+    line-height: 1.35;
+  }
+
+  .control-center-empty-card .control-center-button--small {
+    min-height: 27px;
+    font-size: 9px;
+  }
+
+  .control-center-promos {
+    min-height: 140px;
+    flex-basis: 140px;
+    gap: 12px;
+  }
+
+  .control-center-promo {
+    border-radius: 15px;
+  }
+
+  .control-center-promo__hit-area:focus-visible {
+    outline-offset: -4px;
+  }
+}
+
+@media (min-width: 1121px) and (max-width: 1230px) {
+  /* Keep the real command affordance readable in the compact Electron frame;
+     the full filter row still has enough room at the supported 1186px width. */
+  .metrora-shell .bar-home .bar-command {
+    width: min(330px, 29vw);
+    min-width: min(330px, 29vw);
+    justify-content: flex-start;
+    padding: 0 9px;
+  }
+
+  .metrora-shell .bar-home .bar-command span,
+  .metrora-shell .bar-home .bar-command kbd {
+    display: inline;
+  }
+}
+
+@media (max-width: 1120px) {
+  .metrora-shell .ct-overview .body {
+    overflow: auto;
+  }
+
+  .control-center-hero {
+    min-height: 250px;
+  }
+
+  .control-center-hero__content {
+    min-height: 250px;
+  }
+
+  .control-center-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .control-center-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .control-center-panel--capacity {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .control-center-promo {
+    transition: none;
+  }
+
+  .control-center-hero__share,
+  .control-center-promo__hit-area {
+    transition: none;
+  }
+
+  .control-center-promo:hover,
+  .control-center-promo:focus-within {
+    transform: none;
+  }
+}
+
+/* Fidelity 002: keep the Home composition on one coherent near-black surface.
+   These final rules intentionally sit after the legacy convergence layers so
+   the shell can be tuned without changing analytical sections. */
+.metrora-window-frame,
+.metrora-shell,
+.metrora-shell__main,
+.metrora-shell .ct,
+.metrora-shell .body {
+  background:
+    radial-gradient(70% 38% at 72% 0%, color-mix(in srgb, var(--cc-primary) 8%, transparent), transparent 72%),
+    var(--cc-canvas);
+}
+
+.metrora-window-titlebar {
+  border-color: transparent;
+  background: transparent;
+}
+
+.metrora-sidebar {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--cc-sidebar) 98%, transparent), color-mix(in srgb, var(--cc-canvas) 94%, transparent)),
+    var(--cc-sidebar);
+  border-color: color-mix(in srgb, var(--cc-border) 88%, transparent);
+  box-shadow: inset -1px 0 0 color-mix(in srgb, var(--cc-primary) 5%, transparent);
+}
+
+.metrora-shell .bar-home {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+}
+
+/* The native Windows controls are an overlay, so the Home image/surface must
+   continue underneath them. Keep the existing 30px content offset in the
+   actual controls row instead of reserving a separate black/white strip. */
+:root[data-platform='win32'] .metrora-sidebar__surface {
+  padding-top: 42px;
+}
+
+:root[data-platform='win32'] .metrora-shell .ct-overview > .bar-home {
+  height: 88px;
+  min-height: 88px;
+  padding-top: 37px;
+  padding-bottom: 7px;
+}
+
+.metrora-sidebar__navigation {
+  padding-top: 28px;
+}
+
+/* The approved rail is calm and label-first. Keyboard shortcuts remain
+   available through the command system and aria labels; the keycaps are
+   intentionally not part of the visual rail composition. */
+.metrora-sidebar__nav-item .k {
+  display: none;
+}
+
+.metrora-shell .ct-overview {
+  position: relative;
+  background-image:
+    linear-gradient(180deg, color-mix(in srgb, var(--cc-canvas) 4%, transparent) 0%, color-mix(in srgb, var(--cc-canvas) 18%, transparent) 34%, var(--cc-canvas) 72%),
+    linear-gradient(90deg, color-mix(in srgb, var(--cc-canvas) 86%, transparent) 0%, color-mix(in srgb, var(--cc-canvas) 56%, transparent) 33%, color-mix(in srgb, var(--cc-canvas) 12%, transparent) 78%, transparent 100%),
+    url('../assets/home/hero-mountains.png');
+  background-position: center top, center top, center top;
+  background-repeat: no-repeat;
+  background-size: 100% auto;
+}
+
+.metrora-shell .ct-overview .body {
+  background: transparent;
+}
+
+.metrora-shell .bar-home .bar-command,
+.metrora-shell .bar-home .btn,
+.metrora-shell .bar-home .pop,
+.metrora-shell .bar-home .calendar-trigger,
+.metrora-shell .bar-home .seg {
+  background: color-mix(in srgb, var(--cc-panel) 78%, transparent);
+  border-color: color-mix(in srgb, var(--cc-border) 92%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 4%, transparent);
+}
+
+.control-center-hero {
+  width: calc(100% + 48px);
+  margin-left: -24px;
+  border: 0;
+  border-radius: 0;
+  background-image:
+    linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--cc-canvas) 12%, transparent) 48%, color-mix(in srgb, var(--cc-canvas) 76%, transparent) 88%, var(--cc-canvas) 108%),
+    linear-gradient(90deg, color-mix(in srgb, var(--cc-canvas) 48%, transparent) 0%, color-mix(in srgb, var(--cc-canvas) 16%, transparent) 46%, transparent 82%);
+  background-position: center, center;
+  background-size: cover;
+  box-shadow: none;
+}
+
+.control-center-hero__content {
+  padding-left: clamp(28px, 3.2vw, 50px);
+  text-shadow: 0 2px 22px rgba(0, 0, 0, .3);
+}
+
+.control-center-hero__topline {
+  top: 18px;
+  right: clamp(28px, 3.2vw, 50px);
+  left: clamp(28px, 3.2vw, 50px);
+}
+
+.control-center-hero h1 {
+  text-shadow: 0 5px 28px rgba(0, 0, 0, .4);
+}
+
+.control-center-hero h1 em {
+  color: var(--cc-primary-bright);
+  font-style: normal;
+}
+
+.control-center-stat,
+.control-center-panel,
+.control-center-promo {
+  border-color: color-mix(in srgb, var(--cc-border) 92%, transparent);
+  background: linear-gradient(145deg, color-mix(in srgb, var(--cc-panel) 91%, transparent), color-mix(in srgb, var(--cc-panel-raised) 76%, transparent));
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--cc-shadow-small), inset 0 1px 0 color-mix(in srgb, #fff 4%, transparent);
+}
+
+.control-center-stat {
+  border-radius: 15px;
+}
+
+.control-center-panel {
+  border-radius: 18px;
+}
+
+.control-center-panel__actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+}
+
+.control-center-share-action {
+  padding: 4px 7px;
+  border: 1px solid color-mix(in srgb, var(--cc-border-strong) 84%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--cc-panel-raised) 62%, transparent);
+  color: var(--cc-muted);
+  font-size: 9px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: border-color 160ms ease, color 160ms ease, background 160ms ease;
+}
+
+.control-center-share-action:hover,
+.control-center-share-action:focus-visible {
+  border-color: color-mix(in srgb, var(--cc-primary-bright) 64%, var(--cc-border));
+  background: var(--cc-primary-soft);
+  color: var(--cc-text);
+}
+
+.control-center-list-row__marker {
+  border: 1px solid color-mix(in srgb, var(--cc-primary-bright) 26%, var(--cc-border));
+  background: color-mix(in srgb, var(--cc-primary-soft) 78%, transparent);
+}
+
+.control-center-model-chart {
+  gap: 8px;
+  padding-top: 7px;
+}
+
+.control-center-model__bar {
+  border-bottom-color: color-mix(in srgb, var(--cc-border) 78%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--cc-panel-raised) 36%, transparent), transparent);
+}
+
+.control-center-model__bar span {
+  width: min(36px, 76%);
+  background: linear-gradient(180deg, var(--control-center-model-start, var(--cc-primary-bright)), var(--control-center-model-end, var(--cc-primary)));
+  box-shadow: 0 10px 26px color-mix(in srgb, var(--control-center-model-end, var(--cc-primary)) 36%, transparent);
+}
+
+.control-center-model__identity {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+}
+
+.control-center-model__identity .provider-logo,
+.control-center-model__fallback {
+  flex: 0 0 auto;
+}
+
+.control-center-model__fallback {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--cc-primary-soft);
+  color: var(--cc-primary-bright);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.control-center-model-chart .control-center-model__identity strong {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 9px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.control-center-capacity-list {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.control-center-capacity-group {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(74px, .62fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  padding: 7px 0;
+}
+
+.control-center-capacity-group + .control-center-capacity-group {
+  border-top: 1px solid color-mix(in srgb, var(--cc-border) 48%, transparent);
+}
+
+.control-center-capacity-group__provider {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding-top: 1px;
+}
+
+.control-center-capacity-group__provider strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--cc-text);
+  font-size: 10.5px;
+  font-weight: 620;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.control-center-capacity-group__windows {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+}
+
+.control-center-capacity-group__window {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(42px, .7fr) minmax(94px, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.control-center-capacity-group__window-label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--cc-muted);
+  font-size: 8.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.control-center-capacity-group__window-label small {
+  display: block;
+  margin-top: 2px;
+  color: var(--cc-warning, var(--cc-muted));
+  font-size: 7.5px;
+}
+
+.control-center-capacity-group__window .control-center-capacity-row__usage {
+  min-width: 0;
+  width: 100%;
+}
+
+.control-center-capacity-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 0;
+}
+
+.control-center-capacity-row__identity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.control-center-capacity-row__identity > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.control-center-capacity-row strong {
+  overflow: hidden;
+  color: var(--cc-text);
+  font-size: 10.5px;
+  font-weight: 620;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.control-center-capacity-row small {
+  color: var(--cc-muted);
+  font-size: 8.5px;
+  white-space: nowrap;
+}
+
+.control-center-capacity-row__usage {
+  display: flex;
+  min-width: 96px;
+  align-items: center;
+  gap: 7px;
+}
+
+.control-center-capacity-row__track {
+  display: block;
+  width: 66px;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--cc-panel-raised) 88%, transparent);
+}
+
+.control-center-capacity-row__track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--cc-cyan), var(--cc-primary-bright));
+}
+
+.control-center-capacity-row__usage > strong {
+  color: var(--cc-text);
+  font-family: var(--metrora-font-mono);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.control-center-empty-card {
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--cc-panel-raised) 28%, transparent);
+}
+
+.control-center-promo {
+  border-radius: 18px;
+  background-color: #0b1018;
+  background-image: linear-gradient(90deg, rgba(7, 9, 13, .08), rgba(7, 9, 13, 0) 70%), var(--control-center-promo-image);
+  background-position: center, center;
+  background-repeat: no-repeat;
+  background-size: cover, cover;
+}
+
+/* Light mode keeps the same composition but switches the hero copy to dark
+   ink. The mountains remain present as a restrained contextual image instead
+   of washing white text out against a pale surface. */
+:root[data-theme='light'] .metrora-shell .ct-overview {
+  background-image:
+    linear-gradient(180deg, rgba(245, 247, 252, .08) 0%, rgba(245, 247, 252, .16) 34%, var(--cc-canvas) 72%),
+    linear-gradient(90deg, rgba(245, 247, 252, .88) 0%, rgba(245, 247, 252, .70) 33%, rgba(245, 247, 252, .18) 78%, transparent 100%),
+    url('../assets/home/hero-mountains.png');
+}
+
+:root[data-theme='light'] .control-center-hero__content {
+  color: var(--cc-text);
+  text-shadow: none;
+}
+
+:root[data-theme='light'] .control-center-hero .eyebrow,
+:root[data-theme='light'] .control-center-promo .eyebrow {
+  color: var(--cc-primary);
+}
+
+:root[data-theme='light'] .control-center-hero h1 {
+  color: var(--cc-text);
+  text-shadow: none;
+}
+
+:root[data-theme='light'] .control-center-hero h1 em {
+  color: var(--cc-primary);
+}
+
+:root[data-theme='light'] .control-center-hero__title {
+  color: var(--cc-primary);
+}
+
+:root[data-theme='light'] .control-center-hero__copy {
+  color: var(--cc-muted);
+}
+
+@media (min-width: 1121px) and (max-height: 900px) {
+  :root[data-platform='win32'] .metrora-shell .ct-overview .body {
+    padding-top: 0;
+  }
+
+  :root[data-platform='win32'] .control-center-hero {
+    height: 170px;
+    min-height: 170px;
+  }
+
+  :root[data-platform='win32'] .control-center-hero__content {
+    min-height: 170px;
+    padding-top: 31px;
+    padding-bottom: 18px;
+  }
+
+  :root[data-platform='win32'] .control-center-stats {
+    min-height: 72px;
+    margin-top: -34px !important;
+    margin-bottom: 12px;
+  }
+
+  :root[data-platform='win32'] .control-center-stat {
+    min-height: 72px;
+  }
+
+  :root[data-platform='win32'] .control-center-grid {
+    min-height: 0;
+    margin-bottom: 8px;
+    grid-template-columns: 1.14fr 1fr .76fr;
+  }
+
+  :root[data-platform='win32'] .metrora-shell {
+    --metrora-sidebar-expanded: 168px;
+  }
+
+  :root[data-platform='win32'] .control-center-promos {
+    min-height: 126px;
+    flex-basis: 126px;
+    margin-bottom: 6px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .control-center-share-action {
+    transition: none;
+  }
+}
+
+/* Windows auto-hide keeps a stable 30px renderer frame so the Home composition
+   does not jump when native overlay controls are revealed. The native overlay
+   itself is reduced to a one-pixel edge by the main process until the pointer
+   reaches the top reveal zone. */
+:root[data-platform='win32'] .metrora-window-titlebar[data-window-chrome-mode='auto'] {
+  height: 0;
+  min-height: 0;
+  flex: 0 0 0px;
+  overflow: hidden;
+  border-color: transparent;
+  background: transparent;
+  color: transparent;
+  opacity: 0;
+  pointer-events: none;
+  transition: height 140ms ease, flex-basis 140ms ease, opacity 140ms ease, background-color 140ms ease, border-color 140ms ease;
+}
+
+:root[data-platform='win32'] .metrora-window-titlebar[data-window-chrome-mode='auto'][data-window-chrome-revealed='true'] {
+  height: 30px;
+  min-height: 30px;
+  flex: 0 0 30px;
+  border-bottom-color: transparent;
+  background: transparent;
+  color: var(--metrora-text-muted);
+  opacity: 1;
+  pointer-events: auto;
+  box-shadow: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-platform='win32'] .metrora-window-titlebar[data-window-chrome-mode='auto'] {
+    transition: none;
+  }
+}
+
+/* Do not clip the last card when a user makes the window genuinely short. The
+   reference-sized desktop remains one viewport; only the compact fallback
+   becomes a normal vertical scroller. */
+@media (min-width: 901px) and (max-height: 560px) {
+  :root[data-platform='win32'] .metrora-shell .ct-overview .body {
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+  }
+}
+
+/* Match the shell rule's specificity so Always visible is transparent too;
+   native Windows buttons must sit on the actual Home/section surface. */
+:root[data-platform='win32'] .metrora-window-titlebar {
+  border: 0;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* The refresh control is icon-only on Home; center the actual glyph rather
+   than relying on the legacy button's default flex alignment. */
+:root[data-platform='win32'] .metrora-shell .bar-home .refresh-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}

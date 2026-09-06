@@ -19,8 +19,11 @@ import type {
   DateRange,
   MenubarPayload,
   Period,
+  QuotaProvider,
   YieldJsonReport,
 } from '../lib/types'
+import type { Section } from '../lib/desktopNavigation'
+import { ControlCenterHome } from './ControlCenterHome'
 import { deriveEfficiency } from './overviewEfficiency'
 import { OverviewHomeSummary } from './OverviewHomeSummary'
 import { deriveOverviewDecision } from './overviewDecision'
@@ -317,6 +320,7 @@ export function OverviewContent({
   overview,
   refreshToken = 0,
   onNavigate,
+  controlCenter = false,
   ready = true,
 }: {
   period: Period
@@ -324,11 +328,13 @@ export function OverviewContent({
   range?: DateRange | null
   overview: Polled<MenubarPayload>
   refreshToken?: number
-  onNavigate?: (section: 'optimize' | 'sessions') => void
+  onNavigate?: (section: Section) => void
+  controlCenter?: boolean
   ready?: boolean
 }) {
   const actReport = usePolled<ActReportJson>(() => metrora.getActReport(), [refreshToken], { enabled: ready, memoKey: 'overview-act' })
   const yieldReport = usePolled<YieldJsonReport>(() => metrora.getYield(period, provider), [period, provider, refreshToken], { enabled: ready, memoKey: `overview-yield|${period}|${provider}` })
+  const quota = usePolled<QuotaProvider[]>(() => Promise.resolve(metrora.getQuota?.() ?? []), [refreshToken], { enabled: Boolean(controlCenter && ready), memoKey: 'overview-quota' })
   const [shareOpen, setShareOpen] = useState(false)
   const { data, error } = overview
   const modelIndex = useMemo(() => data ? buildModelIndex(data) : new Map<string, string>(), [data])
@@ -371,6 +377,42 @@ export function OverviewContent({
   const projectScopeName = projectScopeActive
     ? data.projectScope?.options.find(option => option.id === selectedProjectId)?.name ?? null
     : null
+
+  if (controlCenter) {
+    return (
+      <div className="ov-dashboard ov-dashboard--control-center">
+        {error && <StaleBanner error={error} />}
+        {!error && data.freshness?.reconciliation === 'degraded' && (
+          <div role="status" className="stale-banner">
+            Showing canonical last-good data · source reconciliation is incomplete
+          </div>
+        )}
+
+        <ControlCenterHome
+          current={data.current}
+          scope={data.current.label}
+          providerLabel={providerLabel}
+          quota={quota.data}
+          onNavigate={onNavigate}
+          onShare={() => setShareOpen(true)}
+        />
+
+        {shareOpen && (
+          <ShareCardModal
+            payload={data}
+            period={period}
+            range={range}
+            providerLabel={providerLabel}
+            projectScopeActive={projectScopeActive}
+            projectScopeName={projectScopeName}
+            stale={Boolean(error)}
+            onClose={() => setShareOpen(false)}
+          />
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="ov-dashboard">
       {error && <StaleBanner error={error} />}

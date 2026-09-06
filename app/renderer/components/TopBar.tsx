@@ -50,6 +50,7 @@ export function TopBar({
   onOpenCode,
   onRefresh,
   refreshing = false,
+  compactHome = false,
 }: {
   title: ReactNode
   scope?: ReactNode
@@ -71,26 +72,27 @@ export function TopBar({
   onOpenCode?: () => void
   onRefresh?: () => void
   refreshing?: boolean
+  compactHome?: boolean
 }) {
   return (
-    <div className="bar">
+    <div className={`bar${compactHome ? ' bar-home' : ''}`}>
+      <button
+        type="button"
+        className="bar-command"
+        aria-label="Search Metrora sections"
+        title="Search Metrora sections (⌘K / Ctrl+K)"
+        onClick={() => window.dispatchEvent(new Event('metrora:open-command-menu'))}
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.3" /><path d="m16 16 4.5 4.5" /></svg>
+        <span>Search sections</span>
+        <kbd>⌘K / Ctrl+K</kbd>
+      </button>
       <div className="t">{title}</div>
       {scope !== undefined && <span className="scope">{scope}</span>}
       <div className="sp" />
       {onOpenCode && (
         <button type="button" className="btn btn-s open-code-button" onClick={onOpenCode}>
           Open Code <span aria-hidden="true">↗</span>
-        </button>
-      )}
-      {capabilities.globalRefresh && onRefresh && (
-        <button
-          type="button"
-          className="btn btn-s refresh-button"
-          onClick={onRefresh}
-          disabled={refreshing}
-          aria-label={refreshing ? 'Refreshing' : 'Refresh'}
-        >
-          {refreshing ? 'Refreshing…' : 'Refresh'}
         </button>
       )}
       {capabilities.period && (
@@ -112,6 +114,17 @@ export function TopBar({
       )}
       {capabilities.claudeConfig && claudeConfigs && (
         <ConfigPicker configs={claudeConfigs} value={configSource} onSelect={onConfigSelect} />
+      )}
+      {capabilities.globalRefresh && onRefresh && (
+        <button
+          type="button"
+          className="btn btn-s refresh-button"
+          onClick={onRefresh}
+          disabled={refreshing}
+          aria-label={refreshing ? 'Refreshing' : 'Refresh'}
+        >
+          {refreshing ? 'Refreshing…' : 'Refresh'}
+        </button>
       )}
     </div>
   )
