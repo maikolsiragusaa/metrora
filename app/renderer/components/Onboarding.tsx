@@ -105,7 +105,7 @@ function BrandLockup({ compact = false }: { compact?: boolean }) {
   )
 }
 
-function OnboardingStepper({ current }: { current: StepId }) {
+function OnboardingStepper({ current, onSelect }: { current: StepId; onSelect: (step: StepId) => void }) {
   const currentIndex = ONBOARDING_STEPS.findIndex(step => step.id === current)
   return (
     <ol className="onboarding-stepper" aria-label="Onboarding progress">
@@ -116,10 +116,17 @@ function OnboardingStepper({ current }: { current: StepId }) {
           <li
             className={['onboarding-step', completed ? 'onboarding-step-done' : '', active ? 'onboarding-step-active' : ''].filter(Boolean).join(' ')}
             key={step.id}
-            aria-current={active ? 'step' : undefined}
           >
-            <span className="onboarding-step-marker">{completed ? <Icon name="check" size={15} /> : <span />}</span>
-            <span className="onboarding-step-label">{step.label}</span>
+            <button
+              type="button"
+              className="onboarding-step-button"
+              aria-current={active ? 'step' : undefined}
+              aria-label={`Go to ${step.label}`}
+              onClick={() => onSelect(step.id)}
+            >
+              <span className="onboarding-step-marker">{completed ? <Icon name="check" size={15} /> : <span />}</span>
+              <span className="onboarding-step-label">{step.label}</span>
+            </button>
           </li>
         )
       })}
@@ -524,6 +531,7 @@ export function Onboarding({ overview, inventory: inventoryProp, ready, onDone, 
   const goToCode = useCallback(() => setStep('code'), [])
   const goToCompanion = useCallback(() => setStep('companion'), [])
   const goToReady = useCallback(() => setStep('ready'), [])
+  const goToStep = useCallback((nextStep: StepId) => setStep(nextStep), [])
 
   useEffect(() => {
     if (step !== 'ready') return
@@ -587,13 +595,13 @@ export function Onboarding({ overview, inventory: inventoryProp, ready, onDone, 
           <span>Under control.</span>
           <i />
         </div>
+        <OnboardingStepper current={step} onSelect={goToStep} />
         <div
           className={motionClass(`onboarding-card-frame onboarding-card-frame-${step}`, 'onboarding-card-in')}
           key={step}
           ref={node => { cardRef.current = node }}
           tabIndex={-1}
         >
-          <OnboardingStepper current={step} />
           {card}
         </div>
       </div>

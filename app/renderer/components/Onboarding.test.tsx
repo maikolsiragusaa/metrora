@@ -74,6 +74,20 @@ describe('Onboarding', () => {
     expect(onDone).not.toHaveBeenCalled()
   })
 
+  it('lets the progress stepper navigate directly between onboarding screens', () => {
+    bridge.getQuota.mockResolvedValue([])
+    render(<Onboarding overview={overview()} ready onDone={() => {}} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Go to Code' }))
+    expect(screen.getByRole('heading', { name: 'Code with freedom.' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Go to Welcome' }))
+    expect(screen.getByRole('heading', { name: 'Welcome to Metrora' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Go to Ready' }))
+    expect(screen.getByRole('heading', { name: 'You’re ready' })).toBeInTheDocument()
+  })
+
   it('advances to canonical discovery entries and never invents providers', () => {
     const refreshFresh = vi.fn()
     const data = payload({ providerDetails: [
