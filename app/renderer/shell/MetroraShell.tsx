@@ -58,10 +58,10 @@ export function MetroraShell({
     const onPointerMove = (event: PointerEvent) => {
       // Keep the reveal target generous enough for a real Windows pointer at
       // 125%/150% scaling while avoiding accidental reveals during normal use.
-      if (event.clientY <= 20) {
+      if (event.clientY <= 48) {
         setWindowChromeRevealed(true)
         syncNativeChrome('always')
-      } else if (event.clientY > 48) {
+      } else if (event.clientY > 64) {
         hide()
       }
     }

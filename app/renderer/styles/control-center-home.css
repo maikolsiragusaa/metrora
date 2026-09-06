@@ -2008,7 +2008,7 @@
     linear-gradient(90deg, color-mix(in srgb, var(--cc-canvas) 48%, transparent) 0%, color-mix(in srgb, var(--cc-canvas) 16%, transparent) 46%, transparent 82%);
   background-position: center, center;
   background-size: cover;
-  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 6%, transparent);
+  box-shadow: none;
 }
 
 .control-center-hero__content {
@@ -2087,8 +2087,8 @@
 
 .control-center-model__bar span {
   width: min(36px, 76%);
-  background: linear-gradient(180deg, var(--cc-primary-bright), var(--cc-primary));
-  box-shadow: 0 10px 26px color-mix(in srgb, var(--cc-primary) 30%, transparent);
+  background: linear-gradient(180deg, var(--control-center-model-start, var(--cc-primary-bright)), var(--control-center-model-end, var(--cc-primary)));
+  box-shadow: 0 10px 26px color-mix(in srgb, var(--control-center-model-end, var(--cc-primary)) 36%, transparent);
 }
 
 .control-center-model__identity {
@@ -2323,11 +2323,12 @@
   height: 30px;
   min-height: 30px;
   flex: 0 0 30px;
-  border-bottom-color: var(--metrora-border-subtle);
+  border-bottom-color: transparent;
   background: transparent;
   color: var(--metrora-text-muted);
   opacity: 1;
   pointer-events: auto;
+  box-shadow: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2349,6 +2350,16 @@
 /* Match the shell rule's specificity so Always visible is transparent too;
    native Windows buttons must sit on the actual Home/section surface. */
 :root[data-platform='win32'] .metrora-window-titlebar {
+  border: 0;
   border-color: transparent;
   background: transparent;
+  box-shadow: none;
+}
+
+/* The refresh control is icon-only on Home; center the actual glyph rather
+   than relying on the legacy button's default flex alignment. */
+:root[data-platform='win32'] .metrora-shell .bar-home .refresh-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }

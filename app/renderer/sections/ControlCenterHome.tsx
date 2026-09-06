@@ -21,11 +21,32 @@ const MODEL_LOGO_KEYS: Record<string, string> = {
   qwen: 'qwen',
 }
 
+const MODEL_BAR_PALETTES: Record<string, [string, string]> = {
+  codex: ['#b48cff', '#704dff'],
+  claude: ['#ffad7c', '#ff7a58'],
+  kimi: ['#67b5ff', '#2c7ff0'],
+  gemini: ['#59e0dd', '#20b9c7'],
+  qwen: ['#ffd27a', '#e49a3f'],
+}
+
+const FALLBACK_MODEL_BAR_PALETTES: Array<[string, string]> = [
+  ['#b48cff', '#704dff'],
+  ['#ffad7c', '#ff7a58'],
+  ['#67b5ff', '#2c7ff0'],
+  ['#59e0dd', '#20b9c7'],
+  ['#a5b4cf', '#687895'],
+]
+
 function modelLogoKey(model: HomeCurrent['topModels'][number]): string | null {
   const identity = model.brandId ?? model.providerId
   if (!identity) return null
   const normalized = identity.trim().toLowerCase()
   return MODEL_LOGO_KEYS[normalized] ?? normalized
+}
+
+function modelBarPalette(model: HomeCurrent['topModels'][number], index: number): [string, string] {
+  const key = modelLogoKey(model)
+  return MODEL_BAR_PALETTES[key ?? ''] ?? FALLBACK_MODEL_BAR_PALETTES[index % FALLBACK_MODEL_BAR_PALETTES.length]
 }
 
 function percent(value: number): string {
@@ -92,13 +113,14 @@ export function ControlCenterHome({ current, scope, providerLabel, quota, onNavi
           <div className="control-center-panel__head"><div><span className="eyebrow">Models</span><h2>Usage mix</h2></div><button className="control-center-link" type="button" onClick={() => onNavigate?.('models')}>Open Models →</button></div>
           {models.length ? (
             <div className="control-center-model-chart">
-              {models.map(model => {
+              {models.map((model, index) => {
                 const share = current.cost > 0 ? model.cost / current.cost : 0
                 const logo = modelLogoKey(model)
+                const [barStart, barEnd] = modelBarPalette(model, index)
                 return (
-                  <div className="control-center-model" key={model.name} title={`${model.name}: ${formatUsd(model.cost)}, ${formatCompact(model.calls)} calls`}>
+                  <div className="control-center-model" key={model.name} data-model-color={logo ?? 'fallback'} title={`${model.name}: ${formatUsd(model.cost)}, ${formatCompact(model.calls)} calls`}>
                     <span className="control-center-model__value">{share > 0 ? percent(share) : '—'}</span>
-                    <div className="control-center-model__bar"><span style={{ height: `${maxModelCost > 0 ? Math.max(8, model.cost / maxModelCost * 100) : 0}%` }} /></div>
+                    <div className="control-center-model__bar"><span style={{ height: `${maxModelCost > 0 ? Math.max(8, model.cost / maxModelCost * 100) : 0}%`, '--control-center-model-start': barStart, '--control-center-model-end': barEnd } as CSSProperties} /></div>
                     <span className="control-center-model__identity">{logo ? <ProviderLogo provider={logo} size={18} /> : <span className="control-center-model__fallback" aria-hidden="true">{model.name.slice(0, 1).toUpperCase()}</span>}<strong>{model.name}</strong></span>
                     <small>{formatCompact(model.calls)} calls</small>
                   </div>
