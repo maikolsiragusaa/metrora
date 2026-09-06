@@ -149,6 +149,9 @@ export type MenubarPayload = {
       savingsUSD: number
       savingsBaselineModel: string
       calls: number
+      /** Optional producer identity for factual model/provider presentation. */
+      providerId?: string
+      brandId?: string
     }>
     modelAccounting?: ModelAccounting
     modelPresentation?: ModelPresentation

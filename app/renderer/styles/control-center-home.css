@@ -961,6 +961,12 @@
   .control-center-button:hover { transform: none; }
 }
 
+@media (min-width: 1121px) {
+  .control-center-grid {
+    grid-template-columns: 1.14fr 1fr .76fr;
+  }
+}
+
 /* Keep the desktop geometry overrides after the shared shell/mobile rules so
    the approved Home proportions win in the cascade. */
 @media (min-width: 1121px) {
@@ -1906,4 +1912,443 @@
   .control-center-promo:focus-within {
     transform: none;
   }
+}
+
+/* Fidelity 002: keep the Home composition on one coherent near-black surface.
+   These final rules intentionally sit after the legacy convergence layers so
+   the shell can be tuned without changing analytical sections. */
+.metrora-window-frame,
+.metrora-shell,
+.metrora-shell__main,
+.metrora-shell .ct,
+.metrora-shell .body {
+  background:
+    radial-gradient(70% 38% at 72% 0%, color-mix(in srgb, var(--cc-primary) 8%, transparent), transparent 72%),
+    var(--cc-canvas);
+}
+
+.metrora-window-titlebar {
+  border-color: transparent;
+  background: transparent;
+}
+
+.metrora-sidebar {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--cc-sidebar) 98%, transparent), color-mix(in srgb, var(--cc-canvas) 94%, transparent)),
+    var(--cc-sidebar);
+  border-color: color-mix(in srgb, var(--cc-border) 88%, transparent);
+  box-shadow: inset -1px 0 0 color-mix(in srgb, var(--cc-primary) 5%, transparent);
+}
+
+.metrora-shell .bar-home {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+}
+
+/* The native Windows controls are an overlay, so the Home image/surface must
+   continue underneath them. Keep the existing 30px content offset in the
+   actual controls row instead of reserving a separate black/white strip. */
+:root[data-platform='win32'] .metrora-sidebar__surface {
+  padding-top: 42px;
+}
+
+:root[data-platform='win32'] .metrora-shell .ct-overview > .bar-home {
+  height: 88px;
+  min-height: 88px;
+  padding-top: 37px;
+  padding-bottom: 7px;
+}
+
+.metrora-sidebar__navigation {
+  padding-top: 28px;
+}
+
+/* The approved rail is calm and label-first. Keyboard shortcuts remain
+   available through the command system and aria labels; the keycaps are
+   intentionally not part of the visual rail composition. */
+.metrora-sidebar__nav-item .k {
+  display: none;
+}
+
+.metrora-shell .ct-overview {
+  position: relative;
+  background-image:
+    linear-gradient(180deg, color-mix(in srgb, var(--cc-canvas) 4%, transparent) 0%, color-mix(in srgb, var(--cc-canvas) 18%, transparent) 34%, var(--cc-canvas) 72%),
+    linear-gradient(90deg, color-mix(in srgb, var(--cc-canvas) 86%, transparent) 0%, color-mix(in srgb, var(--cc-canvas) 56%, transparent) 33%, color-mix(in srgb, var(--cc-canvas) 12%, transparent) 78%, transparent 100%),
+    url('../assets/home/hero-mountains.png');
+  background-position: center top, center top, center top;
+  background-repeat: no-repeat;
+  background-size: 100% auto;
+}
+
+.metrora-shell .ct-overview .body {
+  background: transparent;
+}
+
+.metrora-shell .bar-home .bar-command,
+.metrora-shell .bar-home .btn,
+.metrora-shell .bar-home .pop,
+.metrora-shell .bar-home .calendar-trigger,
+.metrora-shell .bar-home .seg {
+  background: color-mix(in srgb, var(--cc-panel) 78%, transparent);
+  border-color: color-mix(in srgb, var(--cc-border) 92%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 4%, transparent);
+}
+
+.control-center-hero {
+  width: calc(100% + 48px);
+  margin-left: -24px;
+  border: 0;
+  border-radius: 0;
+  background-image:
+    linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--cc-canvas) 12%, transparent) 48%, var(--cc-canvas) 100%),
+    linear-gradient(90deg, color-mix(in srgb, var(--cc-canvas) 48%, transparent) 0%, color-mix(in srgb, var(--cc-canvas) 16%, transparent) 46%, transparent 82%);
+  background-position: center, center;
+  background-size: cover;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 6%, transparent);
+}
+
+.control-center-hero__content {
+  padding-left: clamp(28px, 3.2vw, 50px);
+  text-shadow: 0 2px 22px rgba(0, 0, 0, .3);
+}
+
+.control-center-hero__topline {
+  top: 18px;
+  right: clamp(28px, 3.2vw, 50px);
+  left: clamp(28px, 3.2vw, 50px);
+}
+
+.control-center-hero h1 {
+  text-shadow: 0 5px 28px rgba(0, 0, 0, .4);
+}
+
+.control-center-stat,
+.control-center-panel,
+.control-center-promo {
+  border-color: color-mix(in srgb, var(--cc-border) 92%, transparent);
+  background: linear-gradient(145deg, color-mix(in srgb, var(--cc-panel) 91%, transparent), color-mix(in srgb, var(--cc-panel-raised) 76%, transparent));
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--cc-shadow-small), inset 0 1px 0 color-mix(in srgb, #fff 4%, transparent);
+}
+
+.control-center-stat {
+  border-radius: 15px;
+}
+
+.control-center-panel {
+  border-radius: 18px;
+}
+
+.control-center-panel__actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+}
+
+.control-center-share-action {
+  padding: 4px 7px;
+  border: 1px solid color-mix(in srgb, var(--cc-border-strong) 84%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--cc-panel-raised) 62%, transparent);
+  color: var(--cc-muted);
+  font-size: 9px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: border-color 160ms ease, color 160ms ease, background 160ms ease;
+}
+
+.control-center-share-action:hover,
+.control-center-share-action:focus-visible {
+  border-color: color-mix(in srgb, var(--cc-primary-bright) 64%, var(--cc-border));
+  background: var(--cc-primary-soft);
+  color: var(--cc-text);
+}
+
+.control-center-list-row__marker {
+  border: 1px solid color-mix(in srgb, var(--cc-primary-bright) 26%, var(--cc-border));
+  background: color-mix(in srgb, var(--cc-primary-soft) 78%, transparent);
+}
+
+.control-center-model-chart {
+  gap: 8px;
+  padding-top: 7px;
+}
+
+.control-center-model__bar {
+  border-bottom-color: color-mix(in srgb, var(--cc-border) 78%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--cc-panel-raised) 36%, transparent), transparent);
+}
+
+.control-center-model__bar span {
+  width: min(36px, 76%);
+  background: linear-gradient(180deg, var(--cc-primary-bright), var(--cc-primary));
+  box-shadow: 0 10px 26px color-mix(in srgb, var(--cc-primary) 30%, transparent);
+}
+
+.control-center-model__identity {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+}
+
+.control-center-model__identity .provider-logo,
+.control-center-model__fallback {
+  flex: 0 0 auto;
+}
+
+.control-center-model__fallback {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--cc-primary-soft);
+  color: var(--cc-primary-bright);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.control-center-model-chart .control-center-model__identity strong {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 9px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.control-center-capacity-list {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.control-center-capacity-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 0;
+}
+
+.control-center-capacity-row__identity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.control-center-capacity-row__identity > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.control-center-capacity-row strong {
+  overflow: hidden;
+  color: var(--cc-text);
+  font-size: 10.5px;
+  font-weight: 620;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.control-center-capacity-row small {
+  color: var(--cc-muted);
+  font-size: 8.5px;
+  white-space: nowrap;
+}
+
+.control-center-capacity-row__usage {
+  display: flex;
+  min-width: 96px;
+  align-items: center;
+  gap: 7px;
+}
+
+.control-center-capacity-row__track {
+  display: block;
+  width: 66px;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--cc-panel-raised) 88%, transparent);
+}
+
+.control-center-capacity-row__track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--cc-cyan), var(--cc-primary-bright));
+}
+
+.control-center-capacity-row__usage > strong {
+  color: var(--cc-text);
+  font-family: var(--metrora-font-mono);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.control-center-empty-card {
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--cc-panel-raised) 28%, transparent);
+}
+
+.control-center-promo {
+  border-radius: 18px;
+  background-color: #0b1018;
+  background-image: linear-gradient(90deg, rgba(7, 9, 13, .08), rgba(7, 9, 13, 0) 70%), var(--control-center-promo-image);
+  background-position: center, center;
+  background-repeat: no-repeat;
+  background-size: cover, cover;
+}
+
+/* Light mode keeps the same composition but switches the hero copy to dark
+   ink. The mountains remain present as a restrained contextual image instead
+   of washing white text out against a pale surface. */
+:root[data-theme='light'] .metrora-shell .ct-overview {
+  background-image:
+    linear-gradient(180deg, rgba(245, 247, 252, .08) 0%, rgba(245, 247, 252, .16) 34%, var(--cc-canvas) 72%),
+    linear-gradient(90deg, rgba(245, 247, 252, .88) 0%, rgba(245, 247, 252, .70) 33%, rgba(245, 247, 252, .18) 78%, transparent 100%),
+    url('../assets/home/hero-mountains.png');
+}
+
+:root[data-theme='light'] .control-center-hero__content {
+  color: var(--cc-text);
+  text-shadow: none;
+}
+
+:root[data-theme='light'] .control-center-hero .eyebrow,
+:root[data-theme='light'] .control-center-promo .eyebrow {
+  color: var(--cc-primary);
+}
+
+:root[data-theme='light'] .control-center-hero h1 {
+  color: var(--cc-text);
+  text-shadow: none;
+}
+
+:root[data-theme='light'] .control-center-hero__title {
+  color: var(--cc-primary);
+}
+
+:root[data-theme='light'] .control-center-hero__copy {
+  color: var(--cc-muted);
+}
+
+@media (min-width: 1121px) and (max-height: 900px) {
+  :root[data-platform='win32'] .metrora-shell .ct-overview .body {
+    padding-top: 0;
+  }
+
+  :root[data-platform='win32'] .control-center-hero {
+    height: 170px;
+    min-height: 170px;
+  }
+
+  :root[data-platform='win32'] .control-center-hero__content {
+    min-height: 170px;
+    padding-top: 31px;
+    padding-bottom: 18px;
+  }
+
+  :root[data-platform='win32'] .control-center-stats {
+    min-height: 72px;
+    margin-top: -34px !important;
+    margin-bottom: 12px;
+  }
+
+  :root[data-platform='win32'] .control-center-stat {
+    min-height: 72px;
+  }
+
+  :root[data-platform='win32'] .control-center-grid {
+    min-height: 0;
+    margin-bottom: 8px;
+    grid-template-columns: 1.14fr 1fr .76fr;
+  }
+
+  :root[data-platform='win32'] .metrora-shell {
+    --metrora-sidebar-expanded: 168px;
+  }
+
+  :root[data-platform='win32'] .control-center-promos {
+    min-height: 126px;
+    flex-basis: 126px;
+    margin-bottom: 6px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .control-center-share-action {
+    transition: none;
+  }
+}
+
+/* Windows auto-hide keeps a stable 30px renderer frame so the Home composition
+   does not jump when native overlay controls are revealed. The native overlay
+   itself is reduced to a one-pixel edge by the main process until the pointer
+   reaches the top reveal zone. */
+:root[data-platform='win32'] .metrora-window-titlebar[data-window-chrome-mode='auto'] {
+  height: 0;
+  min-height: 0;
+  flex: 0 0 0px;
+  overflow: hidden;
+  border-color: transparent;
+  background: transparent;
+  color: transparent;
+  opacity: 0;
+  pointer-events: none;
+  transition: height 140ms ease, flex-basis 140ms ease, opacity 140ms ease, background-color 140ms ease, border-color 140ms ease;
+}
+
+:root[data-platform='win32'] .metrora-window-titlebar[data-window-chrome-mode='auto'][data-window-chrome-revealed='true'] {
+  height: 30px;
+  min-height: 30px;
+  flex: 0 0 30px;
+  border-bottom-color: var(--metrora-border-subtle);
+  background: transparent;
+  color: var(--metrora-text-muted);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-platform='win32'] .metrora-window-titlebar[data-window-chrome-mode='auto'] {
+    transition: none;
+  }
+}
+
+/* Do not clip the last card when a user makes the window genuinely short. The
+   reference-sized desktop remains one viewport; only the compact fallback
+   becomes a normal vertical scroller. */
+@media (min-width: 901px) and (max-height: 560px) {
+  :root[data-platform='win32'] .metrora-shell .ct-overview .body {
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+  }
+}
+
+/* Match the shell rule's specificity so Always visible is transparent too;
+   native Windows buttons must sit on the actual Home/section surface. */
+:root[data-platform='win32'] .metrora-window-titlebar {
+  border-color: transparent;
+  background: transparent;
 }

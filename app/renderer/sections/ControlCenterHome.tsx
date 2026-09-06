@@ -1,9 +1,11 @@
 import type { CSSProperties } from 'react'
 
 import { EmptyNote } from '../components/EmptyState'
-import { formatCompact, formatDayShort, formatUsd } from '../lib/format'
+import { ProviderLogo } from '../components/ProviderLogo'
+import { formatCompact, formatDayShort, formatUsd, shortenProjectPath } from '../lib/format'
 import type { Section } from '../lib/desktopNavigation'
-import type { MenubarPayload } from '../lib/types'
+import { quotaProviderName } from '../lib/quota-providers'
+import type { MenubarPayload, QuotaProvider } from '../lib/types'
 import heroMountains from '../assets/home/hero-mountains.png'
 import opencodeCard from '../assets/home/card-opencode.png'
 import companionCard from '../assets/home/card-companion.png'
@@ -11,10 +13,30 @@ import workflowsCard from '../assets/home/card-ai-workflows.png'
 
 type HomeCurrent = MenubarPayload['current']
 
-export function ControlCenterHome({ current, scope, providerLabel, onNavigate, onShare }: { current: HomeCurrent; scope: string; providerLabel: string; onNavigate?: (section: Section) => void; onShare?: () => void }) {
+const MODEL_LOGO_KEYS: Record<string, string> = {
+  openai: 'codex',
+  anthropic: 'claude',
+  google: 'gemini',
+  moonshot: 'kimi',
+  qwen: 'qwen',
+}
+
+function modelLogoKey(model: HomeCurrent['topModels'][number]): string | null {
+  const identity = model.brandId ?? model.providerId
+  if (!identity) return null
+  const normalized = identity.trim().toLowerCase()
+  return MODEL_LOGO_KEYS[normalized] ?? normalized
+}
+
+function percent(value: number): string {
+  return `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`
+}
+
+export function ControlCenterHome({ current, scope, providerLabel, quota, onNavigate, onShare }: { current: HomeCurrent; scope: string; providerLabel: string; quota: QuotaProvider[] | null; onNavigate?: (section: Section) => void; onShare?: () => void }) {
   const models = current.topModels.slice(0, 5)
   const sessions = current.topSessions.slice(0, 4)
   const maxModelCost = Math.max(...models.map(model => model.cost), 0)
+  const capacityRows = (quota ?? []).flatMap(provider => provider.windows.slice(0, 2).map(window => ({ provider, window }))).slice(0, 4)
 
   return (
     <div className="control-center-home" aria-label="Metrora AI Control Center">
@@ -22,7 +44,6 @@ export function ControlCenterHome({ current, scope, providerLabel, onNavigate, o
         <div className="control-center-hero__content">
           <div className="control-center-hero__topline">
             <span className="eyebrow">{scope}</span>
-            {onShare && <button className="control-center-hero__share" type="button" title={`Share ${providerLabel} recap`} onClick={onShare}>Share recap <span aria-hidden="true">↗</span></button>}
           </div>
           <h1>Metrora</h1>
           <p className="control-center-hero__title">Your AI Control Center.</p>
@@ -47,13 +68,19 @@ export function ControlCenterHome({ current, scope, providerLabel, onNavigate, o
 
       <section className="control-center-grid" aria-label="Usage overview">
         <div className="control-center-panel control-center-panel--activity">
-          <div className="control-center-panel__head"><div><span className="eyebrow">Activity</span><h2>Recent activity</h2></div><button className="control-center-link" type="button" onClick={() => onNavigate?.('activity')}>See all →</button></div>
+          <div className="control-center-panel__head">
+            <div><span className="eyebrow">Activity</span><h2>Recent activity</h2></div>
+            <div className="control-center-panel__actions">
+              {onShare && <button className="control-center-share-action" type="button" title={`Share ${providerLabel} recap`} onClick={onShare}>Share recap</button>}
+              <button className="control-center-link" type="button" onClick={() => onNavigate?.('activity')}>See all →</button>
+            </div>
+          </div>
           {sessions.length ? (
             <div className="control-center-list">
               {sessions.map((session, index) => (
                 <button className="control-center-list-row" type="button" key={`${session.project}-${session.date}-${index}`} onClick={() => onNavigate?.('sessions')}>
                   <span className="control-center-list-row__marker" aria-hidden="true">✦</span>
-                  <span className="control-center-list-row__main"><strong>{session.project}</strong><small>{formatDayShort(session.date)} · {formatCompact(session.calls)} calls</small></span>
+                  <span className="control-center-list-row__main"><strong>{shortenProjectPath(session.project, 2)}</strong><small>{formatDayShort(session.date)} · {formatCompact(session.calls)} calls</small></span>
                   <span className="control-center-list-row__value">{formatUsd(session.cost)}</span>
                 </button>
               ))}
@@ -65,26 +92,44 @@ export function ControlCenterHome({ current, scope, providerLabel, onNavigate, o
           <div className="control-center-panel__head"><div><span className="eyebrow">Models</span><h2>Usage mix</h2></div><button className="control-center-link" type="button" onClick={() => onNavigate?.('models')}>Open Models →</button></div>
           {models.length ? (
             <div className="control-center-model-chart">
-              {models.map(model => (
-                <div className="control-center-model" key={model.name} title={`${model.name}: ${formatUsd(model.cost)}, ${formatCompact(model.calls)} calls`}>
-                  <span className="control-center-model__value">{formatUsd(model.cost)}</span>
-                  <div className="control-center-model__bar"><span style={{ height: `${maxModelCost > 0 ? Math.max(8, model.cost / maxModelCost * 100) : 0}%` }} /></div>
-                  <strong>{model.name}</strong>
-                  <small>{formatCompact(model.calls)} calls</small>
-                </div>
-              ))}
+              {models.map(model => {
+                const share = current.cost > 0 ? model.cost / current.cost : 0
+                const logo = modelLogoKey(model)
+                return (
+                  <div className="control-center-model" key={model.name} title={`${model.name}: ${formatUsd(model.cost)}, ${formatCompact(model.calls)} calls`}>
+                    <span className="control-center-model__value">{share > 0 ? percent(share) : '—'}</span>
+                    <div className="control-center-model__bar"><span style={{ height: `${maxModelCost > 0 ? Math.max(8, model.cost / maxModelCost * 100) : 0}%` }} /></div>
+                    <span className="control-center-model__identity">{logo ? <ProviderLogo provider={logo} size={18} /> : <span className="control-center-model__fallback" aria-hidden="true">{model.name.slice(0, 1).toUpperCase()}</span>}<strong>{model.name}</strong></span>
+                    <small>{formatCompact(model.calls)} calls</small>
+                  </div>
+                )
+              })}
             </div>
           ) : <EmptyNote>No model usage in this range yet.</EmptyNote>}
         </div>
 
         <div className="control-center-panel control-center-panel--capacity">
           <div className="control-center-panel__head"><div><span className="eyebrow">Capacity</span><h2>Provider signals</h2></div><button className="control-center-link" type="button" onClick={() => onNavigate?.('plans')}>View all →</button></div>
-          <div className="control-center-empty-card">
-            <span className="control-center-empty-card__icon" aria-hidden="true">◎</span>
-            <strong>Quota data stays provider-reported.</strong>
-            <p>Open Capacity to inspect available provider plans and quota signals when they are available.</p>
-            <button className="control-center-button control-center-button--small" type="button" onClick={() => onNavigate?.('plans')}>Inspect Capacity</button>
-          </div>
+          {capacityRows.length ? (
+            <div className="control-center-capacity-list" aria-label="Provider-reported capacity">
+              {capacityRows.map(({ provider, window }) => {
+                const used = Math.max(0, Math.min(1, window.usedFraction))
+                return (
+                  <div className="control-center-capacity-row" key={`${provider.provider}-${window.id}`}>
+                    <span className="control-center-capacity-row__identity"><ProviderLogo provider={provider.provider} size={18} /><span><strong>{quotaProviderName(provider.provider)}</strong><small>{window.label}{provider.freshness === 'stale' ? ' · stale' : ''}</small></span></span>
+                    <span className="control-center-capacity-row__usage"><span className="control-center-capacity-row__track"><span style={{ width: `${used * 100}%` }} /></span><strong>{percent(used)}</strong></span>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="control-center-empty-card">
+              <span className="control-center-empty-card__icon" aria-hidden="true">◎</span>
+              <strong>{quota === null ? 'Loading provider signals…' : 'No provider-reported quota is available.'}</strong>
+              <p>Open Capacity to inspect provider plans and quota signals when they are available.</p>
+              <button className="control-center-button control-center-button--small" type="button" onClick={() => onNavigate?.('plans')}>Inspect Capacity</button>
+            </div>
+          )}
         </div>
       </section>
 

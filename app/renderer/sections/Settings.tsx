@@ -143,11 +143,14 @@ export function Settings({ period, refreshToken = 0, onNavigate, initialPane, cl
 function GeneralPane({ period, refreshToken, claudeConfigs, claudeConfigSource, onConfigMutated }: { period: Period; refreshToken: number; claudeConfigs?: ClaudeConfigSelector; claudeConfigSource: string | null; onConfigMutated?: ConfigMutationHandler }) {
   const [currencyNonce, setCurrencyNonce] = useState(0)
   const plans = usePolled<StatusJson>(() => metrora.getPlans(period), [period, refreshToken, currencyNonce])
-  const [theme, setTheme] = useState<Theme>(() => {
-    const saved = readSetting('metrora.theme')
-    return saved === 'light' || saved === 'dark' ? saved : 'system'
-  })
-  const [defaultPeriod, setDefaultPeriod] = useState(() => readSetting('metrora.defaultPeriod') ?? 'today')
+    const [theme, setTheme] = useState<Theme>(() => {
+      const saved = readSetting('metrora.theme')
+      return saved === 'light' || saved === 'dark' ? saved : 'system'
+    })
+    const [windowChromeMode, setWindowChromeMode] = useState<'always' | 'auto'>(() => (
+      readSetting('windowControlsMode') === 'auto' ? 'auto' : 'always'
+    ))
+    const [defaultPeriod, setDefaultPeriod] = useState(() => readSetting('metrora.defaultPeriod') ?? 'today')
   const cadence = useRefreshCadence()
   const [budgetKind, setBudgetKind] = useState<'off' | 'usd' | 'tokens'>(() => readDailyBudget()?.kind ?? 'off')
   const [budgetInput, setBudgetInput] = useState(() => { const budget = readDailyBudget(); return budget ? String(budget.value) : '' })
@@ -156,6 +159,9 @@ function GeneralPane({ period, refreshToken, claudeConfigs, claudeConfigSource, 
   useEffect(() => {
     if (theme === 'system') document.documentElement.removeAttribute('data-theme')
     else document.documentElement.setAttribute('data-theme', theme)
+    const media = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-color-scheme: dark)') : null
+    const resolved = theme === 'system' ? (media?.matches ? 'dark' : 'light') : theme
+    if (metrora.setWindowChromeTheme) void metrora.setWindowChromeTheme(resolved).catch(() => {})
   }, [theme])
 
   // Store on change; a positive finite amount persists, anything else clears the
@@ -169,10 +175,15 @@ function GeneralPane({ period, refreshToken, claudeConfigs, claudeConfigSource, 
     writeSetting('metrora.dailyBudget', JSON.stringify({ kind, value }))
   }
 
-  const chooseTheme = (next: Theme) => {
-    setTheme(next)
-    writeSetting('metrora.theme', next)
-  }
+    const chooseTheme = (next: Theme) => {
+      setTheme(next)
+      writeSetting('metrora.theme', next)
+    }
+    const chooseWindowChromeMode = (next: 'always' | 'auto') => {
+      setWindowChromeMode(next)
+      writeSetting('windowControlsMode', next)
+      window.dispatchEvent(new CustomEvent('metrora:window-chrome-mode-change', { detail: next }))
+    }
   const finishCurrency = (result: ActionResult) => {
     showToast(result.ok ? 'Updated' : result.stderr || 'Unable to update currency', result.ok ? 'ok' : 'error')
     if (result.ok) {
@@ -207,6 +218,7 @@ function GeneralPane({ period, refreshToken, claudeConfigs, claudeConfigSource, 
         )}
         <div className="about-sec">
           <div className="about-sec-h">Display</div>
+            <div className="about-row"><span className="tx">Window controls / title bar<small>Auto hide reveals the native controls when the pointer reaches the top edge.</small></span><span className="r"><span className="seg" aria-label="Window controls mode"><button className={windowChromeMode === 'always' ? 'on' : undefined} aria-pressed={windowChromeMode === 'always'} type="button" onClick={() => chooseWindowChromeMode('always')}>Always visible</button><button className={windowChromeMode === 'auto' ? 'on' : undefined} aria-pressed={windowChromeMode === 'auto'} type="button" onClick={() => chooseWindowChromeMode('auto')}>Auto hide</button></span></span></div>
           <div className="about-row"><label className="tx" htmlFor="settings-currency">Currency</label><span className="r">
             {plans.data ? <Dropdown id="settings-currency" ariaLabel="Currency" value={plans.data.currency} options={currencies.map(code => ({ value: code, label: code }))} onChange={value => void metrora.setCurrency(value).then(finishCurrency)} width={92} /> : plans.error ? <SettingsErrorText error={plans.error} /> : <span className="set-cap">Loading…</span>}
             <button className="set-text-button" onClick={() => void metrora.resetCurrency().then(finishCurrency)}>Reset to USD</button>

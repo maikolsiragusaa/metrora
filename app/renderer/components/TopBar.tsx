@@ -95,17 +95,6 @@ export function TopBar({
           Open Code <span aria-hidden="true">↗</span>
         </button>
       )}
-      {capabilities.globalRefresh && onRefresh && (
-        <button
-          type="button"
-          className="btn btn-s refresh-button"
-          onClick={onRefresh}
-          disabled={refreshing}
-          aria-label={refreshing ? 'Refreshing' : 'Refresh'}
-        >
-          {refreshing ? 'Refreshing…' : 'Refresh'}
-        </button>
-      )}
       {capabilities.period && (
         <SegTabs options={PERIOD_OPTIONS} value={customRange ? '' : period} onChange={onPeriodChange} />
       )}
@@ -125,6 +114,17 @@ export function TopBar({
       )}
       {capabilities.claudeConfig && claudeConfigs && (
         <ConfigPicker configs={claudeConfigs} value={configSource} onSelect={onConfigSelect} />
+      )}
+      {capabilities.globalRefresh && onRefresh && (
+        <button
+          type="button"
+          className="btn btn-s refresh-button"
+          onClick={onRefresh}
+          disabled={refreshing}
+          aria-label={refreshing ? 'Refreshing' : 'Refresh'}
+        >
+          {refreshing ? 'Refreshing…' : 'Refresh'}
+        </button>
       )}
     </div>
   )

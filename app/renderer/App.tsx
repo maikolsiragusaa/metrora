@@ -109,8 +109,21 @@ function AppMain() {
 
   useEffect(() => {
     const saved = readStorage('theme')
-    if (saved === 'light' || saved === 'dark') document.documentElement.setAttribute('data-theme', saved)
-    else document.documentElement.removeAttribute('data-theme')
+    const root = document.documentElement
+    const bridge = (window as unknown as { metrora?: { platform?: string; setWindowChromeTheme?: (theme: 'dark' | 'light') => Promise<boolean> } }).metrora
+    root.dataset.platform = bridge?.platform ?? root.dataset.platform ?? ''
+    const media = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-color-scheme: dark)') : null
+    const apply = () => {
+      const resolved = saved === 'light' || saved === 'dark' ? saved : media?.matches ? 'dark' : 'light'
+      if (saved === 'light' || saved === 'dark') root.setAttribute('data-theme', saved)
+      else root.removeAttribute('data-theme')
+      if (bridge?.setWindowChromeTheme) void bridge.setWindowChromeTheme(resolved).catch(() => {})
+    }
+    apply()
+    if (saved !== 'light' && saved !== 'dark' && media) {
+      media.addEventListener('change', apply)
+      return () => media.removeEventListener('change', apply)
+    }
   }, [])
 
   useEffect(() => {

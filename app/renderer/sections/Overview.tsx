@@ -19,6 +19,7 @@ import type {
   DateRange,
   MenubarPayload,
   Period,
+  QuotaProvider,
   YieldJsonReport,
 } from '../lib/types'
 import type { Section } from '../lib/desktopNavigation'
@@ -333,6 +334,7 @@ export function OverviewContent({
 }) {
   const actReport = usePolled<ActReportJson>(() => metrora.getActReport(), [refreshToken], { enabled: ready, memoKey: 'overview-act' })
   const yieldReport = usePolled<YieldJsonReport>(() => metrora.getYield(period, provider), [period, provider, refreshToken], { enabled: ready, memoKey: `overview-yield|${period}|${provider}` })
+  const quota = usePolled<QuotaProvider[]>(() => Promise.resolve(metrora.getQuota?.() ?? []), [refreshToken], { enabled: Boolean(controlCenter && ready), memoKey: 'overview-quota' })
   const [shareOpen, setShareOpen] = useState(false)
   const { data, error } = overview
   const modelIndex = useMemo(() => data ? buildModelIndex(data) : new Map<string, string>(), [data])
@@ -390,6 +392,7 @@ export function OverviewContent({
           current={data.current}
           scope={data.current.label}
           providerLabel={providerLabel}
+          quota={quota.data}
           onNavigate={onNavigate}
           onShare={() => setShareOpen(true)}
         />

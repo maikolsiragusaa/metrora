@@ -163,6 +163,8 @@ export interface MetroraBridge extends ProjectBridge {
   opencodeActivate(bounds: OpenCodeViewBounds): Promise<OpenCodeRuntimeStatus>
   opencodeUpdateBounds(bounds: OpenCodeViewBounds): Promise<boolean>
   opencodeDeactivate(): Promise<boolean>
+  setWindowChromeTheme(theme: 'dark' | 'light'): Promise<boolean>
+  setWindowChromeMode(mode: 'always' | 'auto'): Promise<boolean>
   telemetryStatus(): Promise<TelemetryStatus | null>
   setTelemetryEnabled(enabled: boolean): Promise<TelemetryStatus | null>
   completeOnboarding(enabled: boolean): Promise<TelemetryStatus | null>
