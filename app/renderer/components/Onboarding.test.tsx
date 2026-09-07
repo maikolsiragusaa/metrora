@@ -101,6 +101,7 @@ describe('Onboarding', () => {
     expect(screen.getByRole('heading', { name: 'We found your AI tools' })).toBeInTheDocument()
     expect(screen.getByText('Codex')).toBeInTheDocument()
     expect(screen.getByText('Claude')).toBeInTheDocument()
+    expect(screen.getByText('Metrora found these AI tools across your local history.')).toBeInTheDocument()
     expect(screen.queryByText('OpenCode')).not.toBeInTheDocument()
     expect(screen.queryByText('Ollama')).not.toBeInTheDocument()
     expect(refreshFresh).not.toHaveBeenCalled()
@@ -123,7 +124,7 @@ describe('Onboarding', () => {
     expect(bridge.cliStatus).not.toHaveBeenCalled()
   })
 
-  it('densifies a large canonical source list instead of creating a tall scrollable card', () => {
+  it('adapts a large canonical source list without repetitive local-source labels', () => {
     const details = Array.from({ length: 12 }, (_, index) => ({
       id: `provider-${index}`,
       label: `Provider ${index}`,
@@ -137,8 +138,31 @@ describe('Onboarding', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Continue locally' }))
 
+    expect(document.querySelector('.onboarding-card-discover-many')).toBeInTheDocument()
     expect(document.querySelector('.onboarding-source-grid-many')).toBeInTheDocument()
-    expect(screen.getAllByText('Local source')).toHaveLength(12)
+    expect(screen.queryByText('Local source')).not.toBeInTheDocument()
+    expect(screen.getByText('Metrora found these AI tools across your local history.')).toBeInTheDocument()
+  })
+
+  it('uses truthful adaptive density tiers for empty, sparse, and standard inventories', () => {
+    const { rerender } = render(<Onboarding overview={overview(payload({ providerDetails: [], providers: {} }))} ready onDone={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Continue locally' }))
+    expect(document.querySelector('.onboarding-card-discover-empty')).toBeInTheDocument()
+
+    const sparse = payload({ providerDetails: [
+      { id: 'codex', label: 'Codex', cost: 0 },
+      { id: 'claude', label: 'Claude', cost: 0 },
+    ] })
+    rerender(<Onboarding overview={overview(sparse)} ready onDone={() => {}} />)
+    expect(document.querySelector('.onboarding-card-discover-sparse')).toBeInTheDocument()
+
+    const standard = payload({ providerDetails: Array.from({ length: 6 }, (_, index) => ({
+      id: `provider-${index}`,
+      label: `Provider ${index}`,
+      cost: 0,
+    })) })
+    rerender(<Onboarding overview={overview(standard)} ready onDone={() => {}} />)
+    expect(document.querySelector('.onboarding-card-discover-standard')).toBeInTheDocument()
   })
 
   it('shows truthful empty and partial discovery states', () => {
@@ -146,6 +170,7 @@ describe('Onboarding', () => {
     const { rerender } = render(<Onboarding overview={overview(empty)} ready onDone={() => {}} />)
     fireEvent.click(screen.getByRole('button', { name: 'Continue locally' }))
     expect(screen.getByText('No local sources detected')).toBeInTheDocument()
+    expect(document.querySelector('.onboarding-card-discover-empty')).toBeInTheDocument()
 
     rerender(<Onboarding overview={overview(payload(), { error: { kind: 'timeout', message: 'timeout' } })} ready onDone={() => {}} />)
     expect(screen.getByText(/last local snapshot is available/i)).toBeInTheDocument()

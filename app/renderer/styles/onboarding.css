@@ -2103,3 +2103,93 @@
     max-height: calc(100vh - 82px) !important;
   }
 }
+
+/* Final content-balance pass. Discover keeps the same visual language, but
+   its surface now follows the amount of canonical inventory it has to show.
+   This prevents a small result set from inheriting the large-list footprint
+   and keeps the privacy note and actions close to the live content. */
+.onboarding-card-discover .onboarding-privacy-note { margin-top: 22px; }
+
+.onboarding-card-discover-sparse .onboarding-source-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 720px;
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.onboarding-card-discover-sparse .onboarding-source-grid-single {
+  grid-template-columns: minmax(0, 360px);
+  justify-content: center;
+}
+
+.onboarding-card-discover-empty .onboarding-source-grid {
+  max-width: 720px;
+  margin-right: auto;
+  margin-left: auto;
+}
+
+@media (min-width: 721px) {
+  .onboarding-card-frame-discover-empty,
+  .onboarding-card-frame-discover-sparse,
+  .onboarding-card-frame-discover-standard,
+  .onboarding-card-frame-discover-many {
+    height: auto !important;
+    max-height: calc(100vh - 112px) !important;
+  }
+
+  .onboarding-card-frame-discover-empty .onboarding-card,
+  .onboarding-card-frame-discover-sparse .onboarding-card,
+  .onboarding-card-frame-discover-standard .onboarding-card,
+  .onboarding-card-frame-discover-many .onboarding-card {
+    height: auto !important;
+    flex: 0 0 auto !important;
+  }
+
+  .onboarding-card-frame-discover-empty .onboarding-card-discover {
+    min-height: min(470px, calc(100vh - 168px)) !important;
+  }
+
+  .onboarding-card-frame-discover-sparse .onboarding-card-discover {
+    min-height: min(520px, calc(100vh - 168px)) !important;
+  }
+
+  .onboarding-card-frame-discover-standard .onboarding-card-discover {
+    min-height: min(600px, calc(100vh - 168px)) !important;
+  }
+
+  .onboarding-card-frame-discover-many .onboarding-card-discover {
+    min-height: min(806px, calc(100vh - 168px)) !important;
+  }
+}
+
+@media (min-width: 721px) and (max-height: 900px) {
+  .onboarding-card-frame-discover-empty,
+  .onboarding-card-frame-discover-sparse,
+  .onboarding-card-frame-discover-standard,
+  .onboarding-card-frame-discover-many {
+    max-height: calc(100vh - 119px) !important;
+  }
+
+  .onboarding-card-frame-discover-empty .onboarding-card-discover { min-height: min(470px, calc(100vh - 119px)) !important; }
+  .onboarding-card-frame-discover-sparse .onboarding-card-discover { min-height: min(520px, calc(100vh - 119px)) !important; }
+  .onboarding-card-frame-discover-standard .onboarding-card-discover { min-height: min(600px, calc(100vh - 119px)) !important; }
+  .onboarding-card-frame-discover-many .onboarding-card-discover { min-height: min(806px, calc(100vh - 119px)) !important; }
+}
+
+@media (min-width: 721px) and (max-height: 760px) {
+  .onboarding-card-frame-discover-empty,
+  .onboarding-card-frame-discover-sparse,
+  .onboarding-card-frame-discover-standard,
+  .onboarding-card-frame-discover-many {
+    max-height: calc(100vh - 82px) !important;
+  }
+
+  .onboarding-card-frame-discover-empty .onboarding-card-discover { min-height: min(470px, calc(100vh - 82px)) !important; }
+  .onboarding-card-frame-discover-sparse .onboarding-card-discover { min-height: min(520px, calc(100vh - 82px)) !important; }
+  .onboarding-card-frame-discover-standard .onboarding-card-discover { min-height: min(600px, calc(100vh - 82px)) !important; }
+  .onboarding-card-frame-discover-many .onboarding-card-discover { min-height: min(806px, calc(100vh - 82px)) !important; }
+}
+
+@media (max-width: 720px) {
+  .onboarding-card-discover .onboarding-privacy-note { margin-top: 12px; }
+}

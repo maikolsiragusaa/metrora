@@ -203,6 +203,8 @@ function WelcomeStep({ onContinue }: { onContinue: () => void }) {
 
 type DiscoveryEntry = { id: string; label: string }
 
+type DiscoverDensity = 'empty' | 'sparse' | 'standard' | 'many'
+
 function displayProviderLabel(id: string): string {
   return id.split(/[-\s]+/u).filter(Boolean).map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ')
 }
@@ -215,6 +217,13 @@ function discoveryEntries(data: MenubarPayload | null): DiscoveryEntry[] {
   return Object.keys(data.current.providers).map(id => ({ id, label: displayProviderLabel(id) }))
 }
 
+function getDiscoverDensity(count: number): DiscoverDensity {
+  if (count === 0) return 'empty'
+  if (count <= 2) return 'sparse'
+  if (count <= 6) return 'standard'
+  return 'many'
+}
+
 function SourceCard({ entry, status }: { entry: DiscoveryEntry; status: 'detected' | 'refreshing' | 'available' }) {
   const icon = status === 'refreshing' ? <span className="onboarding-spinner" /> : <Icon name="check" size={15} />
   const text = status === 'refreshing' ? 'Refreshing…' : status === 'available' ? 'Snapshot available' : 'Detected'
@@ -224,7 +233,6 @@ function SourceCard({ entry, status }: { entry: DiscoveryEntry; status: 'detecte
       <span className="onboarding-source-copy">
         <strong>{entry.label}</strong>
         <span className={`onboarding-source-state ${status}`}><i>{icon}</i>{text}</span>
-        <small>Local source</small>
       </span>
       <span className={`onboarding-source-status ${status}`} aria-label={text}>{icon}</span>
     </article>
@@ -238,16 +246,17 @@ function DiscoverStep({ overview, ready, onContinue, onSkip }: {
   onSkip: () => void
 }) {
   const entries = useMemo(() => discoveryEntries(overview.data), [overview.data])
+  const density = getDiscoverDensity(entries.length)
   const refreshing = overview.loading && overview.data !== null
   const unavailable = overview.error !== null && overview.data === null
   const subtitle = unavailable
     ? 'Metrora could not read the local source index yet. You can continue and retry from the app.'
     : overview.data === null
       ? 'Metrora is scanning your device and connecting local sources to build your AI control center.'
-      : 'Metrora found the local sources reported by its lifetime inventory.'
+      : 'Metrora found these AI tools across your local history.'
 
   return (
-    <section className="onboarding-card onboarding-card-discover" aria-labelledby="onboarding-title">
+    <section className={`onboarding-card onboarding-card-discover onboarding-card-discover-${density}`} aria-labelledby="onboarding-title">
       <BrandLockup compact />
       <header className="onboarding-heading">
         <h1 id="onboarding-title">We found your AI tools</h1>
@@ -256,7 +265,11 @@ function DiscoverStep({ overview, ready, onContinue, onSkip }: {
 
       {overview.error && <div className="onboarding-inline-status onboarding-inline-status-error" role="status"><Icon name="info" size={18} /> <span>{overview.data ? 'The last local snapshot is available; some sources may need another scan.' : 'Local source discovery is unavailable right now.'}</span></div>}
 
-      <div className={`onboarding-source-grid ${entries.length > 6 ? 'onboarding-source-grid-many' : ''}`} aria-live="polite">
+      <div className={[
+        'onboarding-source-grid',
+        entries.length > 6 ? 'onboarding-source-grid-many' : '',
+        entries.length === 1 ? 'onboarding-source-grid-single' : '',
+      ].filter(Boolean).join(' ')} aria-live="polite">
         {entries.length > 0 ? entries.map(entry => (
           <SourceCard key={entry.id} entry={entry} status={refreshing ? 'refreshing' : overview.error ? 'available' : 'detected'} />
         )) : (
@@ -494,7 +507,7 @@ function ReadyStep({ overview, facts, companionConnected, onDone, onOpenSettings
       </header>
 
       <div className="onboarding-summary-grid">
-        <SummaryCard icon="phone" tone="tone-blue" value={countLabel(data?.current.sessions ?? null)} label="Sessions found" detail={data?.current.sessions ? 'Past work in the lifetime inventory' : 'No sessions in the lifetime inventory'} />
+        <SummaryCard icon="grid" tone="tone-blue" value={countLabel(data?.current.sessions ?? null)} label="Sessions found" detail={data?.current.sessions ? 'Past work in the lifetime inventory' : 'No sessions in the lifetime inventory'} />
         <SummaryCard icon="grid" tone="tone-purple" value={countLabel(modelCount(data))} label="Models observed" detail={modelCount(data) === null ? 'Not available in this snapshot' : 'From the canonical model accounting'} />
         <SummaryCard icon="folder" tone="tone-green" value={countLabel(sourceProjectCount(data))} label="Projects detected" detail={sourceProjectCount(data) === null ? 'Project catalog unavailable' : 'Local source projects'} />
         <SummaryCard icon="database" tone="tone-yellow" value={capacityValue} label="Capacity signals" detail={quota ? 'Provider-reported evidence available' : quota === null ? 'Checking provider authority' : 'No provider-reported quota available'} />
@@ -582,6 +595,11 @@ export function Onboarding({ overview, inventory: inventoryProp, ready, onDone, 
   ) : (
     <ReadyStep overview={inventory} facts={facts} companionConnected={companionConnected} onDone={onDone} onOpenSettings={onOpenSettings} />
   )
+  const frameClass = [
+    'onboarding-card-frame',
+    `onboarding-card-frame-${step}`,
+    step === 'discover' ? `onboarding-card-frame-discover-${getDiscoverDensity(discoveryEntries(inventory.data).length)}` : '',
+  ].filter(Boolean).join(' ')
 
   return createPortal(
     <div className={motionClass('onboarding-surface', 'onboarding-surface-in')} role="dialog" aria-modal="true" aria-labelledby="onboarding-title" onKeyDown={onKeyDown}>
@@ -597,7 +615,7 @@ export function Onboarding({ overview, inventory: inventoryProp, ready, onDone, 
         </div>
         <OnboardingStepper current={step} onSelect={goToStep} />
         <div
-          className={motionClass(`onboarding-card-frame onboarding-card-frame-${step}`, 'onboarding-card-in')}
+          className={motionClass(frameClass, 'onboarding-card-in')}
           key={step}
           ref={node => { cardRef.current = node }}
           tabIndex={-1}
