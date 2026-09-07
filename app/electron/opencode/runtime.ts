@@ -7,6 +7,7 @@ import path from 'node:path'
 
 import { readPreferredOpenCodePort, runtimePaths, writePreferredOpenCodePort, writeRuntimeFiles, writeUsageSnapshot, type OpenCodeRuntimePaths } from './config'
 import { sanitizeUsageSnapshot } from './snapshot'
+import { prepareOpenCodeStorage, quarantineImportedOpenCodeDatabase, type OpenCodeStoragePreparation } from './storage'
 import {
   OPENCODE_COMMIT,
   OPENCODE_CUSTOM_TOOL_IDS,
@@ -19,6 +20,7 @@ import {
 } from './types'
 
 const DEFAULT_HEALTH_TIMEOUT_MS = 12_000
+const DEFAULT_TOOL_DISCOVERY_TIMEOUT_MS = 30_000
 const DEFAULT_POLL_INTERVAL_MS = 100
 const REQUEST_TIMEOUT_MS = 1_000
 const STOP_TIMEOUT_MS = 1_500
@@ -50,6 +52,7 @@ export type OpenCodeRuntimeOptions = {
   arch?: string
   executableOverride?: string
   workingDirectory?: string
+  baseEnv?: NodeJS.ProcessEnv
   spawnProcess?: (file: string, args: string[], options: OpenCodeSpawnOptions) => SpawnedOpenCodeProcess
   fetchImpl?: OpenCodeFetch
   acquirePort?: () => Promise<number>
@@ -105,6 +108,12 @@ export function createLaunchEnvironment(options: {
     OPENCODE_SERVER_PASSWORD: options.password,
     OPENCODE_CONFIG_DIR: options.paths.runtimeDir,
     OPENCODE_CONFIG: options.paths.configPath,
+    OPENCODE_DATA_DIR: options.paths.dataDir,
+    OPENCODE_DB: options.paths.databasePath,
+    XDG_DATA_HOME: options.paths.dataDir,
+    XDG_CACHE_HOME: options.paths.cacheDir,
+    XDG_STATE_HOME: options.paths.stateDir,
+    XDG_CONFIG_HOME: options.paths.runtimeDir,
     OPENCODE_DISABLE_AUTOUPDATE: '1',
     METRORA_USAGE_SNAPSHOT_FILE: options.paths.snapshotPath,
   }
@@ -245,7 +254,7 @@ export class OpenCodeRuntime {
     }
   }
 
-  private async startInternal(): Promise<OpenCodeRuntimeStatus> {
+  private async startInternal(allowStorageImport = true): Promise<OpenCodeRuntimeStatus> {
     if (this.state === 'ready') return this.status()
     this.state = 'starting'
     this.detail = null
@@ -253,12 +262,21 @@ export class OpenCodeRuntime {
     const abort = new AbortController()
     this.startupAbort = abort
     const paths = runtimePaths(this.options.userDataPath)
+    let storagePreparation: OpenCodeStoragePreparation = { outcome: 'existing' }
 
     try {
       const executable = resolveOpenCodeExecutable(this.options)
       if (!executable) throw new OpenCodeError('not-staged', `OpenCode ${OPENCODE_VERSION} is not staged for this platform.`)
 
       await writeRuntimeFiles(paths)
+      if (allowStorageImport) {
+        storagePreparation = await prepareOpenCodeStorage(paths, {
+          userDataPath: this.options.userDataPath,
+          platform: this.options.platform,
+          environment: this.options.baseEnv,
+          onWarning: message => console.warn(`[Metrora] ${message}`),
+        })
+      }
       await ensureInitialSnapshot(paths)
       // Usage reconciliation can be slow and is not needed to launch the
       // bundled OpenCode UI. Keep it off the activation critical path.
@@ -274,7 +292,7 @@ export class OpenCodeRuntime {
         args,
         {
           cwd: this.options.workingDirectory ?? this.options.appPath,
-          env: createLaunchEnvironment({ paths, username: SERVER_USERNAME, password, toolBridgeSpec: this.options.toolBridgeSpec }),
+          env: createLaunchEnvironment({ baseEnv: this.options.baseEnv, paths, username: SERVER_USERNAME, password, toolBridgeSpec: this.options.toolBridgeSpec }),
           stdio: ['ignore', 'ignore', 'ignore'],
           windowsHide: true,
         },
@@ -313,6 +331,13 @@ export class OpenCodeRuntime {
       this.child = null
       try { child?.kill() } catch { /* best effort */ }
       if (child) await waitForExit(child, STOP_TIMEOUT_MS)
+      if (allowStorageImport && storagePreparation.outcome === 'imported' && child) {
+        const rejectedPath = await quarantineImportedOpenCodeDatabase(paths)
+        if (rejectedPath) {
+          console.warn(`[Metrora] Imported OpenCode history could not start in the pinned runtime; using a clean isolated store. Preserved at ${rejectedPath}`)
+          return await this.startInternal(false)
+        }
+      }
       this.state = 'unavailable'
       this.customToolRegistered = error instanceof OpenCodeError && error.kind === 'custom-tool' ? false : this.customToolRegistered
       this.detail = error instanceof OpenCodeError && error.kind !== 'protocol'
@@ -351,7 +376,13 @@ export class OpenCodeRuntime {
 
   private async verifyCustomTools(origin: string, authorization: string, signal: AbortSignal): Promise<boolean> {
     const fetchImpl = this.options.fetchImpl ?? ((url, init) => fetch(url, init))
-    const response = await fetchImpl(`${origin}/experimental/tool/ids`, { headers: { Authorization: authorization }, signal: abortAfter(signal, REQUEST_TIMEOUT_MS) })
+    // OpenCode reports health before its extension registry has finished the
+    // first cold discovery. Keep the short timeout for health polling, but
+    // allow the one-shot tool registry request its bounded cold-start budget.
+    const toolDiscoveryTimeoutMs = this.options.healthTimeoutMs === undefined
+      ? DEFAULT_TOOL_DISCOVERY_TIMEOUT_MS
+      : Math.max(REQUEST_TIMEOUT_MS, this.options.healthTimeoutMs)
+    const response = await fetchImpl(`${origin}/experimental/tool/ids`, { headers: { Authorization: authorization }, signal: abortAfter(signal, toolDiscoveryTimeoutMs) })
     if (!response.ok) throw new OpenCodeError('custom-tool', 'OpenCode tool discovery was unavailable.')
     const value = await responseJson(response)
     if (!Array.isArray(value)) throw new OpenCodeError('custom-tool', 'OpenCode tool discovery returned an invalid response.')
