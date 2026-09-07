@@ -81,6 +81,16 @@ function SplashStatus({ progress }: { progress: Progress }) {
   )
 }
 
+function scanFraction(progress: Progress): number | null {
+  if (progress.order.length === 0) return null
+  const completed = progress.order.reduce((total, provider) => total + (progress.status[provider] === 'done' ? 1 : 0), 0)
+  const active = progress.order.find(provider => progress.status[provider] === 'active')
+  const activeFraction = active === 'claude' && progress.claudeTotal > 0
+    ? Math.min(1, Math.max(0, progress.claudeDone / progress.claudeTotal))
+    : 0
+  return Math.min(1, (completed + activeFraction) / progress.order.length)
+}
+
 /** Full-window Metrora startup surface over the local scan. */
 export function Splash({ hasData, hasError }: { hasData: boolean; hasError: boolean }) {
   const [phase, setPhase] = useState<Phase>('lit')
@@ -117,10 +127,22 @@ export function Splash({ hasData, hasError }: { hasData: boolean; hasError: bool
   if (phase === 'done' || typeof document === 'undefined') return null
 
   const base = phase === 'out' ? 'splash splash-out' : 'splash'
+  const fraction = scanFraction(progress)
   return createPortal(
     <div className={motionClass(base, 'splash-lit')} aria-label="Metrora is loading">
       <div className="splash-mark"><MetroraMark size={76} /></div>
       <div className="splash-word">Metrora</div>
+      <div className="splash-subtitle">Preparing your AI Control Center</div>
+      <div
+        className={fraction === null ? 'splash-progress splash-progress-indeterminate' : 'splash-progress'}
+        role="progressbar"
+        aria-label="Local source scan progress"
+        aria-valuemin={fraction === null ? undefined : 0}
+        aria-valuemax={fraction === null ? undefined : 100}
+        aria-valuenow={fraction === null ? undefined : Math.round(fraction * 100)}
+      >
+        <span style={fraction === null ? undefined : { width: `${fraction * 100}%` }} />
+      </div>
       <div className="splash-version">v{version}</div>
       {phase === 'lit' && <SplashStatus progress={progress} />}
     </div>,

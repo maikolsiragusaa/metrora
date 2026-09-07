@@ -13,10 +13,12 @@ import { UpdateBanner } from './components/UpdateBanner'
 import { rangeLabel, TopBar } from './components/TopBar'
 import { useDesktopScope } from './hooks/useDesktopScope'
 import { useDesktopShortcuts } from './hooks/useDesktopShortcuts'
-import { useDesktopTelemetry } from './hooks/useDesktopTelemetry'
 import { useOverviewRuntime } from './hooks/useOverviewRuntime'
+import { usePolled } from './hooks/usePolled'
 import { PERIOD_LABELS, SECTION_TITLES } from './lib/desktopSections'
 import { motionClass } from './lib/motion'
+import { completeOnboarding, shouldShowOnboarding } from './lib/onboardingState'
+import { metrora } from './lib/ipc'
 import { persistRefreshValue, readRefreshValue, refreshValueToMs, RefreshCadenceContext, type RefreshCadence } from './lib/refreshCadence'
 import { shortcutLabel, shortcutRangeLabel } from './lib/shortcuts'
 import { readStorage } from './lib/storage'
@@ -98,13 +100,15 @@ function AppMain() {
     detectedProviders,
     setDetectedProviders,
   })
-  const { onboardingStatus, finishOnboarding, trackEvent } = useDesktopTelemetry({
-    overviewData: overview.data,
-    period,
-    provider,
-    customRange,
-    scopedClaudeConfigSource,
-  })
+  const [onboardingVisible, setOnboardingVisible] = useState(shouldShowOnboarding)
+  // Onboarding inventory is intentionally a separate lifetime read. It keeps
+  // the user's Home period/provider/project scope untouched while reusing the
+  // same canonical menubar-json authority as the rest of the desktop.
+  const onboardingInventory = usePolled(
+    () => metrora.getOverview('lifetime', 'all'),
+    [],
+    { intervalMs: 60_000, enabled: onboardingVisible },
+  )
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
@@ -134,14 +138,22 @@ function AppMain() {
   const navigate = useCallback((next: Section, pane: SettingsPane = 'general') => {
     setSettingsPane(pane)
     setSection(next)
-    trackEvent('section_view', { section: next })
-  }, [trackEvent])
+  }, [])
 
   const openCode = useCallback(() => {
     setSettingsPane('general')
     setSection('code')
-    trackEvent('section_view', { section: 'code' })
-  }, [trackEvent])
+  }, [])
+
+  const finishLocalOnboarding = useCallback(() => {
+    completeOnboarding()
+    setOnboardingVisible(false)
+  }, [])
+
+  const openSettingsFromOnboarding = useCallback(() => {
+    finishLocalOnboarding()
+    navigate('settings')
+  }, [finishLocalOnboarding, navigate])
 
   useDesktopShortcuts({ navigate, refresh: refreshVisible })
 
@@ -156,13 +168,28 @@ function AppMain() {
     onProjectScopeSelect('all')
   }, [metroraProjectId, onProjectScopeSelect, projectScope])
 
+  if (onboardingVisible) {
+    return (
+      <MetroraShell sidebar={null} className="metrora-onboarding-shell">
+        <ToastHost />
+        <Splash hasData={overview.data != null} hasError={overview.error != null} />
+        <Onboarding
+          overview={overview}
+          inventory={onboardingInventory}
+          ready={ready}
+          onDone={finishLocalOnboarding}
+          onOpenSettings={openSettingsFromOnboarding}
+        />
+      </MetroraShell>
+    )
+  }
+
   return (
     <MetroraShell
       sidebar={<MetroraSidebar active={section} onNavigate={navigate} />}
     >
       <ToastHost />
       <Splash hasData={overview.data != null} hasError={overview.error != null} />
-      {onboardingStatus && <Onboarding defaultEnabled={onboardingStatus.defaultEnabled} onDone={finishOnboarding} />}
       <div className={`ct ct-${section}`} data-metrora-section={section}>
         <div className={overview.switching ? 'switch-line on' : 'switch-line'} aria-hidden="true" />
         <UpdateBanner />

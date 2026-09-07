@@ -30,6 +30,9 @@ const mocks = vi.hoisted(() => ({
   getYield: vi.fn(),
   getDevices: vi.fn(),
   getDevicesScan: vi.fn(),
+  getShareStatus: vi.fn(),
+  startShare: vi.fn(),
+  openExternal: vi.fn(),
   getIdentity: vi.fn(),
   cliStatus: vi.fn(),
   getPriceOverrides: vi.fn(),
@@ -151,6 +154,10 @@ function installDefaultMocks() {
     details: [],
   })
   mocks.getIdentity.mockResolvedValue({ name: 'Metrora Mac', fingerprint: 'AA:BB:CC' })
+  mocks.getShareStatus.mockResolvedValue({ sharing: false, name: 'Metrora Desktop', port: 0, host: null, addresses: [], connectPayload: null, always: false, peers: 0, pending: [] })
+  mocks.startShare.mockResolvedValue({ sharing: false, name: 'Metrora Desktop', port: 0, host: null, addresses: [], connectPayload: null, always: false, peers: 0, pending: [] })
+  mocks.openExternal.mockResolvedValue(undefined)
+  mocks.cliStatus.mockResolvedValue({ found: false, path: null })
   mocks.getDevicesScan.mockResolvedValue({ found: [] })
   mocks.getDevices.mockResolvedValue({
     perDevice: [],
@@ -177,6 +184,7 @@ describe('App shortcuts', () => {
   beforeEach(() => {
     installDefaultMocks()
     localStorage.clear()
+    localStorage.setItem('metrora.onboarding.version', '1')
     // Pin the boot period so the provider/config tests below are independent of
     // the app-wide default ('today'); tests that exercise the default set it.
     localStorage.setItem('metrora.defaultPeriod', '30days')
@@ -481,6 +489,44 @@ describe('App shortcuts', () => {
   })
 })
 
+describe('first-run onboarding', () => {
+  beforeEach(() => {
+    installDefaultMocks()
+    localStorage.clear()
+    localStorage.setItem('metrora.defaultPeriod', '30days')
+    document.documentElement.removeAttribute('data-theme')
+  })
+
+  it('shows the entry flow on first launch and keeps it completed across a remount', async () => {
+    const firstLaunch = render(<App />)
+
+    expect(await screen.findByRole('dialog', { name: 'Welcome to Metrora' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('Metrora AI Control Center')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continue locally' }))
+    expect(await screen.findByRole('heading', { name: 'We found your AI tools' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Skip for now' }))
+    expect(await screen.findByRole('heading', { name: 'Code with freedom.' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    expect(await screen.findByRole('heading', { name: 'Take Metrora with you' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Skip for now' }))
+    expect(await screen.findByRole('heading', { name: 'You’re ready' })).toBeInTheDocument()
+    await waitFor(() => expect(mocks.getOverview).toHaveBeenCalledWith('lifetime', 'all'))
+    // The onboarding inventory is lifetime-only; the persisted Home scope stays
+    // exactly where the user left it.
+    expect(localStorage.getItem('metrora.defaultPeriod')).toBe('30days')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Metrora' }))
+    await waitFor(() => expect(localStorage.getItem('metrora.onboarding.version')).toBe('1'))
+    expect(await screen.findByLabelText('Metrora AI Control Center')).toBeInTheDocument()
+
+    firstLaunch.unmount()
+    render(<App />)
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Welcome to Metrora' })).not.toBeInTheDocument())
+    expect(await screen.findByLabelText('Metrora AI Control Center')).toBeInTheDocument()
+  })
+})
+
 describe('provider prefetch storm', () => {
   const PROVIDERS = [
     'claude', 'codex', 'gemini', 'grok', 'copilot', 'droid',
@@ -510,6 +556,7 @@ describe('provider prefetch storm', () => {
       details: [],
     })
     localStorage.clear()
+    localStorage.setItem('metrora.onboarding.version', '1')
     // Pin the cadence to 30s so the fake-timer soak math below is independent of
     // the app-wide default (bumped to 60s for energy).
     localStorage.setItem('metrora.refreshInterval', '30s')
@@ -563,6 +610,7 @@ describe('energy: hidden-window polling', () => {
   beforeEach(() => {
     installDefaultMocks()
     localStorage.clear()
+    localStorage.setItem('metrora.onboarding.version', '1')
     localStorage.setItem('metrora.refreshInterval', '30s') // pin cadence for the soak math
     __resetPolledMemo()
   })
@@ -614,6 +662,7 @@ describe('currency correctness', () => {
     // Reset the module-level display currency so a prior test never bleeds in.
     setActiveCurrency(USD)
     localStorage.clear()
+    localStorage.setItem('metrora.onboarding.version', '1')
     // Pin the boot period so the memo keys below match the app's boot fetch,
     // independent of the app-wide default ('today').
     localStorage.setItem('metrora.defaultPeriod', '30days')

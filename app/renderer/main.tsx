@@ -14,6 +14,7 @@ import './styles/workspace-guidance.css'
 import './ui/tokens.css'
 import './shell/metrora-shell.css'
 import './styles/control-center-home.css'
+import './styles/onboarding.css'
 
 const root = document.getElementById('root')
 if (!root) throw new Error('#root not found')
