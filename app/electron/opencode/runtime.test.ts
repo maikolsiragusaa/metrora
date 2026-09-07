@@ -82,6 +82,51 @@ describe('OpenCode upstream sidecar runtime', () => {
     expect(OPENCODE_COMMIT).toBe('b04697366f05419e9bd7a92f841813dd976161c9')
   })
 
+  it('reuses the pinned runtime environment for maintenance commands and keeps every storage root private', async () => {
+    const root = tempDirectory()
+    const userData = join(root, 'user-data')
+    const executable = join(root, 'opencode.exe')
+    writeFileSync(executable, 'official binary placeholder')
+    const commandRuntime = new OpenCodeRuntime({
+      appPath: root,
+      resourcesPath: root,
+      userDataPath: userData,
+      isPackaged: false,
+      executableOverride: executable,
+      baseEnv: {
+        OPENCODE_DB: join(root, 'standalone', 'opencode.db'),
+        XDG_DATA_HOME: join(root, 'standalone-data'),
+        XDG_CACHE_HOME: join(root, 'standalone-cache'),
+        XDG_STATE_HOME: join(root, 'standalone-state'),
+        XDG_CONFIG_HOME: join(root, 'standalone-config'),
+        OPENCODE_CONFIG_DIR: join(root, 'standalone-config'),
+        OPENCODE_CONFIG: join(root, 'standalone-config', 'opencode.json'),
+        METRORA_USAGE_SNAPSHOT_FILE: 'must-be-replaced',
+      },
+      randomPassword: () => 'p'.repeat(64),
+    })
+
+    const command = await commandRuntime.createCommandEnvironment()
+    const paths = runtimePaths(userData)
+    expect(command.executablePath).toBe(executable)
+    expect(command.paths).toEqual(paths)
+    expect(command.environment).toEqual(expect.objectContaining({
+      OPENCODE_DB: paths.databasePath,
+      OPENCODE_CONFIG_DIR: paths.runtimeDir,
+      OPENCODE_CONFIG: paths.configPath,
+      OPENCODE_DATA_DIR: paths.dataDir,
+      XDG_DATA_HOME: paths.dataDir,
+      XDG_CACHE_HOME: paths.cacheDir,
+      XDG_STATE_HOME: paths.stateDir,
+      XDG_CONFIG_HOME: paths.runtimeDir,
+      METRORA_USAGE_SNAPSHOT_FILE: paths.snapshotPath,
+      OPENCODE_SERVER_USERNAME: 'metrora',
+      OPENCODE_SERVER_PASSWORD: 'p'.repeat(64),
+    }))
+    expect(command.environment.OPENCODE_DB).not.toBe(join(root, 'standalone', 'opencode.db'))
+    expect(command.environment.XDG_DATA_HOME).not.toBe(join(root, 'standalone-data'))
+  })
+
   it('starts serve on loopback with per-launch auth, verifies health/tool discovery, and exposes no secret in status', async () => {
     const root = tempDirectory()
     const userData = join(root, 'user-data')

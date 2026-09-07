@@ -10,7 +10,7 @@ function readBounds(element: HTMLDivElement): OpenCodeViewBounds | null {
 }
 
 /** Empty renderer host only: the actual Code surface is a main-process View. */
-export function OpenCodeHost() {
+export function OpenCodeHost({ restartToken = 0 }: { restartToken?: number }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const [state, setState] = useState<'loading' | 'ready' | 'unavailable'>('loading')
 
@@ -18,6 +18,7 @@ export function OpenCodeHost() {
     const host = hostRef.current
     if (!host) return
     let active = true
+    setState('loading')
     const bounds = () => {
       const value = readBounds(host)
       if (value) void metrora.opencodeUpdateBounds(value).catch(() => {})
@@ -44,7 +45,7 @@ export function OpenCodeHost() {
       window.removeEventListener('resize', bounds)
       void metrora.opencodeDeactivate().catch(() => {})
     }
-  }, [])
+  }, [restartToken])
 
   return (
     <div ref={hostRef} className="code-view-host" data-testid="opencode-web-contents-host" aria-label="OpenCode upstream surface">

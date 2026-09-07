@@ -74,6 +74,13 @@ export type OpenCodeExecutableResolution = Pick<OpenCodeRuntimeOptions, 'appPath
   executableOverride?: string
 }
 
+/** Main-process-only command authority for maintenance commands. */
+export type OpenCodeCommandEnvironment = {
+  executablePath: string
+  environment: NodeJS.ProcessEnv
+  paths: OpenCodeRuntimePaths
+}
+
 /** Resolve only the deterministic staged binary; never search PATH. */
 export function resolveOpenCodeExecutable(options: OpenCodeExecutableResolution): string | null {
   if (options.executableOverride && !path.isAbsolute(options.executableOverride)) return null
@@ -231,6 +238,32 @@ export class OpenCodeRuntime {
   /** Main-process-only access to the current Basic Auth material. */
   getConnection(): OpenCodeConnection | null {
     return this.connection ? { ...this.connection } : null
+  }
+
+  /**
+   * Build the same private path/environment contract used by the server. The
+   * caller must still serialize maintenance with the running WebContentsView;
+   * this method never starts a second OpenCode authority.
+   */
+  async createCommandEnvironment(): Promise<OpenCodeCommandEnvironment> {
+    const executablePath = resolveOpenCodeExecutable(this.options)
+    if (!executablePath) throw new OpenCodeError('not-staged', `OpenCode ${OPENCODE_VERSION} is not staged for this platform.`)
+    const paths = runtimePaths(this.options.userDataPath)
+    await writeRuntimeFiles(paths)
+    const password = this.connection?.password ?? this.options.randomPassword?.() ?? randomBytes(32).toString('hex')
+    if (!password || password.length < 32) throw new OpenCodeError('auth', 'OpenCode maintenance credentials could not be generated.')
+    return {
+      executablePath,
+      environment: createLaunchEnvironment({
+        baseEnv: this.options.baseEnv,
+        paths,
+        username: SERVER_USERNAME,
+        password,
+        toolBridgeSpec: this.options.toolBridgeSpec,
+        accountingEnv: this.options.accountingEnv,
+      }),
+      paths,
+    }
   }
 
   async start(): Promise<OpenCodeRuntimeStatus> {

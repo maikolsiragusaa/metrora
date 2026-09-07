@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { runtimePaths } from './config'
 import { OpenCodeRuntime, type OpenCodeFetch, type SpawnedOpenCodeProcess } from './runtime'
-import { prepareOpenCodeStorage, quarantineImportedOpenCodeDatabase } from './storage'
+import { prepareOpenCodeStorage, quarantineImportedOpenCodeDatabase, snapshotOpenCodeDatabase } from './storage'
 import { OPENCODE_CUSTOM_TOOL_IDS, OPENCODE_VERSION } from './types'
 
 const storageTestControls = vi.hoisted(() => ({
@@ -223,6 +223,26 @@ describe('Metrora-owned OpenCode storage continuity', () => {
       sqlitePrototype.serialize = originalSerialize
       external.database.close()
     }
+  })
+
+  it('creates an owned export snapshot without changing the external main database or WAL', async () => {
+    const root = tempDirectory()
+    const external = createExternalDatabase(root)
+    const snapshotPath = join(root, 'export-snapshot.db')
+    const beforeMain = fingerprint(external.path)
+    const beforeWal = existsSync(`${external.path}-wal`) ? fingerprint(`${external.path}-wal`) : null
+
+    await expect(snapshotOpenCodeDatabase(external.path, snapshotPath)).resolves.toBeUndefined()
+
+    expect(fingerprint(external.path)).toEqual(beforeMain)
+    expect(beforeWal && fingerprint(`${external.path}-wal`)).toEqual(beforeWal)
+    expect(existsSync(snapshotPath)).toBe(true)
+    expect(existsSync(`${snapshotPath}-wal`)).toBe(false)
+
+    const snapshot = new DatabaseSync(snapshotPath, { readOnly: true })
+    expect(snapshot.prepare('SELECT value FROM sentinel').all()).toEqual([{ value: 'external-authority' }])
+    snapshot.close()
+    external.database.close()
   })
 
   it('reuses the Metrora-owned database across restart and never chooses it as a legacy source', async () => {

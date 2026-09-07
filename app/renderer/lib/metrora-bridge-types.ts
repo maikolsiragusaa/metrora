@@ -30,6 +30,7 @@ import type { PerformanceRunV1 } from '../../../src/bench/performance-contract-v
 import type { PerformanceComparisonV1 } from '../../../src/bench/performance-compare-v1'
 import type { CanonicalBenchEvidenceV1 } from '../../../src/bench/evidence-contract-v1'
 import type { OpenCodeRuntimeStatus } from '../../electron/opencode/types'
+import type { OpenCodeImportResult } from '../../electron/opencode/session-import'
 
 export type OpenCodeViewBounds = { x: number; y: number; width: number; height: number }
 export type BenchTaskResult = {
@@ -163,6 +164,7 @@ export interface MetroraBridge extends ProjectBridge {
   opencodeActivate(bounds: OpenCodeViewBounds): Promise<OpenCodeRuntimeStatus>
   opencodeUpdateBounds(bounds: OpenCodeViewBounds): Promise<boolean>
   opencodeDeactivate(): Promise<boolean>
+  importOpenCodeSessions(): Promise<OpenCodeImportResult>
   setWindowChromeTheme(theme: 'dark' | 'light'): Promise<boolean>
   setWindowChromeMode(mode: 'always' | 'auto'): Promise<boolean>
   telemetryStatus(): Promise<TelemetryStatus | null>

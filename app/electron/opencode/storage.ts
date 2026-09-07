@@ -1,4 +1,4 @@
-import { copyFile, mkdtemp, mkdir, rename, rm, stat, statfs } from 'node:fs/promises'
+import { chmod, copyFile, mkdtemp, mkdir, rename, rm, stat, statfs } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import path from 'node:path'
 
@@ -11,6 +11,7 @@ type SqliteStatement = {
 
 type SqliteDatabase = {
   prepare: (sql: string) => SqliteStatement
+  exec?: (sql: string) => void
   close: () => void
 }
 
@@ -36,6 +37,19 @@ export type OpenCodeStoragePreparation =
   | { outcome: 'imported'; sourcePath: string }
   | { outcome: 'failed'; sourcePath?: string; detail: string }
 
+export type OpenCodeSessionMetadata = {
+  id: string
+  title: string
+  directory: string | null
+  updatedAt: number | null
+}
+
+export type OpenCodeSessionMetadataRead =
+  | { kind: 'missing'; sessions: [] }
+  | { kind: 'ok'; sessions: OpenCodeSessionMetadata[] }
+  | { kind: 'incompatible'; sessions: []; detail: string }
+  | { kind: 'unavailable'; sessions: []; detail: string }
+
 export type OpenCodeStorageOptions = {
   userDataPath: string
   platform?: NodeJS.Platform
@@ -50,6 +64,8 @@ const SNAPSHOT_PREFIX = 'opencode-storage-snapshot-'
 // not a maximum source size. The source itself is bounded by available space.
 const EXTERNAL_IMPORT_DISK_RESERVE_BYTES = 256 * 1024 * 1024
 const DATABASE_SIDECARS = ['-wal', '-shm', '-journal'] as const
+const SESSION_DISCOVERY_MAX = 100_000
+const sqliteTextDecoder = new TextDecoder('utf-8', { fatal: false })
 
 let sqliteConstructorPromise: Promise<SqliteDatabaseConstructor | null> | null = null
 
@@ -60,6 +76,130 @@ async function loadSqliteConstructor(): Promise<SqliteDatabaseConstructor | null
       .catch(() => null)
   }
   return sqliteConstructorPromise
+}
+
+function metadataText(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (value instanceof Uint8Array) return sqliteTextDecoder.decode(value)
+  return value == null ? '' : String(value)
+}
+
+function metadataTimestamp(value: unknown): number | null {
+  const number = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(number) ? number : null
+}
+
+/**
+ * Read only session metadata from one OpenCode authority. This intentionally
+ * opens the producer path read-only and selects no message/part payloads:
+ * import discovery must compare canonical IDs without copying or deserializing
+ * transcripts. The official runtime owns all writes to both databases.
+ */
+export async function readOpenCodeSessionMetadata(
+  databasePath: string,
+  options: { maxSessions?: number } = {},
+): Promise<OpenCodeSessionMetadataRead> {
+  let info
+  try {
+    info = await stat(databasePath)
+    if (!info.isFile()) return { kind: 'missing', sessions: [] }
+  } catch (error) {
+    if ((error as { code?: string }).code === 'ENOENT') return { kind: 'missing', sessions: [] }
+    return { kind: 'unavailable', sessions: [], detail: 'OpenCode session metadata could not be read.' }
+  }
+
+  const DatabaseSync = await loadSqliteConstructor()
+  if (!DatabaseSync) return { kind: 'unavailable', sessions: [], detail: 'SQLite support is unavailable.' }
+
+  const maxSessions = options.maxSessions ?? SESSION_DISCOVERY_MAX
+  if (!Number.isSafeInteger(maxSessions) || maxSessions < 1 || maxSessions > SESSION_DISCOVERY_MAX) {
+    return { kind: 'unavailable', sessions: [], detail: 'OpenCode session discovery bounds are invalid.' }
+  }
+
+  let database: SqliteDatabase | undefined
+  try {
+    database = new DatabaseSync(databasePath, { readOnly: true })
+    try { database.exec?.('PRAGMA busy_timeout = 1000') } catch { /* best effort for read-only connections */ }
+
+    const tableRows = database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('session', 'message', 'part')").all()
+    const tables = new Set(tableRows.map(row => metadataText(row.name)))
+    const missingTables = ['session', 'message', 'part'].filter(table => !tables.has(table))
+    if (missingTables.length > 0) {
+      return { kind: 'incompatible', sessions: [], detail: 'OpenCode database schema is not export-compatible.' }
+    }
+
+    const rows = database.prepare(
+      'SELECT id, CAST(title AS BLOB) AS title, CAST(directory AS BLOB) AS directory, time_updated FROM session ORDER BY time_updated DESC, id ASC LIMIT ?',
+    ).all(maxSessions + 1)
+    if (rows.length > maxSessions) {
+      return { kind: 'unavailable', sessions: [], detail: 'OpenCode session discovery exceeded its bounded limit.' }
+    }
+
+    const sessions: OpenCodeSessionMetadata[] = []
+    for (const row of rows) {
+      const id = metadataText(row.id)
+      if (!id || /[\u0000-\u001f\u007f]/u.test(id)) {
+        return { kind: 'incompatible', sessions: [], detail: 'OpenCode session metadata is malformed.' }
+      }
+      const directory = metadataText(row.directory)
+      sessions.push({
+        id,
+        title: metadataText(row.title),
+        directory: directory || null,
+        updatedAt: metadataTimestamp(row.time_updated),
+      })
+    }
+    return { kind: 'ok', sessions }
+  } catch {
+    return { kind: 'unavailable', sessions: [], detail: 'OpenCode session metadata could not be read.' }
+  } finally {
+    try { database?.close() } catch { /* best effort for a read-only connection */ }
+  }
+}
+
+/**
+ * Create an owned SQLite snapshot without opening the standalone database with
+ * a write-capable connection. VACUUM INTO reads the source (including its WAL
+ * view when present) and writes a new main database; it never copies or
+ * publishes the source WAL. The official standalone export command can then
+ * perform its normal project bookkeeping against this disposable snapshot.
+ */
+export async function snapshotOpenCodeDatabase(sourcePath: string, destinationPath: string): Promise<void> {
+  if (!path.isAbsolute(sourcePath) || !path.isAbsolute(destinationPath) || samePath(sourcePath, destinationPath, process.platform)) {
+    throw new Error('OpenCode snapshot paths are invalid.')
+  }
+
+  const source = await stat(sourcePath)
+  if (!source.isFile()) throw new Error('OpenCode source database is unavailable.')
+  try {
+    const journal = await stat(`${sourcePath}-journal`)
+    if (journal.isFile()) throw new Error('OpenCode source database is busy.')
+  } catch (error) {
+    if ((error as { code?: string }).code !== 'ENOENT') throw error
+  }
+
+  const destinationRoot = path.dirname(destinationPath)
+  const filesystem = await statfs(destinationRoot, { bigint: true })
+  const requiredBytes = BigInt(source.size) + BigInt(EXTERNAL_IMPORT_DISK_RESERVE_BYTES)
+  if (filesystem.bavail * filesystem.bsize < requiredBytes) throw new Error('Not enough space for the OpenCode export snapshot.')
+
+  const DatabaseSync = await loadSqliteConstructor()
+  if (!DatabaseSync) throw new Error('SQLite support is unavailable.')
+
+  let database: SqliteDatabase | undefined
+  try {
+    database = new DatabaseSync(sourcePath, { readOnly: true })
+    if (!database.exec) throw new Error('SQLite snapshot support is unavailable.')
+    const quote = String.fromCharCode(39)
+    const escapedDestination = destinationPath.replaceAll(quote, `${quote}${quote}`)
+    database.exec(`VACUUM INTO ${quote}${escapedDestination}${quote}`)
+  } finally {
+    try { database?.close() } catch { /* best effort for a read-only source connection */ }
+  }
+
+  const destination = await stat(destinationPath)
+  if (!destination.isFile()) throw new Error('OpenCode export snapshot was not created.')
+  try { await chmod(destinationPath, 0o600) } catch { /* Windows ACLs are managed by the OS. */ }
 }
 
 function errorMessage(error: unknown): string {

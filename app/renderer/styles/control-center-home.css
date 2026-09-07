@@ -897,6 +897,29 @@
 .code-section__header strong { color: var(--cc-text); font-size: 13px; }
 .code-section__header > span { color: var(--cc-muted); font-size: 10.5px; }
 
+.code-section__tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+}
+
+.code-import-button {
+  border: 1px solid var(--cc-border-strong, var(--cc-border));
+  border-radius: 5px;
+  padding: 6px 9px;
+  color: var(--cc-text);
+  background: var(--cc-panel-raised);
+  font: inherit;
+  font-size: 10.5px;
+  cursor: pointer;
+}
+
+.code-import-button:hover:not(:disabled) { background: var(--cc-panel); }
+.code-import-button:disabled { cursor: wait; opacity: .6; }
+.code-import-status { color: var(--cc-muted); font-size: 10.5px; }
+
 .metrora-shell .code-view-host { background: var(--cc-canvas); }
 
 @media (max-width: 1120px) {
