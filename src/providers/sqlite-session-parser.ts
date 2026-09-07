@@ -7,6 +7,7 @@ import {
 } from '../sqlite-source-fingerprint.js'
 import { traceReconciliation } from '../reconciliation-diagnostics.js'
 import { buildAssistantCall, parseTimestamp, sanitize, type MessageData, type PartData } from './session-message.js'
+import { loadSharedSqliteCacheEntry, type SharedSqliteCacheEntry } from './sqlite-session-cache-loader.js'
 import type {
   SessionSource,
   SessionParser,
@@ -104,11 +105,6 @@ type SharedSessionRow = SessionRow & {
 
 type SharedPartRow = PartRow & {
   id: string
-}
-
-type SharedSqliteCacheEntry = {
-  fingerprintKey: string
-  callsByRoot: Map<string, ParsedProviderCall[]>
 }
 
 function sqliteSourceIdentity(sourcePath: string): { dbPath: string; sessionId: string } | null {
@@ -361,41 +357,15 @@ export function createSharedSqliteSessionParser(
       const cacheHit = entry?.fingerprintKey === fingerprintKey
 
       if (!cacheHit) {
-        let db: SqliteDatabase
-        try {
-          db = openDatabase(identity.dbPath)
-        } catch (err) {
-          if (fingerprintKey === 'missing') {
-            failedDatabases.set(identity.dbPath, fingerprintKey)
-            process.stderr.write('metrora: cannot open ' + config.displayName + ' database; prior evidence was retained\n')
-            throw err
-          }
-          failedDatabases.set(identity.dbPath, fingerprintKey)
-          process.stderr.write('metrora: cannot open ' + config.displayName + ' database; prior evidence was retained\n')
-          throw err
-        }
-
-        try {
-          const callsByRoot = parseAllSqliteSessions(db, config)
-          if (!callsByRoot) {
-            failedDatabases.set(identity.dbPath, fingerprintKey)
-            throw new Error('shared SQLite database schema is not recognized')
-          }
-          entry = { fingerprintKey, callsByRoot }
-          parsedDatabases.set(identity.dbPath, entry)
-          traceReconciliation('sqlite-shared-parse', {
-            provider: config.providerName,
-            cache: 'miss',
-            rootCount: callsByRoot.size,
-            callCount: [...callsByRoot.values()].reduce((total, calls) => total + calls.length, 0),
-          })
-        } catch (err) {
-          failedDatabases.set(identity.dbPath, fingerprintKey)
-          process.stderr.write('metrora: cannot parse ' + config.displayName + ' database; prior evidence was retained\n')
-          throw err
-        } finally {
-          db.close()
-        }
+        entry = loadSharedSqliteCacheEntry({
+          dbPath: identity.dbPath,
+          fingerprintKey,
+          providerName: config.providerName,
+          displayName: config.displayName,
+          parse: db => parseAllSqliteSessions(db, config),
+          failedDatabases,
+          parsedDatabases,
+        })
       }
 
       if (!entry) return

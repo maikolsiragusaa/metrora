@@ -42,6 +42,9 @@ import { Companion } from './sections/Companion'
 export { overviewMemoKey } from './hooks/useProviderPrefetch'
 export { topCategoryByModel, usageSnapshotProps } from './hooks/useDesktopTelemetry'
 
+// This is the last successful renderer fetch, not a claim that every provider
+// source was freshly reconciled. Source authority is reported separately by
+// the payload freshness metadata (snapshot vs fresh/targeted).
 function refreshedLabel(lastSuccessAt: number | null, loading: boolean, now: number): string {
   if (loading && lastSuccessAt === null) return 'refreshing…'
   if (lastSuccessAt === null) return 'not refreshed yet'

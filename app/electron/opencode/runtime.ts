@@ -60,6 +60,8 @@ export type OpenCodeRuntimeOptions = {
   readUsageSnapshot?: () => Promise<unknown>
   /** Serialized argv-only bridge for the private Metrora custom tools. */
   toolBridgeSpec?: string | null
+  /** Narrow Metrora-owned accounting roots passed to the isolated OpenCode process. */
+  accountingEnv?: NodeJS.ProcessEnv
   now?: () => number
   randomPassword?: () => string
   healthTimeoutMs?: number
@@ -101,6 +103,7 @@ export function createLaunchEnvironment(options: {
   username: string
   password: string
   toolBridgeSpec?: string | null
+  accountingEnv?: NodeJS.ProcessEnv
 }): NodeJS.ProcessEnv {
   const environment: NodeJS.ProcessEnv = {
     ...(options.baseEnv ?? process.env),
@@ -116,6 +119,7 @@ export function createLaunchEnvironment(options: {
     XDG_CONFIG_HOME: options.paths.runtimeDir,
     OPENCODE_DISABLE_AUTOUPDATE: '1',
     METRORA_USAGE_SNAPSHOT_FILE: options.paths.snapshotPath,
+    ...(options.accountingEnv ?? {}),
   }
   if (options.toolBridgeSpec) environment.METRORA_TOOL_BRIDGE_SPEC = options.toolBridgeSpec
   return environment
@@ -292,7 +296,14 @@ export class OpenCodeRuntime {
         args,
         {
           cwd: this.options.workingDirectory ?? this.options.appPath,
-          env: createLaunchEnvironment({ baseEnv: this.options.baseEnv, paths, username: SERVER_USERNAME, password, toolBridgeSpec: this.options.toolBridgeSpec }),
+          env: createLaunchEnvironment({
+            baseEnv: this.options.baseEnv,
+            paths,
+            username: SERVER_USERNAME,
+            password,
+            toolBridgeSpec: this.options.toolBridgeSpec,
+            accountingEnv: this.options.accountingEnv,
+          }),
           stdio: ['ignore', 'ignore', 'ignore'],
           windowsHide: true,
         },

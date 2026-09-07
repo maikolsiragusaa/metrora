@@ -13,8 +13,8 @@ export const REFRESH_OPTIONS: ReadonlyArray<{ value: string; label: string; ms: 
   { value: '10m', label: '10 minutes', ms: 600_000 },
 ]
 
-export const DEFAULT_REFRESH_VALUE = '1m'
-const DEFAULT_MS = 60_000
+export const DEFAULT_REFRESH_VALUE = '5m'
+const DEFAULT_MS = 300_000
 
 export function refreshValueToMs(value: string): number | null {
   const option = REFRESH_OPTIONS.find(candidate => candidate.value === value)

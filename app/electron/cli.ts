@@ -13,6 +13,7 @@ import {
   METRORA_ENV,
   readPersistedCliPath,
 } from './identity'
+import { OPENCODE_ACCOUNTING_EXTRA_DATA_DIRS_ENV, OPENCODE_ACCOUNTING_ENV_MAX_BYTES } from './opencode/accounting'
 
 // This module runs entirely in Electron's main process and intentionally does
 // not import Electron so it remains testable in plain Node.
@@ -56,6 +57,11 @@ const MAX_CONCURRENT_CLI = 2
 
 const readInflight = new Map<string, Promise<unknown>>()
 const readCache = new Map<string, { at: number; value: unknown }>()
+
+/** Invalidate completed read results after a source reconciliation publishes. */
+export function clearCliReadCache(): void {
+  readCache.clear()
+}
 
 type SlotWaiter = { resolve: (epoch: number) => void; reject: (err: unknown) => void; epoch: number }
 let running = 0
@@ -205,7 +211,7 @@ export function spawnSpecFor(target: CliTarget, args: string[]): SpawnSpec {
  * custom tool receives an argv vector, never a shell command, plus the one
  * runtime flag needed when the packaged CLI is launched by Electron.
  */
-export function resolveMetroraToolBridgeSpec(): string | null {
+export function resolveMetroraToolBridgeSpec(extraEnvironment: Record<string, string> = {}): string | null {
   const target = resolveTarget()
   if (!target) return null
   const spec = spawnSpecFor(target, ['tools', 'call'])
@@ -219,6 +225,10 @@ export function resolveMetroraToolBridgeSpec(): string | null {
   }
   const environment: Record<string, string> = {}
   if (spec.env.ELECTRON_RUN_AS_NODE === '1') environment.ELECTRON_RUN_AS_NODE = '1'
+  const accountingRoots = extraEnvironment[OPENCODE_ACCOUNTING_EXTRA_DATA_DIRS_ENV]
+  if (typeof accountingRoots === 'string' && Buffer.byteLength(accountingRoots, 'utf8') <= OPENCODE_ACCOUNTING_ENV_MAX_BYTES) {
+    environment[OPENCODE_ACCOUNTING_EXTRA_DATA_DIRS_ENV] = accountingRoots
+  }
   const bridge: MetroraToolBridgeSpec = { command, environment }
   const serialized = JSON.stringify(bridge)
   return Buffer.byteLength(serialized, 'utf8') <= 8 * 1024 ? serialized : null
@@ -338,6 +348,8 @@ export function spawnCli(
     onProgress?: (event: TrustedProgressEvent) => void
     extraEnv?: NodeJS.ProcessEnv
     priority?: SpawnPriority
+    /** Force a new read while retaining in-flight coalescing. */
+    bypassCache?: boolean
   } = {},
 ): Promise<unknown> {
   if (shutdownRequested) {
@@ -359,7 +371,7 @@ export function spawnCli(
     .filter((entry): entry is [string, string] => entry[1] !== undefined)
     .sort(([a], [b]) => a.localeCompare(b))
   const key = JSON.stringify([spec.bin, ...spec.args, envKey, opts.timeoutMs ?? null, opts.idleTimeoutMs ?? null, Boolean(opts.onStderr), Boolean(opts.onProgress)])
-  const cached = readCache.get(key)
+  const cached = opts.bypassCache ? undefined : readCache.get(key)
   if (cached && Date.now() - cached.at < COALESCE_TTL_MS) return Promise.resolve(cached.value)
 
   const existing = readInflight.get(key)
@@ -377,7 +389,7 @@ export function spawnCli(
     }
   })()
     .then(value => {
-      readCache.set(key, { at: Date.now(), value })
+      if (!opts.bypassCache) readCache.set(key, { at: Date.now(), value })
       return value
     })
     .finally(() => {

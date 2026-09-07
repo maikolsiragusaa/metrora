@@ -28,6 +28,15 @@ type Deps = {
   /** Cached update-availability status; absent under tests unless injected. */
   getUpdateStatus?: () => Promise<UpdateStatus>
   share?: DesktopShareRuntime | null
+  /** Narrow Metrora-owned provider roots forwarded to every accounting CLI read. */
+  accountingEnv?: NodeJS.ProcessEnv
+  /** Cheap source-change probe and single-flight OpenCode reconciliation. */
+  openCodeFreshness?: {
+    onSnapshotPoll: () => Promise<void>
+    onExplicitFreshSuccess: (provider: string) => Promise<void>
+  }
+  /** Clear completed CLI projections after any explicit fresh read succeeds. */
+  onFreshSuccess?: (provider: string) => void
 }
 
 export const NO_UPDATE_STATUS: UpdateStatus = { currentVersion: '', latestVersion: null, updateAvailable: false, tag: null }
@@ -249,7 +258,7 @@ function cliErrorProps(err: unknown, cmd: string | undefined): Record<string, un
  * unit-testable without launching Electron.
  */
 export function createBridgeHandlers(deps: Deps): Record<string, Handler> {
-  const snapshotEnv = { METRORA_READ_MODE: 'snapshot' }
+  const snapshotEnv = { ...(deps.accountingEnv ?? {}), METRORA_READ_MODE: 'snapshot' }
   const readQuota = deps.getQuota ?? getQuota
   const emitProgress = deps.emitProgress ?? (() => {})
   const telemetry = deps.telemetry ?? null
@@ -295,6 +304,9 @@ export function createBridgeHandlers(deps: Deps): Record<string, Handler> {
       const args = buildOverviewArgs(period, provider, range, configSource, projectScopeId)
       const snapshot = !fresh && !configSource
       if (snapshot) {
+        // The source probe is metadata-only and never waits for the potentially
+        // long provider reconciliation. Keep it off the snapshot response path.
+        void deps.openCodeFreshness?.onSnapshotPoll().catch(() => {})
         const value = await deps.spawnCli(args, { extraEnv: snapshotEnv, ...(priority ? { priority } : {}) })
         emitColdStart(false)
         return { ok: true, value }
@@ -306,11 +318,13 @@ export function createBridgeHandlers(deps: Deps): Record<string, Handler> {
         // Explicitly clear snapshot mode. The Electron process can inherit
         // METRORA_READ_MODE from a developer shell; a fresh click must never
         // accidentally become a read-only cache projection in that case.
-        extraEnv: { METRORA_PROGRESS: '1', METRORA_READ_MODE: '' },
+        extraEnv: { ...(deps.accountingEnv ?? {}), METRORA_PROGRESS: '1', METRORA_READ_MODE: '' },
         onStderr: makeProgressReader(emitProgress),
         ...(priority ? { priority } : {}),
       })
       emitProgress({ kind: 'done' })
+      try { deps.onFreshSuccess?.(provider) } catch { /* cache invalidation is best-effort */ }
+      if (!configSource) await deps.openCodeFreshness?.onExplicitFreshSuccess(provider)
       emitColdStart(false)
       return { ok: true, value }
     } catch (err) {

@@ -31,3 +31,23 @@ export function traceReconciliation(
     // Diagnostics must never affect reconciliation when stderr is closed.
   }
 }
+
+export function traceProviderParse(
+  startedAt: number,
+  provider: string,
+  sourceCount: number,
+  changedSourceCount: number,
+  unchangedSourceCount: number,
+  projectCount: number,
+  readOnly: boolean,
+): void {
+  traceReconciliation('provider-parse', {
+    provider,
+    sourceCount,
+    changedSourceCount,
+    unchangedSourceCount,
+    projectCount,
+    readOnly,
+    elapsedMs: Math.round(performance.now() - startedAt),
+  })
+}

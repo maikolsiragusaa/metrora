@@ -324,6 +324,28 @@ describe('resolveMetroraToolBridgeSpec', () => {
     expect(serialized).not.toContain('METRORA_SERVER_PASSWORD')
   })
 
+  it('forwards only the bounded OpenCode accounting root to the tool bridge', () => {
+    delete process.env.METRORA_BIN
+    delete process.env.VITE_DEV_SERVER_URL
+    process.env.METRORA_PATH_DIRS = ''
+    process.env.METRORA_CLI_PATH_FILE = join(dir, 'no-persisted-path')
+    const entry = join(dir, 'launch-accounting.js')
+    writeFileSync(entry, '// bundled CLI\n')
+    process.env.METRORA_BUNDLED_CLI = entry
+
+    const roots = JSON.stringify(['C:\\Users\\sirag\\AppData\\Local\\metrora\\opencode\\db'])
+    const serialized = resolveMetroraToolBridgeSpec({
+      METRORA_OPENCODE_EXTRA_DATA_DIRS: roots,
+      METRORA_SERVER_PASSWORD: 'must-not-cross',
+    })
+    const bridge = JSON.parse(serialized!) as { environment: Record<string, string> }
+    expect(bridge.environment).toEqual({
+      ELECTRON_RUN_AS_NODE: '1',
+      METRORA_OPENCODE_EXTRA_DATA_DIRS: roots,
+    })
+    expect(serialized).not.toContain('must-not-cross')
+  })
+
   it('keeps a native external bridge direct and does not invent a shell', () => {
     const native = fakeBin('metrora-native.exe', 'process.stdout.write("{}")', 'external')
     const serialized = resolveMetroraToolBridgeSpec()
@@ -544,6 +566,14 @@ describe('spawnCli coalescing (read-only)', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('bypasses a completed result cache for automatic reconciliation reads', async () => {
+    const countFile = join(dir, 'spawns')
+    fakeBin('counter-bypass.cjs', `require('fs').appendFileSync(${JSON.stringify(countFile)},'x'); process.stdout.write(JSON.stringify({ok:1}))`)
+    await spawnCli(['reconcile', '--provider', 'opencode'])
+    await spawnCli(['reconcile', '--provider', 'opencode'], { bypassCache: true })
+    expect(readFileSync(countFile, 'utf8')).toBe('xx')
   })
 
   it('never coalesces config-mutating action calls', async () => {

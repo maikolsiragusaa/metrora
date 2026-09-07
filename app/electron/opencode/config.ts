@@ -3,6 +3,7 @@ import path from 'node:path'
 
 import { OPENCODE_CUSTOM_TOOL_ID, OPENCODE_METRORA_TOOL_IDS, OPENCODE_VERSION } from './types'
 import { OPENCODE_METRORA_TOOL_SOURCES, OPENCODE_USAGE_TOOL_SOURCE } from './tool'
+import { OPENCODE_ACCOUNTING_EXTRA_DATA_DIRS_ENV } from './accounting'
 import type { MetroraUsageSnapshot } from './snapshot'
 
 export const LOOPBACK_HOST = '127.0.0.1' as const
@@ -42,6 +43,13 @@ export function runtimePaths(userDataPath: string): OpenCodeRuntimePaths {
     toolsDir: path.join(runtimeDir, 'tools'),
     snapshotPath: path.join(runtimeRoot, 'metrora-usage-snapshot.json'),
     webSurfacePath: path.join(userDataPath, 'opencode', OPENCODE_WEB_SURFACE_STATE_FILENAME),
+  }
+}
+
+/** Expose only the Metrora-owned OpenCode DB directory to canonical accounting. */
+export function createOpenCodeAccountingEnvironment(userDataPath: string): Record<string, string> {
+  return {
+    [OPENCODE_ACCOUNTING_EXTRA_DATA_DIRS_ENV]: JSON.stringify([runtimePaths(userDataPath).dbDir]),
   }
 }
 

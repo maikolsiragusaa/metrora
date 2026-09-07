@@ -9,7 +9,7 @@ import { resolveSubagentAttribution, sessionIdentity } from './sessions-report.j
 import { normalizeContentBlocks } from './content-utils.js'
 import { discoverAllSessionsWithOutcomes, getProvider } from './providers/index.js'
 import { flushCodexCache } from './codex-cache.js'
-import { antigravityCascadeIdFromPath, flushAntigravityCache, shouldReparseAntigravitySource } from './providers/antigravity.js'
+import { antigravityCascadeIdFromPath, flushAntigravityCache } from './providers/antigravity.js'
 import { getDesktopSessionsDirs } from './providers/claude.js'
 import { isSqliteBusyError } from './sqlite.js'
 import {
@@ -69,6 +69,8 @@ import { flushCopilotChatJournalInvalidations, queueCopilotChatJournalSource, re
 import { reconcileMissingProviderSources, shouldReconcileMissingProviderSources } from './parser-source-reconciliation.js'
 import { buildCwdEvidenceIndex, timeBoundCwdRefs } from './pr-attribution-time-bound.js'
 import { flattenString, flattenStringArray, flattenStringPrefix, flattenToolSequence } from './string-retention.js'
+import { traceProviderParse } from './reconciliation-diagnostics.js'
+import { cachedFileNeedsProviderReparse } from './provider-cache-reparse.js'
 export { settleSessionCacheCostsForRuntimeV1 } from './session-cache-cost-settlement.js'
 
 // Returns true for sessions whose canonical project key must NOT be derived
@@ -2774,23 +2776,6 @@ function getOrCreateProviderSection(cache: SessionCache, provider: string): Prov
   return section
 }
 
-function cachedFileNeedsProviderReparse(providerName: string, sourcePath: string, cached: CachedFile): boolean {
-  // Antigravity data comes from the live server, not from the conversation file.
-  // A 0-turn cache entry may just mean the server was unavailable last run.
-  if (providerName === 'antigravity') return shouldReparseAntigravitySource(sourcePath, cached.turns.length)
-
-  // Devin transcript usage is enriched from sessions.db. The cache fingerprint
-  // only tracks the transcript JSON, so reparse to pick up DB-side project,
-  // title, model, and timestamp changes.
-  if (providerName === 'devin') return true
-
-  if (providerName !== 'gemini') return false
-
-  return cached.turns.some(turn =>
-    turn.calls.some(call => call.deduplicationKey === `gemini:${turn.sessionId}`),
-  )
-}
-
 const warnedProviderReadFailures = new Set<string>()
 
 function warnProviderReadFailureOnce(providerName: string, err: unknown): void {
@@ -2921,6 +2906,7 @@ async function parseProviderSources(
   readOnly = false,
   allowMissingSourceReconciliation = false,
 ): Promise<ProjectSummary[]> {
+  const providerStartedAt = performance.now()
   const provider = await getProvider(providerName)
   const previousSection = diskCache.providers[providerName]
   if (!provider) return []
@@ -2988,15 +2974,11 @@ async function parseProviderSources(
     }
   }
 
-  // Parser dedup: cross-provider keys + cached file keys.
-  // Separate from seenKeys so parsing doesn't suppress query-time output.
+  // Source-union providers retain complete per-source caches; query-time seenKeys
+  // performs the logical reconciliation. Other providers keep parser-time dedup.
   const parserDedup = new Set(seenKeys)
-  for (const { cached } of unchangedSources) {
-    for (const turn of cached.turns) {
-      for (const call of turn.calls) {
-        parserDedup.add(call.deduplicationKey)
-      }
-    }
+  if (!provider.cacheSourceRecordsIndependently) {
+    for (const { cached } of unchangedSources) for (const turn of cached.turns) for (const call of turn.calls) parserDedup.add(call.deduplicationKey)
   }
 
   // Parse changed files, update cache
@@ -3022,7 +3004,7 @@ async function parseProviderSources(
       }
 
       try {
-        const parser = provider.createSessionParser(source, parserDedup, dateRange)
+        const parser = provider.createSessionParser(source, provider.cacheSourceRecordsIndependently ? new Set(seenKeys) : parserDedup, dateRange)
         const providerCalls: ParsedProviderCall[] = []
         for await (const call of parser.parse()) {
           providerCalls.push(call)
@@ -3250,6 +3232,7 @@ async function parseProviderSources(
     }
   }
 
+  traceProviderParse(providerStartedAt, providerName, sources.length, changedSources.length, unchangedSources.length, projects.length, readOnly)
   return projects
 }
 
@@ -3265,7 +3248,10 @@ function cacheKey(dateRange?: DateRange, providerFilter?: string): string {
   const claudeEnv = (process.env['CLAUDE_CONFIG_DIRS'] ?? '') + '|' + (process.env['CLAUDE_CONFIG_DIR'] ?? '')
   // Proxy attribution (totalProxiedCostUSD) is computed live from proxyPaths and
   // then cached, so the key must change when that config changes.
-  return `${isSnapshotReadMode() ? 'snapshot' : 'fresh'}:${s}:${providerFilter ?? 'all'}:${claudeEnv}:${getProxyPathsConfigHash()}:${runtimeHistoricalPricingCacheKeyV1()}`
+  // Include OpenCode's provider environment so a long-lived Desktop process
+  // invalidates its in-memory result when the additive root changes.
+  const opencodeEnv = computeEnvFingerprint('opencode')
+  return `${isSnapshotReadMode() ? 'snapshot' : 'fresh'}:${s}:${providerFilter ?? 'all'}:${claudeEnv}:${opencodeEnv}:${getProxyPathsConfigHash()}:${runtimeHistoricalPricingCacheKeyV1()}`
 }
 
 export function clearSessionCache(): void {
