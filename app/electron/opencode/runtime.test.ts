@@ -82,6 +82,7 @@ describe('OpenCode upstream sidecar runtime', () => {
       resourcesPath: root,
       userDataPath: userData,
       isPackaged: false,
+      baseEnv: {},
       executableOverride: executable,
       acquirePort: async () => 43127,
       randomPassword: () => 'p'.repeat(64),
@@ -115,8 +116,14 @@ describe('OpenCode upstream sidecar runtime', () => {
         env: expect.objectContaining({
           OPENCODE_SERVER_USERNAME: 'metrora',
           OPENCODE_SERVER_PASSWORD: 'p'.repeat(64),
-          OPENCODE_CONFIG_DIR: join(userData, 'opencode', OPENCODE_VERSION),
-          OPENCODE_CONFIG: join(userData, 'opencode', OPENCODE_VERSION, 'opencode.json'),
+          OPENCODE_CONFIG_DIR: join(userData, 'opencode', 'runtime', OPENCODE_VERSION, 'config'),
+          OPENCODE_CONFIG: join(userData, 'opencode', 'runtime', OPENCODE_VERSION, 'config', 'opencode.json'),
+          OPENCODE_DATA_DIR: join(userData, 'opencode', 'runtime', OPENCODE_VERSION, 'data'),
+          OPENCODE_DB: join(userData, 'opencode', 'runtime', OPENCODE_VERSION, 'db', 'opencode.db'),
+          XDG_DATA_HOME: join(userData, 'opencode', 'runtime', OPENCODE_VERSION, 'data'),
+          XDG_CACHE_HOME: join(userData, 'opencode', 'runtime', OPENCODE_VERSION, 'cache'),
+          XDG_STATE_HOME: join(userData, 'opencode', 'runtime', OPENCODE_VERSION, 'state'),
+          XDG_CONFIG_HOME: join(userData, 'opencode', 'runtime', OPENCODE_VERSION, 'config'),
           OPENCODE_DISABLE_AUTOUPDATE: '1',
           METRORA_TOOL_BRIDGE_SPEC: expect.any(String),
         }),
@@ -163,6 +170,7 @@ describe('OpenCode upstream sidecar runtime', () => {
       resourcesPath: root,
       userDataPath: userData,
       isPackaged: false,
+      baseEnv: {},
       executableOverride: executable,
       acquirePort: async () => 43132,
       spawnProcess: () => child,
@@ -192,6 +200,7 @@ describe('OpenCode upstream sidecar runtime', () => {
       resourcesPath: root,
       userDataPath: userData,
       isPackaged: false,
+      baseEnv: {},
       executableOverride: executable,
       acquirePort: async () => 43130,
       randomPassword: () => 'p'.repeat(64),
@@ -237,6 +246,7 @@ describe('OpenCode upstream sidecar runtime', () => {
       resourcesPath: root,
       userDataPath: userData,
       isPackaged: false,
+      baseEnv: {},
       executableOverride: executable,
       acquirePort,
       isLoopbackPortAvailable,
@@ -288,6 +298,7 @@ describe('OpenCode upstream sidecar runtime', () => {
       resourcesPath: root,
       userDataPath: userData,
       isPackaged: false,
+      baseEnv: {},
       executableOverride: executable,
       acquirePort,
       isLoopbackPortAvailable,
@@ -326,6 +337,7 @@ describe('OpenCode upstream sidecar runtime', () => {
       resourcesPath: root,
       userDataPath: userData,
       isPackaged: false,
+      baseEnv: {},
       executableOverride: executable,
       acquirePort: async () => port++,
       spawnProcess: () => fakeChild(),
@@ -359,6 +371,7 @@ describe('OpenCode upstream sidecar runtime', () => {
       resourcesPath: root,
       userDataPath: join(root, 'user-data'),
       isPackaged: false,
+      baseEnv: {},
       executableOverride: executable,
       acquirePort: async () => 43128,
       spawnProcess: () => child,
@@ -379,6 +392,11 @@ describe('OpenCode upstream sidecar runtime', () => {
     const environment = createLaunchEnvironment({ paths, username: 'metrora', password: 'x'.repeat(64), baseEnv: {}, toolBridgeSpec: '{"command":["C:/cli.exe","tools","call"],"environment":{}}' })
     expect(environment.OPENCODE_SERVER_PASSWORD).toBe('x'.repeat(64))
     expect(environment.OPENCODE_CONFIG).toBe(paths.configPath)
+    expect(environment.OPENCODE_DB).toBe(paths.databasePath)
+    expect(environment.XDG_DATA_HOME).toBe(paths.dataDir)
+    expect(environment.XDG_CACHE_HOME).toBe(paths.cacheDir)
+    expect(environment.XDG_STATE_HOME).toBe(paths.stateDir)
+    expect(environment.XDG_CONFIG_HOME).toBe(paths.runtimeDir)
     expect(environment.METRORA_TOOL_BRIDGE_SPEC).toContain('C:/cli.exe')
     const withoutBridge = createLaunchEnvironment({ paths, username: 'metrora', password: 'x'.repeat(64), baseEnv: {} })
     expect(withoutBridge.METRORA_TOOL_BRIDGE_SPEC).toBeUndefined()
