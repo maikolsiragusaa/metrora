@@ -1,21 +1,13 @@
 // @vitest-environment node
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { resolveStandaloneOpenCodeRuntime } from './standalone'
 
-const temporaryDirectories: string[] = []
+const WINDOWS_FIXTURE_ROOT = 'C:\\fixture\\metrora-opencode-standalone'
 
-afterEach(() => {
-  for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true, force: true })
-})
-
-function temporaryDirectory(): string {
-  const directory = mkdtempSync(path.join(tmpdir(), 'metrora-opencode-standalone-'))
-  temporaryDirectories.push(directory)
-  return directory
+function fixturePath(...segments: string[]): string {
+  return path.win32.join(WINDOWS_FIXTURE_ROOT, ...segments)
 }
 
 function successfulProbe() {
@@ -26,47 +18,42 @@ function successfulProbe() {
 
 describe('standalone OpenCode runtime resolution', () => {
   it('resolves an explicit installed export-capable runtime without consulting PATH', async () => {
-    const root = temporaryDirectory()
-    const executable = path.join(root, 'opencode.exe')
-    const database = path.join(root, 'data', 'opencode', 'opencode.db')
-    mkdirSync(path.dirname(database), { recursive: true })
-    writeFileSync(executable, 'standalone')
-    writeFileSync(database, 'database')
+    const executable = fixturePath('explicit', 'opencode.exe')
+    const database = fixturePath('explicit', 'data', 'opencode', 'opencode.db')
     const probe = successfulProbe()
 
     await expect(resolveStandaloneOpenCodeRuntime({
       platform: 'win32',
-      environment: { PATH: path.join(root, 'old-bin'), OPENCODE_DB: database },
+      environment: { PATH: fixturePath('explicit', 'old-bin'), OPENCODE_DB: database },
       executableCandidates: [executable],
       databaseCandidates: [database],
       probe,
+      fileExists: async filePath => filePath === executable || filePath === database,
     })).resolves.toMatchObject({ executablePath: executable, version: '1.18.29', databasePath: database })
     expect(probe).toHaveBeenNthCalledWith(1, executable, ['--version'], expect.any(Object))
     expect(probe).toHaveBeenNthCalledWith(2, executable, ['export', '--help'], expect.any(Object))
   })
 
   it('finds a Desktop-staged CLI under a portable app-data version directory', async () => {
-    const root = temporaryDirectory()
-    const appData = path.join(root, 'AppData', 'Roaming')
-    const executable = path.join(appData, 'ai.opencode.desktop', 'cli', '1.18.29', 'opencode-cli.exe')
-    mkdirSync(path.dirname(executable), { recursive: true })
-    writeFileSync(executable, 'desktop cli')
+    const appData = fixturePath('desktop', 'AppData', 'Roaming')
+    const localAppData = fixturePath('desktop', 'AppData', 'Local')
+    const cliRoot = path.win32.join(appData, 'ai.opencode.desktop', 'cli')
+    const executable = path.win32.join(cliRoot, '1.18.29', 'opencode-cli.exe')
     const probe = successfulProbe()
 
     await expect(resolveStandaloneOpenCodeRuntime({
       platform: 'win32',
-      environment: { APPDATA: appData, LOCALAPPDATA: path.join(root, 'AppData', 'Local') },
+      environment: { APPDATA: appData, LOCALAPPDATA: localAppData },
       appDataPath: appData,
-      localAppDataPath: path.join(root, 'AppData', 'Local'),
+      localAppDataPath: localAppData,
       probe,
       fileExists: async filePath => filePath === executable,
+      readDirectory: async directory => directory === cliRoot ? ['1.18.29'] : [],
     })).resolves.toMatchObject({ executablePath: executable, version: '1.18.29' })
   })
 
   it('rejects an older runtime even when an executable is present', async () => {
-    const root = temporaryDirectory()
-    const executable = path.join(root, 'old-opencode.exe')
-    writeFileSync(executable, 'old')
+    const executable = fixturePath('older', 'old-opencode.exe')
     const probe = vi.fn(async () => ({ stdout: '1.14.41\n', stderr: '' }))
 
     await expect(resolveStandaloneOpenCodeRuntime({
@@ -79,9 +66,7 @@ describe('standalone OpenCode runtime resolution', () => {
   })
 
   it('rejects a runtime that does not expose the official export command', async () => {
-    const root = temporaryDirectory()
-    const executable = path.join(root, 'no-export.exe')
-    writeFileSync(executable, 'no export')
+    const executable = fixturePath('no-export', 'opencode.exe')
     const probe = vi.fn(async (_file: string, args: string[]) => args[0] === '--version'
       ? { stdout: '1.18.29', stderr: '' }
       : { stdout: 'Usage: opencode', stderr: '' })
@@ -96,17 +81,11 @@ describe('standalone OpenCode runtime resolution', () => {
   })
 
   it('excludes Metrora-owned paths and strips Metrora environment from the standalone command', async () => {
-    const root = temporaryDirectory()
-    const userData = path.join(root, 'metrora-user-data')
-    const standaloneRoot = path.join(root, 'standalone')
-    const executable = path.join(standaloneRoot, 'opencode.exe')
-    const externalDatabase = path.join(standaloneRoot, 'opencode.db')
-    const metroraDatabase = path.join(userData, 'opencode', 'runtime', '1.18.27', 'db', 'opencode.db')
-    mkdirSync(path.dirname(externalDatabase), { recursive: true })
-    mkdirSync(path.dirname(metroraDatabase), { recursive: true })
-    writeFileSync(executable, 'standalone')
-    writeFileSync(externalDatabase, 'external')
-    writeFileSync(metroraDatabase, 'metrora')
+    const userData = fixturePath('excluded', 'metrora-user-data')
+    const standaloneRoot = fixturePath('excluded', 'standalone')
+    const executable = path.win32.join(standaloneRoot, 'opencode.exe')
+    const externalDatabase = path.win32.join(standaloneRoot, 'opencode.db')
+    const metroraDatabase = path.win32.join(userData, 'opencode', 'runtime', '1.18.27', 'db', 'opencode.db')
     let probedEnvironment: NodeJS.ProcessEnv | undefined
     const probe = vi.fn(async (_file: string, args: string[], environment: NodeJS.ProcessEnv) => {
       probedEnvironment = environment
