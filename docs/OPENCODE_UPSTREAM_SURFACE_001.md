@@ -89,15 +89,18 @@ store. The Metrora-managed bundled runtime owns a separate, version-scoped
 store and never shares a cross-version SQLite write authority with that
 application.
 
-When prior local state is safely importable, continuity is a bounded one-way
-read-only import from the independent OpenCode store into Metrora's store. The
-source is never migrated, repaired, renamed, deleted or written back. SQLite
-continuity uses a stable filesystem snapshot of the main database and WAL; it
-does not depend on a runtime-specific database serialization API. If that
-continuity step is unavailable, Code starts with a clean Metrora-owned store
-instead of falling back to shared writes. The Metrora-hosted Web surface also
-preserves its own browser/project UI state and can import the normal OpenCode
-Desktop project list through a bounded read-only path.
+When prior local state is safely importable, continuity is a one-way read-only
+import from the independent OpenCode store into Metrora's store. The source is
+never migrated, repaired, renamed, deleted or written back. SQLite continuity
+uses a stable filesystem snapshot of the main database and WAL; it does not
+depend on a runtime-specific database serialization API. Before copying, the
+runtime checks destination free space for the source pair plus an operational
+reserve, and moves the validated owned snapshot into place to avoid a second
+full-size copy. If that continuity step is unavailable, Code starts with a
+clean Metrora-owned store instead of falling back to shared writes. The
+Metrora-hosted Web surface also preserves its own browser/project UI state and
+can import the normal OpenCode Desktop project list through a bounded
+read-only path.
 
 ## Metrora accounting
 

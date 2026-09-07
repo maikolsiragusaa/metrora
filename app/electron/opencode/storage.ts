@@ -1,5 +1,4 @@
-import { constants } from 'node:fs'
-import { copyFile, mkdtemp, mkdir, rename, rm, stat, unlink } from 'node:fs/promises'
+import { copyFile, mkdtemp, mkdir, rename, rm, stat, statfs } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import path from 'node:path'
 
@@ -47,7 +46,9 @@ export type OpenCodeStorageOptions = {
 
 const SNAPSHOT_ATTEMPTS = 3
 const SNAPSHOT_PREFIX = 'opencode-storage-snapshot-'
-const MAX_SOURCE_BYTES = 512 * 1024 * 1024
+// This is a reserve for SQLite validation/temp files and filesystem overhead,
+// not a maximum source size. The source itself is bounded by available space.
+const EXTERNAL_IMPORT_DISK_RESERVE_BYTES = 256 * 1024 * 1024
 const DATABASE_SIDECARS = ['-wal', '-shm', '-journal'] as const
 
 let sqliteConstructorPromise: Promise<SqliteDatabaseConstructor | null> | null = null
@@ -138,7 +139,6 @@ async function fileFingerprint(filePath: string): Promise<FileFingerprint | null
   try {
     const value = await stat(filePath)
     if (!value.isFile()) return null
-    if (value.size > MAX_SOURCE_BYTES) throw new Error(`source file exceeds the bounded import size (${MAX_SOURCE_BYTES} bytes)`)
     return { size: value.size, mtimeMs: value.mtimeMs, ctimeMs: value.ctimeMs, ino: value.ino, dev: value.dev }
   } catch (error) {
     if ((error as { code?: string }).code === 'ENOENT') return null
@@ -169,6 +169,22 @@ function sameSourceState(a: SourceState, b: SourceState): boolean {
   return sameFingerprint(a.main, b.main) && sameFingerprint(a.wal, b.wal) && sameFingerprint(a.journal, b.journal)
 }
 
+async function ensureExternalImportResources(source: SourceState, destinationRoot: string): Promise<void> {
+  let availableBytes: bigint
+  try {
+    const filesystem = await statfs(destinationRoot, { bigint: true })
+    availableBytes = filesystem.bavail * filesystem.bsize
+  } catch (error) {
+    throw new Error(`available destination disk space could not be checked: ${errorMessage(error)}`)
+  }
+
+  const snapshotBytes = BigInt(source.main.size) + BigInt(source.wal?.size ?? 0)
+  const requiredBytes = snapshotBytes + BigInt(EXTERNAL_IMPORT_DISK_RESERVE_BYTES)
+  if (availableBytes < requiredBytes) {
+    throw new Error(`external OpenCode import needs ${requiredBytes.toString()} bytes but only ${availableBytes.toString()} bytes are available`)
+  }
+}
+
 function waitBriefly(): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, 10))
 }
@@ -181,7 +197,7 @@ async function createOwnedSnapshot(sourcePath: string, root: string): Promise<Ow
   for (let attempt = 0; attempt < SNAPSHOT_ATTEMPTS; attempt += 1) {
     const before = await sourceState(sourcePath)
     if (!before) {
-      lastFailure = 'source database disappeared or exceeded the bounded import size'
+      lastFailure = 'source database disappeared'
       break
     }
     if (before.journal) {
@@ -189,6 +205,7 @@ async function createOwnedSnapshot(sourcePath: string, root: string): Promise<Ow
       await waitBriefly()
       continue
     }
+    await ensureExternalImportResources(before, root)
 
     const directory = await mkdtemp(path.join(root, SNAPSHOT_PREFIX))
     const stagedDatabase = path.join(directory, 'source.sqlite.copying')
@@ -220,17 +237,6 @@ async function createOwnedSnapshot(sourcePath: string, root: string): Promise<Ow
   throw new Error(`safe SQLite snapshot failed: ${lastFailure}`)
 }
 
-async function copyFileIfAbsent(sourcePath: string, destinationPath: string): Promise<boolean> {
-  try {
-    await copyFile(sourcePath, destinationPath, constants.COPYFILE_EXCL)
-    return true
-  } catch (error) {
-    if ((error as { code?: string }).code === 'EEXIST') return false
-    try { await unlink(destinationPath) } catch { /* a partial owned file is best effort cleanup */ }
-    throw error
-  }
-}
-
 async function validateOwnedSnapshot(filePath: string): Promise<void> {
   const DatabaseSync = await loadSqliteConstructor()
   if (!DatabaseSync) throw new Error('the bundled Node runtime has no node:sqlite support')
@@ -251,17 +257,24 @@ async function removeOwnedDatabaseSidecars(paths: OpenCodeRuntimePaths): Promise
 }
 
 async function publishOwnedSnapshot(snapshot: OwnedSnapshot, paths: OpenCodeRuntimePaths): Promise<boolean> {
-  const published = await copyFileIfAbsent(snapshot.databasePath, paths.databasePath)
-  if (!published) return false
+  let publishedWal = false
+  let publishedDatabase = false
   try {
     if (snapshot.walPath) {
-      const walPublished = await copyFileIfAbsent(snapshot.walPath, `${paths.databasePath}-wal`)
-      if (!walPublished) throw new Error('Metrora-owned SQLite WAL destination already exists')
+      // Publish WAL first. If startup is interrupted before the main file is
+      // moved, the next prepare pass removes this orphan sidecar and retries
+      // from the unchanged external source.
+      await rename(snapshot.walPath, `${paths.databasePath}-wal`)
+      publishedWal = true
     }
+    // The snapshot and final database live below the same runtime root, so a
+    // rename avoids a second full-size copy at peak disk usage.
+    await rename(snapshot.databasePath, paths.databasePath)
+    publishedDatabase = true
     return true
   } catch (error) {
-    await rm(paths.databasePath, { force: true }).catch(() => {})
-    await removeOwnedDatabaseSidecars(paths).catch(() => {})
+    if (publishedDatabase) await rm(paths.databasePath, { force: true }).catch(() => {})
+    if (publishedWal) await rm(`${paths.databasePath}-wal`, { force: true }).catch(() => {})
     throw error
   }
 }

@@ -11,6 +11,39 @@ import { OpenCodeRuntime, type OpenCodeFetch, type SpawnedOpenCodeProcess } from
 import { prepareOpenCodeStorage, quarantineImportedOpenCodeDatabase } from './storage'
 import { OPENCODE_CUSTOM_TOOL_IDS, OPENCODE_VERSION } from './types'
 
+const storageTestControls = vi.hoisted(() => ({
+  largePaths: new Set<string>(),
+  availableBytes: null as bigint | null,
+}))
+
+vi.mock('node:fs/promises', async importOriginal => {
+  const original = await importOriginal<typeof import('node:fs/promises')>()
+  return {
+    ...original,
+    stat: async (filePath: any, options?: any) => {
+      const value = await original.stat(filePath, options)
+      if (storageTestControls.largePaths.has(String(filePath))) {
+        Object.defineProperty(value, 'size', { configurable: true, value: (512 * 1024 * 1024) + 1 })
+      }
+      return value
+    },
+    statfs: async (filePath: any, options?: any) => {
+      if (storageTestControls.availableBytes === null) return original.statfs(filePath, options)
+      const blockSize = 4096n
+      const availableBlocks = storageTestControls.availableBytes / blockSize
+      return {
+        type: 0n,
+        bsize: blockSize,
+        blocks: availableBlocks,
+        bfree: availableBlocks,
+        bavail: availableBlocks,
+        files: 1n,
+        ffree: 1n,
+      }
+    },
+  }
+})
+
 type TestDatabase = {
   exec(sql: string): void
   prepare(sql: string): { all(...params: unknown[]): Array<Record<string, unknown>> }
@@ -22,6 +55,8 @@ const { DatabaseSync } = requireForTest('node:sqlite') as { DatabaseSync: new (f
 const temporaryDirectories: string[] = []
 
 afterEach(() => {
+  storageTestControls.largePaths.clear()
+  storageTestControls.availableBytes = null
   for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true, force: true })
 })
 
@@ -76,6 +111,73 @@ function jsonResponse(value: unknown): Response {
 }
 
 describe('Metrora-owned OpenCode storage continuity', () => {
+  it('treats an existing Metrora database above the former external import threshold as existing', async () => {
+    const root = tempDirectory()
+    const userDataPath = join(root, 'metrora-user-data')
+    const paths = runtimePaths(userDataPath)
+    mkdirSync(paths.dbDir, { recursive: true })
+    writeFileSync(paths.databasePath, 'Metrora-owned database')
+    storageTestControls.largePaths.add(paths.databasePath)
+
+    await expect(prepareOpenCodeStorage(paths, { userDataPath })).resolves.toEqual({ outcome: 'existing' })
+  })
+
+  it('starts with an existing Metrora database above the former external import threshold', async () => {
+    const root = tempDirectory()
+    const userDataPath = join(root, 'metrora-user-data')
+    const paths = runtimePaths(userDataPath)
+    mkdirSync(paths.dbDir, { recursive: true })
+    writeFileSync(paths.databasePath, 'Metrora-owned database')
+    storageTestControls.largePaths.add(paths.databasePath)
+    const executable = join(root, 'opencode.exe')
+    writeFileSync(executable, 'official binary placeholder')
+    const runtime = new OpenCodeRuntime({
+      appPath: root,
+      resourcesPath: root,
+      userDataPath,
+      isPackaged: false,
+      baseEnv: {},
+      executableOverride: executable,
+      acquirePort: async () => 43123,
+      isLoopbackPortAvailable: async () => true,
+      spawnProcess: () => fakeChild(),
+      fetchImpl: async url => url.endsWith('/global/health')
+        ? jsonResponse({ healthy: true, version: OPENCODE_VERSION })
+        : jsonResponse([...OPENCODE_CUSTOM_TOOL_IDS]),
+      healthTimeoutMs: 500,
+      pollIntervalMs: 1,
+    })
+
+    await expect(runtime.start()).resolves.toMatchObject({ state: 'ready', customToolRegistered: true })
+    await runtime.stop()
+  })
+
+  it('skips external import truthfully when the owned runtime lacks disk headroom', async () => {
+    const root = tempDirectory()
+    const external = createExternalDatabase(root)
+    const userDataPath = join(root, 'metrora-user-data')
+    const paths = runtimePaths(userDataPath)
+    const beforeMain = fingerprint(external.path)
+    const beforeWal = existsSync(`${external.path}-wal`) ? fingerprint(`${external.path}-wal`) : null
+    storageTestControls.availableBytes = 4096n
+
+    try {
+      await expect(prepareOpenCodeStorage(paths, {
+        userDataPath,
+        environment: { XDG_DATA_HOME: join(root, 'external-data') },
+      })).resolves.toMatchObject({
+        outcome: 'failed',
+        sourcePath: external.path,
+        detail: expect.stringContaining('external OpenCode import needs'),
+      })
+      expect(fingerprint(external.path)).toEqual(beforeMain)
+      expect(beforeWal && fingerprint(`${external.path}-wal`)).toEqual(beforeWal)
+      expect(existsSync(paths.databasePath)).toBe(false)
+    } finally {
+      external.database.close()
+    }
+  })
+
   it('imports a stable read-only snapshot without touching the external database', async () => {
     const root = tempDirectory()
     const external = createExternalDatabase(root)
