@@ -93,12 +93,34 @@ describe('Metrora-owned OpenCode storage continuity', () => {
     expect(beforeWal && fingerprint(`${external.path}-wal`)).toEqual(beforeWal)
     expect(paths.databasePath).not.toBe(external.path)
     expect(existsSync(paths.databasePath)).toBe(true)
+    expect(existsSync(`${paths.databasePath}-wal`)).toBe(Boolean(beforeWal))
+    expect(existsSync(`${paths.databasePath}-shm`)).toBe(false)
 
     const imported = new DatabaseSync(paths.databasePath, { readOnly: true })
     expect(imported.prepare('SELECT value FROM sentinel').all()).toEqual([{ value: 'external-authority' }])
     expect(imported.prepare('PRAGMA user_version').all()).toEqual([{ user_version: 1162 }])
     imported.close()
     external.database.close()
+  })
+
+  it('imports without depending on the non-portable DatabaseSync.serialize API', async () => {
+    const root = tempDirectory()
+    const external = createExternalDatabase(root)
+    const userDataPath = join(root, 'metrora-user-data')
+    const paths = runtimePaths(userDataPath)
+    const sqlitePrototype = (DatabaseSync as unknown as { prototype: TestDatabase & { serialize?: unknown } }).prototype
+    const originalSerialize = sqlitePrototype.serialize
+    try {
+      sqlitePrototype.serialize = undefined
+      await expect(prepareOpenCodeStorage(paths, {
+        userDataPath,
+        environment: { XDG_DATA_HOME: join(root, 'external-data') },
+      })).resolves.toMatchObject({ outcome: 'imported' })
+      expect(existsSync(paths.databasePath)).toBe(true)
+    } finally {
+      sqlitePrototype.serialize = originalSerialize
+      external.database.close()
+    }
   })
 
   it('reuses the Metrora-owned database across restart and never chooses it as a legacy source', async () => {

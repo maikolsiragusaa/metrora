@@ -20,6 +20,7 @@ import {
 } from './types'
 
 const DEFAULT_HEALTH_TIMEOUT_MS = 12_000
+const DEFAULT_TOOL_DISCOVERY_TIMEOUT_MS = 30_000
 const DEFAULT_POLL_INTERVAL_MS = 100
 const REQUEST_TIMEOUT_MS = 1_000
 const STOP_TIMEOUT_MS = 1_500
@@ -375,7 +376,13 @@ export class OpenCodeRuntime {
 
   private async verifyCustomTools(origin: string, authorization: string, signal: AbortSignal): Promise<boolean> {
     const fetchImpl = this.options.fetchImpl ?? ((url, init) => fetch(url, init))
-    const response = await fetchImpl(`${origin}/experimental/tool/ids`, { headers: { Authorization: authorization }, signal: abortAfter(signal, REQUEST_TIMEOUT_MS) })
+    // OpenCode reports health before its extension registry has finished the
+    // first cold discovery. Keep the short timeout for health polling, but
+    // allow the one-shot tool registry request its bounded cold-start budget.
+    const toolDiscoveryTimeoutMs = this.options.healthTimeoutMs === undefined
+      ? DEFAULT_TOOL_DISCOVERY_TIMEOUT_MS
+      : Math.max(REQUEST_TIMEOUT_MS, this.options.healthTimeoutMs)
+    const response = await fetchImpl(`${origin}/experimental/tool/ids`, { headers: { Authorization: authorization }, signal: abortAfter(signal, toolDiscoveryTimeoutMs) })
     if (!response.ok) throw new OpenCodeError('custom-tool', 'OpenCode tool discovery was unavailable.')
     const value = await responseJson(response)
     if (!Array.isArray(value)) throw new OpenCodeError('custom-tool', 'OpenCode tool discovery returned an invalid response.')

@@ -1,5 +1,7 @@
 // @vitest-environment node
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { readdir } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -9,6 +11,8 @@ import { buildOpenCodeServerArgs, createLaunchEnvironment, OpenCodeRuntime, reso
 import { OPENCODE_COMMIT, OPENCODE_CUSTOM_TOOL_ID, OPENCODE_CUSTOM_TOOL_IDS, OPENCODE_METRORA_TOOL_IDS, OPENCODE_VERSION } from './types'
 
 const temporaryDirectories: string[] = []
+const requireForTest = createRequire(import.meta.url)
+const { DatabaseSync } = requireForTest('node:sqlite') as { DatabaseSync: new (filePath: string) => { exec(sql: string): void; close(): void } }
 
 afterEach(() => {
   for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true, force: true })
@@ -47,6 +51,21 @@ function fakeChild(): SpawnedOpenCodeProcess & { killed: boolean } {
 
 function jsonResponse(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } })
+}
+
+function delayedJsonResponse(value: unknown, delayMs: number, signal?: AbortSignal): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer)
+      reject(new Error('request aborted'))
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve(jsonResponse(value))
+    }, delayMs)
+    signal?.addEventListener('abort', onAbort, { once: true })
+    if (signal?.aborted) onAbort()
+  })
 }
 
 describe('OpenCode upstream sidecar runtime', () => {
@@ -156,6 +175,116 @@ describe('OpenCode upstream sidecar runtime', () => {
     await runtime.stop()
     expect(child.killed).toBe(true)
     expect(runtime.status()).toMatchObject({ state: 'idle', customToolRegistered: null })
+  })
+
+  it('allows cold custom-tool discovery after the health endpoint is ready', async () => {
+    const root = tempDirectory()
+    const userData = join(root, 'user-data')
+    const executable = join(root, 'opencode.exe')
+    writeFileSync(executable, 'official binary placeholder')
+    const child = fakeChild()
+    const runtime = new OpenCodeRuntime({
+      appPath: root,
+      resourcesPath: root,
+      userDataPath: userData,
+      isPackaged: false,
+      baseEnv: {},
+      executableOverride: executable,
+      acquirePort: async () => 43126,
+      spawnProcess: () => child,
+      fetchImpl: async (url, init) => url.endsWith('/global/health')
+        ? jsonResponse({ healthy: true, version: OPENCODE_VERSION })
+        : delayedJsonResponse([...OPENCODE_CUSTOM_TOOL_IDS], 1_100, init?.signal),
+      healthTimeoutMs: 2_000,
+      pollIntervalMs: 1,
+    })
+
+    await expect(runtime.start()).resolves.toMatchObject({ state: 'ready', customToolRegistered: true })
+    await runtime.stop()
+  })
+
+  it('keeps launching against a clean isolated store when history import fails', async () => {
+    const root = tempDirectory()
+    const externalData = join(root, 'external-data')
+    const externalDirectory = join(externalData, 'opencode')
+    mkdirSync(externalDirectory, { recursive: true })
+    writeFileSync(join(externalDirectory, 'opencode.db'), 'not-a-sqlite-database')
+    const userData = join(root, 'user-data')
+    const executable = join(root, 'opencode.exe')
+    writeFileSync(executable, 'official binary placeholder')
+    const child = fakeChild()
+    let launchEnvironment: NodeJS.ProcessEnv | undefined
+    const runtime = new OpenCodeRuntime({
+      appPath: root,
+      resourcesPath: root,
+      userDataPath: userData,
+      isPackaged: false,
+      baseEnv: { XDG_DATA_HOME: externalData },
+      executableOverride: executable,
+      acquirePort: async () => 43125,
+      spawnProcess: vi.fn((_file, _args, options) => {
+        launchEnvironment = options.env
+        return child
+      }),
+      fetchImpl: async url => url.endsWith('/global/health')
+        ? jsonResponse({ healthy: true, version: OPENCODE_VERSION })
+        : jsonResponse([...OPENCODE_CUSTOM_TOOL_IDS]),
+      healthTimeoutMs: 500,
+      pollIntervalMs: 1,
+    })
+
+    await expect(runtime.start()).resolves.toMatchObject({ state: 'ready', customToolRegistered: true })
+    expect(launchEnvironment?.OPENCODE_DB).toBe(runtimePaths(userData).databasePath)
+    expect(existsSync(runtimePaths(userData).databasePath)).toBe(false)
+    await runtime.stop()
+  })
+
+  it('quarantines an imported store that cannot start and retries clean', async () => {
+    const root = tempDirectory()
+    const externalData = join(root, 'external-data')
+    const externalDirectory = join(externalData, 'opencode')
+    mkdirSync(externalDirectory, { recursive: true })
+    const externalPath = join(externalDirectory, 'opencode.db')
+    const externalDatabase = new DatabaseSync(externalPath)
+    externalDatabase.exec('CREATE TABLE sentinel (value TEXT NOT NULL); INSERT INTO sentinel VALUES (\'external-authority\');')
+    externalDatabase.close()
+    const userData = join(root, 'user-data')
+    const executable = join(root, 'opencode.exe')
+    writeFileSync(executable, 'official binary placeholder')
+    const children: Array<SpawnedOpenCodeProcess & { killed: boolean }> = []
+    let healthCalls = 0
+    const runtime = new OpenCodeRuntime({
+      appPath: root,
+      resourcesPath: root,
+      userDataPath: userData,
+      isPackaged: false,
+      baseEnv: { XDG_DATA_HOME: externalData },
+      executableOverride: executable,
+      acquirePort: async () => 43124,
+      spawnProcess: () => {
+        const child = fakeChild()
+        children.push(child)
+        return child
+      },
+      fetchImpl: async url => {
+        if (url.endsWith('/global/health')) {
+          healthCalls += 1
+          return jsonResponse({ healthy: true, version: healthCalls === 1 ? '0.0.0' : OPENCODE_VERSION })
+        }
+        return jsonResponse([...OPENCODE_CUSTOM_TOOL_IDS])
+      },
+      healthTimeoutMs: 500,
+      pollIntervalMs: 1,
+    })
+
+    await expect(runtime.start()).resolves.toMatchObject({ state: 'ready', customToolRegistered: true })
+    const paths = runtimePaths(userData)
+    expect(existsSync(paths.databasePath)).toBe(false)
+    const databaseEntries = await readdir(paths.dbDir)
+    expect(databaseEntries).toEqual(expect.arrayContaining([expect.stringMatching(/^opencode-import-rejected-.*\.db$/u)]))
+    expect(children).toHaveLength(2)
+    expect(children[0]?.killed).toBe(true)
+    await runtime.stop()
   })
 
   it('fails closed when one expected custom tool is missing', async () => {

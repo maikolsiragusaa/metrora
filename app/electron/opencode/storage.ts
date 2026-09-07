@@ -1,12 +1,17 @@
-import { copyFile, mkdtemp, mkdir, open, rename, rm, stat, unlink } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { copyFile, mkdtemp, mkdir, rename, rm, stat, unlink } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import path from 'node:path'
 
 import type { OpenCodeRuntimePaths } from './config'
 import { OPENCODE_VERSION } from './types'
 
+type SqliteStatement = {
+  all: (...parameters: unknown[]) => Array<Record<string, unknown>>
+}
+
 type SqliteDatabase = {
-  serialize: (name?: string) => Uint8Array
+  prepare: (sql: string) => SqliteStatement
   close: () => void
 }
 
@@ -43,6 +48,7 @@ export type OpenCodeStorageOptions = {
 const SNAPSHOT_ATTEMPTS = 3
 const SNAPSHOT_PREFIX = 'opencode-storage-snapshot-'
 const MAX_SOURCE_BYTES = 512 * 1024 * 1024
+const DATABASE_SIDECARS = ['-wal', '-shm', '-journal'] as const
 
 let sqliteConstructorPromise: Promise<SqliteDatabaseConstructor | null> | null = null
 
@@ -167,7 +173,7 @@ function waitBriefly(): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, 10))
 }
 
-type OwnedSnapshot = { directory: string; databasePath: string }
+type OwnedSnapshot = { directory: string; databasePath: string; walPath: string | null }
 
 async function createOwnedSnapshot(sourcePath: string, root: string): Promise<OwnedSnapshot> {
   let lastFailure = 'source state was not stable'
@@ -202,8 +208,9 @@ async function createOwnedSnapshot(sourcePath: string, root: string): Promise<Ow
         continue
       }
       await rename(stagedDatabase, databasePath)
-      if (before.wal) await rename(stagedWal, `${databasePath}-wal`)
-      return { directory, databasePath }
+      const walPath = before.wal ? `${databasePath}-wal` : null
+      if (walPath) await rename(stagedWal, walPath)
+      return { directory, databasePath, walPath }
     } catch (error) {
       lastFailure = errorMessage(error)
       await rm(directory, { recursive: true, force: true }).catch(() => {})
@@ -213,43 +220,63 @@ async function createOwnedSnapshot(sourcePath: string, root: string): Promise<Ow
   throw new Error(`safe SQLite snapshot failed: ${lastFailure}`)
 }
 
-async function writeDatabaseIfAbsent(filePath: string, content: Uint8Array): Promise<boolean> {
-  let handle: Awaited<ReturnType<typeof open>> | undefined
+async function copyFileIfAbsent(sourcePath: string, destinationPath: string): Promise<boolean> {
   try {
-    handle = await open(filePath, 'wx', 0o600)
-    await handle.writeFile(content)
-    await handle.sync()
+    await copyFile(sourcePath, destinationPath, constants.COPYFILE_EXCL)
     return true
   } catch (error) {
     if ((error as { code?: string }).code === 'EEXIST') return false
-    if (handle) {
-      await handle.close().catch(() => {})
-      handle = undefined
-      try { await unlink(filePath) } catch { /* a partial owned file is best effort cleanup */ }
-    }
+    try { await unlink(destinationPath) } catch { /* a partial owned file is best effort cleanup */ }
     throw error
+  }
+}
+
+async function validateOwnedSnapshot(filePath: string): Promise<void> {
+  const DatabaseSync = await loadSqliteConstructor()
+  if (!DatabaseSync) throw new Error('the bundled Node runtime has no node:sqlite support')
+  let database: SqliteDatabase | undefined
+  try {
+    database = new DatabaseSync(filePath, { readOnly: true })
+    const rows = database.prepare('PRAGMA integrity_check').all()
+    if (rows.length !== 1 || rows[0]?.integrity_check !== 'ok') throw new Error('SQLite snapshot failed integrity verification')
   } finally {
-    await handle?.close().catch(() => {})
+    try { database?.close() } catch { /* best effort for an owned snapshot */ }
+  }
+}
+
+async function removeOwnedDatabaseSidecars(paths: OpenCodeRuntimePaths): Promise<void> {
+  for (const suffix of DATABASE_SIDECARS) {
+    await rm(`${paths.databasePath}${suffix}`, { force: true })
+  }
+}
+
+async function publishOwnedSnapshot(snapshot: OwnedSnapshot, paths: OpenCodeRuntimePaths): Promise<boolean> {
+  const published = await copyFileIfAbsent(snapshot.databasePath, paths.databasePath)
+  if (!published) return false
+  try {
+    if (snapshot.walPath) {
+      const walPublished = await copyFileIfAbsent(snapshot.walPath, `${paths.databasePath}-wal`)
+      if (!walPublished) throw new Error('Metrora-owned SQLite WAL destination already exists')
+    }
+    return true
+  } catch (error) {
+    await rm(paths.databasePath, { force: true }).catch(() => {})
+    await removeOwnedDatabaseSidecars(paths).catch(() => {})
+    throw error
   }
 }
 
 async function importDatabaseSnapshot(sourcePath: string, paths: OpenCodeRuntimePaths): Promise<boolean> {
-  const DatabaseSync = await loadSqliteConstructor()
-  if (!DatabaseSync) throw new Error('the bundled Node runtime has no node:sqlite support')
-
   const snapshotRoot = path.join(paths.runtimeRoot, 'storage-imports')
   await mkdir(snapshotRoot, { recursive: true, mode: 0o700 })
   const snapshot = await createOwnedSnapshot(sourcePath, snapshotRoot)
-  let database: SqliteDatabase | undefined
   try {
-    // serialize() runs against the owned snapshot, never the external path.
-    // The destination is a fresh Metrora-owned database with no shared WAL.
-    database = new DatabaseSync(snapshot.databasePath)
-    const serialized = database.serialize()
-    if (!(serialized instanceof Uint8Array) || serialized.byteLength === 0) throw new Error('SQLite snapshot was empty')
-    return await writeDatabaseIfAbsent(paths.databasePath, serialized)
+    // Validate only the owned snapshot. The external database is never opened
+    // by SQLite, and the source SHM index is intentionally omitted.
+    await validateOwnedSnapshot(snapshot.databasePath)
+    // Publish only the owned main+WAL pair; no serialization API is required.
+    return await publishOwnedSnapshot(snapshot, paths)
   } finally {
-    try { database?.close() } catch { /* best effort for an owned snapshot */ }
     await rm(snapshot.directory, { recursive: true, force: true }).catch(() => {})
   }
 }
@@ -257,6 +284,10 @@ async function importDatabaseSnapshot(sourcePath: string, paths: OpenCodeRuntime
 export async function prepareOpenCodeStorage(paths: OpenCodeRuntimePaths, options: OpenCodeStorageOptions): Promise<OpenCodeStoragePreparation> {
   if (await fileFingerprint(paths.databasePath)) return { outcome: 'existing' }
   await mkdir(paths.dbDir, { recursive: true, mode: 0o700 })
+  // A missing main file can leave sidecars behind after an interrupted import.
+  // They are not a valid database on their own and must not be paired with a
+  // different source snapshot.
+  await removeOwnedDatabaseSidecars(paths)
 
   for (const sourcePath of legacyOpenCodeDatabaseCandidates(options, paths)) {
     try {
