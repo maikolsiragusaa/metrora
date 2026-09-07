@@ -6,9 +6,9 @@ Base main: `0c24a8e495848bb3d5e71e4924dff56e24b185d5`
 
 Branch: `feat/opencode-session-import-001`
 
-HEAD: `0c24a8e495848bb3d5e71e4924dff56e24b185d5` before the feature commit
+HEAD: `0e786cb59f80898a8acd6c919d55611b365ac21b` feature commit (this closeout metadata is committed immediately after it)
 
-PR: draft pending push
+PR: [#272](https://github.com/maikolsiragusaa/metrora/pull/272) — DRAFT
 
 Standalone version tested: `1.18.29`
 
@@ -72,9 +72,9 @@ Source-size: PASS — `SOURCE_SIZE_BASE_REF=origin/main node scripts/check-sourc
 
 Architecture: PASS — public identity boundary, Windows Store identity/version, and source-size boundary checks
 
-Commit: `feat: import standalone OpenCode sessions` (pending)
+Commit: `0e786cb59f80898a8acd6c919d55611b365ac21b` — `feat: import standalone OpenCode sessions`
 
-Push: pending
+Push: PASS
 
 Merge: NOT PERFORMED
 
