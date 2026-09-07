@@ -9,7 +9,7 @@ import { resolveSubagentAttribution, sessionIdentity } from './sessions-report.j
 import { normalizeContentBlocks } from './content-utils.js'
 import { discoverAllSessionsWithOutcomes, getProvider } from './providers/index.js'
 import { flushCodexCache } from './codex-cache.js'
-import { antigravityCascadeIdFromPath, flushAntigravityCache, shouldReparseAntigravitySource } from './providers/antigravity.js'
+import { antigravityCascadeIdFromPath, flushAntigravityCache } from './providers/antigravity.js'
 import { getDesktopSessionsDirs } from './providers/claude.js'
 import { isSqliteBusyError } from './sqlite.js'
 import {
@@ -69,7 +69,8 @@ import { flushCopilotChatJournalInvalidations, queueCopilotChatJournalSource, re
 import { reconcileMissingProviderSources, shouldReconcileMissingProviderSources } from './parser-source-reconciliation.js'
 import { buildCwdEvidenceIndex, timeBoundCwdRefs } from './pr-attribution-time-bound.js'
 import { flattenString, flattenStringArray, flattenStringPrefix, flattenToolSequence } from './string-retention.js'
-import { traceReconciliation } from './reconciliation-diagnostics.js'
+import { traceProviderParse } from './reconciliation-diagnostics.js'
+import { cachedFileNeedsProviderReparse } from './provider-cache-reparse.js'
 export { settleSessionCacheCostsForRuntimeV1 } from './session-cache-cost-settlement.js'
 
 // Returns true for sessions whose canonical project key must NOT be derived
@@ -2775,23 +2776,6 @@ function getOrCreateProviderSection(cache: SessionCache, provider: string): Prov
   return section
 }
 
-function cachedFileNeedsProviderReparse(providerName: string, sourcePath: string, cached: CachedFile): boolean {
-  // Antigravity data comes from the live server, not from the conversation file.
-  // A 0-turn cache entry may just mean the server was unavailable last run.
-  if (providerName === 'antigravity') return shouldReparseAntigravitySource(sourcePath, cached.turns.length)
-
-  // Devin transcript usage is enriched from sessions.db. The cache fingerprint
-  // only tracks the transcript JSON, so reparse to pick up DB-side project,
-  // title, model, and timestamp changes.
-  if (providerName === 'devin') return true
-
-  if (providerName !== 'gemini') return false
-
-  return cached.turns.some(turn =>
-    turn.calls.some(call => call.deduplicationKey === `gemini:${turn.sessionId}`),
-  )
-}
-
 const warnedProviderReadFailures = new Set<string>()
 
 function warnProviderReadFailureOnce(providerName: string, err: unknown): void {
@@ -3248,15 +3232,7 @@ async function parseProviderSources(
     }
   }
 
-  traceReconciliation('provider-parse', {
-    provider: providerName,
-    sourceCount: sources.length,
-    changedSourceCount: changedSources.length,
-    unchangedSourceCount: unchangedSources.length,
-    projectCount: projects.length,
-    readOnly,
-    elapsedMs: Math.round(performance.now() - providerStartedAt),
-  })
+  traceProviderParse(providerStartedAt, providerName, sources.length, changedSources.length, unchangedSources.length, projects.length, readOnly)
   return projects
 }
 

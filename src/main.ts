@@ -4,10 +4,12 @@ import { installMenubarApp } from './menubar-installer.js'
 import { exportCsv, exportJson, type PeriodExport } from './export.js'
 import { findUnpricedModels, loadPricing, setModelAliases, setPriceOverrides, setLocalModelSavings, setProxyPaths, normalizeProxyPath } from './models.js'
 import { parseAllSessions, filterProjectsByName, filterProjectsByDateRange, clearSessionCache, setInteractiveScanUI } from './parser.js'
-import { allProviderNames, getAllProviders } from './providers/index.js'
+import { getAllProviders } from './providers/index.js'
 import { getProvider } from './providers/index.js'
 import { parseProjectsForMetroraScope } from './project-scope-cli.js'
 import { registerProjectCommands } from './project-cli-commands.js'
+import { registerOpenCodeReconcileCommand } from './opencode-reconcile-command.js'
+import { assertFormat, assertProvider, assertScope } from './cli-validation.js'
 import { convertCost, formatCost } from './currency.js'
 import { renderStatusBar } from './format.js'
 import { toDateString } from './daily-cache.js'
@@ -394,39 +396,12 @@ function sortedPlans(plans: Partial<Record<PlanProvider, Plan>>): Plan[] {
     .filter((plan): plan is Plan => plan !== undefined)
 }
 
-function assertFormat(value: string, allowed: readonly string[], command: string): void {
-  if (!allowed.includes(value)) {
-    process.stderr.write(
-      `metrora ${command}: unknown format "${value}". Valid values: ${allowed.join(', ')}.\n`
-    )
-    process.exit(1)
-  }
-}
-
 type AliasRow = { from: string; to: string }
 
 function toAliasRows(aliases: Record<string, string>): AliasRow[] {
   return Object.entries(aliases)
     .map(([from, to]) => ({ from, to }))
     .sort((a, b) => a.from < b.from ? -1 : a.from > b.from ? 1 : 0)
-}
-
-function assertProvider(value: string, command: string): void {
-  const names = allProviderNames()
-  if (value === 'all' || names.includes(value)) return
-  process.stderr.write(
-    `metrora ${command}: unknown provider "${value}". Valid values: all, ${names.join(', ')}.\n`
-  )
-  process.exit(1)
-}
-
-function assertScope(value: string, allowed: readonly string[], command: string): void {
-  if (!allowed.includes(value)) {
-    process.stderr.write(
-      `metrora ${command}: unknown scope "${value}". Valid values: ${allowed.join(', ')}.\n`
-    )
-    process.exit(1)
-  }
 }
 
 async function runJsonReport(period: Period, provider: string, project: string[], exclude: string[]): Promise<void> {
@@ -1049,27 +1024,7 @@ program
     })
   })
 
-program
-  .command('reconcile', { hidden: true })
-  .description('Reconcile one provider source into the canonical session cache')
-  .option('--provider <provider>', 'Provider to reconcile (currently only opencode)', 'opencode')
-  .action(async (opts: { provider: string }) => {
-    assertProvider(opts.provider, 'reconcile')
-    if (opts.provider !== 'opencode') {
-      process.stderr.write('metrora reconcile: only the opencode provider supports targeted reconciliation.\n')
-      process.exit(1)
-    }
-    await loadPricing()
-    const projects = await parseAllSessions(undefined, 'opencode')
-    const calls = projects.reduce((total, project) => total + project.sessions.reduce(
-      (sessionTotal, session) => sessionTotal + session.turns.reduce(
-        (turnTotal, turn) => turnTotal + turn.assistantCalls.length,
-        0,
-      ),
-      0,
-    ), 0)
-    console.log(JSON.stringify({ ok: true, provider: 'opencode', projects: projects.length, calls }))
-  })
+registerOpenCodeReconcileCommand(program)
 
 program
   .command('status')
