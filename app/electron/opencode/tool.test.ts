@@ -23,12 +23,12 @@ function importToolSource(source: string): Promise<{ default: { args: Record<str
   return import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`) as Promise<{ default: { args: Record<string, unknown>; execute: (args?: unknown, context?: unknown) => Promise<string> } }>
 }
 
-function bridgeEntry(directory: string, body: string): string {
+function bridgeEntry(directory: string, body: string, environment: Record<string, string> = {}): string {
   const entry = join(directory, 'bridge.mjs')
   writeFileSync(entry, body)
   process.env.METRORA_TOOL_BRIDGE_SPEC = JSON.stringify({
     command: [process.execPath, entry, 'tools', 'call'],
-    environment: {},
+    environment,
   })
   return entry
 }
@@ -122,6 +122,18 @@ describe('Metrora OpenCode tool runtime file', () => {
       tool: 'get_spend_snapshot',
       args: { period: 'today', model: 'model;still-one-argv' },
     }))
+  })
+
+  it('carries the bounded accounting root through the isolated tool bridge', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'metrora-opencode-tool-accounting-'))
+    temporaryDirectories.push(directory)
+    const roots = JSON.stringify(['C:\\metrora-owned\\opencode\\db'])
+    bridgeEntry(directory, 'process.stdout.write(JSON.stringify({ roots: process.env.METRORA_OPENCODE_EXTRA_DATA_DIRS }))', {
+      METRORA_OPENCODE_EXTRA_DATA_DIRS: roots,
+    })
+    const module = await importToolSource(OPENCODE_METRORA_TOOL_SOURCES.metrora_get_coverage_report)
+
+    await expect(module.default.execute({ filters: { period: 'today' } })).resolves.toBe(JSON.stringify({ roots }))
   })
 
   it('returns clean unavailable output for missing, malformed, oversized, nonzero and cancelled bridges', async () => {

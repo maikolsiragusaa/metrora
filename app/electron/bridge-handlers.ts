@@ -28,6 +28,8 @@ type Deps = {
   /** Cached update-availability status; absent under tests unless injected. */
   getUpdateStatus?: () => Promise<UpdateStatus>
   share?: DesktopShareRuntime | null
+  /** Narrow Metrora-owned provider roots forwarded to every accounting CLI read. */
+  accountingEnv?: NodeJS.ProcessEnv
 }
 
 export const NO_UPDATE_STATUS: UpdateStatus = { currentVersion: '', latestVersion: null, updateAvailable: false, tag: null }
@@ -249,7 +251,7 @@ function cliErrorProps(err: unknown, cmd: string | undefined): Record<string, un
  * unit-testable without launching Electron.
  */
 export function createBridgeHandlers(deps: Deps): Record<string, Handler> {
-  const snapshotEnv = { METRORA_READ_MODE: 'snapshot' }
+  const snapshotEnv = { ...(deps.accountingEnv ?? {}), METRORA_READ_MODE: 'snapshot' }
   const readQuota = deps.getQuota ?? getQuota
   const emitProgress = deps.emitProgress ?? (() => {})
   const telemetry = deps.telemetry ?? null
@@ -306,7 +308,7 @@ export function createBridgeHandlers(deps: Deps): Record<string, Handler> {
         // Explicitly clear snapshot mode. The Electron process can inherit
         // METRORA_READ_MODE from a developer shell; a fresh click must never
         // accidentally become a read-only cache projection in that case.
-        extraEnv: { METRORA_PROGRESS: '1', METRORA_READ_MODE: '' },
+        extraEnv: { ...(deps.accountingEnv ?? {}), METRORA_PROGRESS: '1', METRORA_READ_MODE: '' },
         onStderr: makeProgressReader(emitProgress),
         ...(priority ? { priority } : {}),
       })

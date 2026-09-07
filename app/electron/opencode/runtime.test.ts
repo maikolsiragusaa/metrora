@@ -518,7 +518,8 @@ describe('OpenCode upstream sidecar runtime', () => {
     expect(buildOpenCodeServerArgs(43129)).toEqual(['serve', '--hostname', '127.0.0.1', '--port', '43129'])
     expect(() => buildOpenCodeServerArgs(0)).toThrow()
     const paths = runtimePaths('C:/user-data')
-    const environment = createLaunchEnvironment({ paths, username: 'metrora', password: 'x'.repeat(64), baseEnv: {}, toolBridgeSpec: '{"command":["C:/cli.exe","tools","call"],"environment":{}}' })
+    const accountingEnv = { METRORA_OPENCODE_EXTRA_DATA_DIRS: JSON.stringify(['C:/user-data/opencode/runtime/1.18.27/db']) }
+    const environment = createLaunchEnvironment({ paths, username: 'metrora', password: 'x'.repeat(64), baseEnv: {}, toolBridgeSpec: '{"command":["C:/cli.exe","tools","call"],"environment":{}}', accountingEnv })
     expect(environment.OPENCODE_SERVER_PASSWORD).toBe('x'.repeat(64))
     expect(environment.OPENCODE_CONFIG).toBe(paths.configPath)
     expect(environment.OPENCODE_DB).toBe(paths.databasePath)
@@ -527,6 +528,7 @@ describe('OpenCode upstream sidecar runtime', () => {
     expect(environment.XDG_STATE_HOME).toBe(paths.stateDir)
     expect(environment.XDG_CONFIG_HOME).toBe(paths.runtimeDir)
     expect(environment.METRORA_TOOL_BRIDGE_SPEC).toContain('C:/cli.exe')
+    expect(environment.METRORA_OPENCODE_EXTRA_DATA_DIRS).toBe(accountingEnv.METRORA_OPENCODE_EXTRA_DATA_DIRS)
     const withoutBridge = createLaunchEnvironment({ paths, username: 'metrora', password: 'x'.repeat(64), baseEnv: {} })
     expect(withoutBridge.METRORA_TOOL_BRIDGE_SPEC).toBeUndefined()
   })

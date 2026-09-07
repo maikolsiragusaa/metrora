@@ -164,6 +164,8 @@ const MAX_OUTPUT_BYTES = ${MAX_OUTPUT_BYTES}
 const MAX_STDERR_BYTES = ${MAX_STDERR_BYTES}
 const TIMEOUT_MS = ${timeoutMs}
 const UNAVAILABLE = ${sourceJson(UNAVAILABLE)}
+const ACCOUNTING_ENV_KEY = "METRORA_OPENCODE_EXTRA_DATA_DIRS"
+const MAX_ACCOUNTING_ENV_BYTES = 8 * 1024
 
 function byteLength(value) {
   return Buffer.byteLength(value, "utf8")
@@ -189,9 +191,16 @@ function readBridgeSpec() {
     if (!isAbsolute(command[1]) || command[2] !== "tools" || command[3] !== "call") return null
   }
   const environment = value.environment
-  if (Object.keys(environment).some(key => key !== "ELECTRON_RUN_AS_NODE")) return null
+  if (Object.keys(environment).some(key => key !== "ELECTRON_RUN_AS_NODE" && key !== ACCOUNTING_ENV_KEY)) return null
   if (environment.ELECTRON_RUN_AS_NODE !== undefined && environment.ELECTRON_RUN_AS_NODE !== "1") return null
-  return { command: [...command], environment: { ...(environment.ELECTRON_RUN_AS_NODE === "1" ? { ELECTRON_RUN_AS_NODE: "1" } : {}) } }
+  if (environment[ACCOUNTING_ENV_KEY] !== undefined && (typeof environment[ACCOUNTING_ENV_KEY] !== "string" || byteLength(environment[ACCOUNTING_ENV_KEY]) > MAX_ACCOUNTING_ENV_BYTES)) return null
+  return {
+    command: [...command],
+    environment: {
+      ...(environment.ELECTRON_RUN_AS_NODE === "1" ? { ELECTRON_RUN_AS_NODE: "1" } : {}),
+      ...(typeof environment[ACCOUNTING_ENV_KEY] === "string" ? { [ACCOUNTING_ENV_KEY]: environment[ACCOUNTING_ENV_KEY] } : {}),
+    },
+  }
 }
 
 function terminationSignal(context) {

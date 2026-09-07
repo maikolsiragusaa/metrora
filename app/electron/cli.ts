@@ -13,6 +13,7 @@ import {
   METRORA_ENV,
   readPersistedCliPath,
 } from './identity'
+import { OPENCODE_ACCOUNTING_EXTRA_DATA_DIRS_ENV, OPENCODE_ACCOUNTING_ENV_MAX_BYTES } from './opencode/accounting'
 
 // This module runs entirely in Electron's main process and intentionally does
 // not import Electron so it remains testable in plain Node.
@@ -205,7 +206,7 @@ export function spawnSpecFor(target: CliTarget, args: string[]): SpawnSpec {
  * custom tool receives an argv vector, never a shell command, plus the one
  * runtime flag needed when the packaged CLI is launched by Electron.
  */
-export function resolveMetroraToolBridgeSpec(): string | null {
+export function resolveMetroraToolBridgeSpec(extraEnvironment: Record<string, string> = {}): string | null {
   const target = resolveTarget()
   if (!target) return null
   const spec = spawnSpecFor(target, ['tools', 'call'])
@@ -219,6 +220,10 @@ export function resolveMetroraToolBridgeSpec(): string | null {
   }
   const environment: Record<string, string> = {}
   if (spec.env.ELECTRON_RUN_AS_NODE === '1') environment.ELECTRON_RUN_AS_NODE = '1'
+  const accountingRoots = extraEnvironment[OPENCODE_ACCOUNTING_EXTRA_DATA_DIRS_ENV]
+  if (typeof accountingRoots === 'string' && Buffer.byteLength(accountingRoots, 'utf8') <= OPENCODE_ACCOUNTING_ENV_MAX_BYTES) {
+    environment[OPENCODE_ACCOUNTING_EXTRA_DATA_DIRS_ENV] = accountingRoots
+  }
   const bridge: MetroraToolBridgeSpec = { command, environment }
   const serialized = JSON.stringify(bridge)
   return Buffer.byteLength(serialized, 'utf8') <= 8 * 1024 ? serialized : null

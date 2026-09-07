@@ -2988,15 +2988,11 @@ async function parseProviderSources(
     }
   }
 
-  // Parser dedup: cross-provider keys + cached file keys.
-  // Separate from seenKeys so parsing doesn't suppress query-time output.
+  // Source-union providers retain complete per-source caches; query-time seenKeys
+  // performs the logical reconciliation. Other providers keep parser-time dedup.
   const parserDedup = new Set(seenKeys)
-  for (const { cached } of unchangedSources) {
-    for (const turn of cached.turns) {
-      for (const call of turn.calls) {
-        parserDedup.add(call.deduplicationKey)
-      }
-    }
+  if (!provider.cacheSourceRecordsIndependently) {
+    for (const { cached } of unchangedSources) for (const turn of cached.turns) for (const call of turn.calls) parserDedup.add(call.deduplicationKey)
   }
 
   // Parse changed files, update cache
@@ -3022,7 +3018,7 @@ async function parseProviderSources(
       }
 
       try {
-        const parser = provider.createSessionParser(source, parserDedup, dateRange)
+        const parser = provider.createSessionParser(source, provider.cacheSourceRecordsIndependently ? new Set(seenKeys) : parserDedup, dateRange)
         const providerCalls: ParsedProviderCall[] = []
         for await (const call of parser.parse()) {
           providerCalls.push(call)
@@ -3265,7 +3261,10 @@ function cacheKey(dateRange?: DateRange, providerFilter?: string): string {
   const claudeEnv = (process.env['CLAUDE_CONFIG_DIRS'] ?? '') + '|' + (process.env['CLAUDE_CONFIG_DIR'] ?? '')
   // Proxy attribution (totalProxiedCostUSD) is computed live from proxyPaths and
   // then cached, so the key must change when that config changes.
-  return `${isSnapshotReadMode() ? 'snapshot' : 'fresh'}:${s}:${providerFilter ?? 'all'}:${claudeEnv}:${getProxyPathsConfigHash()}:${runtimeHistoricalPricingCacheKeyV1()}`
+  // Include OpenCode's provider environment so a long-lived Desktop process
+  // invalidates its in-memory result when the additive root changes.
+  const opencodeEnv = computeEnvFingerprint('opencode')
+  return `${isSnapshotReadMode() ? 'snapshot' : 'fresh'}:${s}:${providerFilter ?? 'all'}:${claudeEnv}:${opencodeEnv}:${getProxyPathsConfigHash()}:${runtimeHistoricalPricingCacheKeyV1()}`
 }
 
 export function clearSessionCache(): void {

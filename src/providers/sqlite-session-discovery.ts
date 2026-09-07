@@ -25,6 +25,7 @@ export async function discoverSqliteSessions(
     const entries = await readdir(config.dbDir)
     dbPaths = entries
       .filter((file) => file.startsWith(config.dbFilePrefix) && file.endsWith('.db'))
+      .sort()
       .map((file) => join(config.dbDir, file))
   } catch {
     return []

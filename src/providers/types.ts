@@ -114,6 +114,11 @@ export type Provider = {
   // Optional source-aware variant used when only one durable source's parser
   // authority is changing; other provider paths retain their cached calls.
   durableFreshWinsForSource?: (source: SessionSource) => boolean
+  // Keep each source's cached records complete so query-time deduplication can
+  // reconcile overlapping physical stores without losing evidence when one
+  // store changes or disappears. The default preserves the historical parser
+  // behavior for every other provider.
+  cacheSourceRecordsIndependently?: boolean
 
   modelDisplayName(model: string): string
   toolDisplayName(rawTool: string): string

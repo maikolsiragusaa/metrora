@@ -10,6 +10,7 @@ import { initializeDesktopShareRuntime, stopDesktopShareRuntime } from './share-
 import { Telemetry } from './telemetry'
 import { createUpdateChecker, type UpdateChecker, type UpdateStatus } from './updates'
 import { createBridgeHandlers, NO_UPDATE_STATUS } from './bridge-handlers'
+import { createOpenCodeAccountingEnvironment } from './opencode/config'
 import { OpenCodeRuntime } from './opencode/runtime'
 import { readOpenCodeDesktopProjects, resolveOpenCodeDesktopGlobalStorePath } from './opencode/project-import'
 import { OpenCodeViewManager, normalizeOpenCodeBounds, type OpenCodeApp, type OpenCodeView, type OpenCodeWindow } from './opencode/view'
@@ -143,6 +144,7 @@ export function shouldInstallApplicationMenu(_isDev: boolean, platform = process
 }
 
 function registerHandlers(): void {
+  const openCodeAccountingEnv = createOpenCodeAccountingEnvironment(app.getPath('userData'))
   const share = initializeDesktopShareRuntime({
     isPackaged: app.isPackaged,
     resourcesPath: process.resourcesPath,
@@ -159,10 +161,11 @@ function registerHandlers(): void {
     userDataPath: app.getPath('userData'),
     isPackaged: app.isPackaged,
     workingDirectory: process.cwd(),
-    toolBridgeSpec: resolveMetroraToolBridgeSpec(),
+    toolBridgeSpec: resolveMetroraToolBridgeSpec(openCodeAccountingEnv),
+    accountingEnv: openCodeAccountingEnv,
     readUsageSnapshot: () => spawnCli(
       ['status', '--format', 'menubar-json', '--period', 'today', '--no-timeline', '--no-optimize'],
-      { extraEnv: { METRORA_READ_MODE: 'snapshot' }, priority: 'background' },
+      { extraEnv: { ...openCodeAccountingEnv, METRORA_READ_MODE: 'snapshot' }, priority: 'background' },
     ),
   })
   const openCodeDesktopGlobalStorePath = resolveOpenCodeDesktopGlobalStorePath(app.getPath('appData'))
@@ -181,6 +184,7 @@ function registerHandlers(): void {
     telemetry: telemetryInstance,
     getUpdateStatus: () => updateChecker ? updateChecker.getStatus() : Promise.resolve(NO_UPDATE_STATUS),
     share,
+    accountingEnv: openCodeAccountingEnv,
   })
   const trustedRendererIpcChannels = new Set([
     'metrora:runPerformanceBench',

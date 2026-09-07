@@ -199,7 +199,7 @@ export const PROVIDER_ENV_VARS: Record<string, string[]> = {
   droid: ['FACTORY_DIR'],
   cursor: ['XDG_DATA_HOME'],
   'cursor-agent': ['XDG_DATA_HOME'],
-  opencode: ['XDG_DATA_HOME', 'OPENCODE_DATA_DIR', 'OPENCODE_DB_PREFIX'],
+  opencode: ['XDG_DATA_HOME', 'OPENCODE_DATA_DIR', 'OPENCODE_DB_PREFIX', 'METRORA_OPENCODE_EXTRA_DATA_DIRS'],
   goose: ['XDG_DATA_HOME'],
   crush: ['XDG_DATA_HOME'],
   warp: ['WARP_DB_PATH'],
@@ -256,7 +256,7 @@ export const PROVIDER_PARSE_VERSIONS: Record<string, string> = {
   antigravity: 'worktree-project-grouping-v6-provider-reasoning-filter-usage-accounting-v2-source-union-v1-durable-v1-output-reasoning-map-v2-pricing-evidence-v1',
   // OpenCode keeps valid usage in archived root/child sessions. The parser
   // must scan the complete SQLite session tree, not only active sessions.
-  opencode: 'sqlite-session-tree-v2-provider-id-v1-free-route-v1-route-cost-v1-pricing-context-v1',
+  opencode: 'sqlite-session-tree-v2-provider-id-v1-free-route-v1-route-cost-v1-pricing-context-v1-source-union-v1',
   // Preserve the source-recorded thread.model.provider through the shared cache.
   zed: 'sqlite-zstd-ledger-v1-model-provider-v1-pricing-context-v1',
 }
