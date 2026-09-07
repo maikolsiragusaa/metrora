@@ -1,5 +1,7 @@
 // @vitest-environment node
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { readdir } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -9,6 +11,8 @@ import { buildOpenCodeServerArgs, createLaunchEnvironment, OpenCodeRuntime, reso
 import { OPENCODE_COMMIT, OPENCODE_CUSTOM_TOOL_ID, OPENCODE_CUSTOM_TOOL_IDS, OPENCODE_METRORA_TOOL_IDS, OPENCODE_VERSION } from './types'
 
 const temporaryDirectories: string[] = []
+const requireForTest = createRequire(import.meta.url)
+const { DatabaseSync } = requireForTest('node:sqlite') as { DatabaseSync: new (filePath: string) => { exec(sql: string): void; close(): void } }
 
 afterEach(() => {
   for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true, force: true })
@@ -49,6 +53,21 @@ function jsonResponse(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } })
 }
 
+function delayedJsonResponse(value: unknown, delayMs: number, signal?: AbortSignal): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer)
+      reject(new Error('request aborted'))
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve(jsonResponse(value))
+    }, delayMs)
+    signal?.addEventListener('abort', onAbort, { once: true })
+    if (signal?.aborted) onAbort()
+  })
+}
+
 describe('OpenCode upstream sidecar runtime', () => {
   it('resolves only the deterministic staged path and pins the release', () => {
     const root = tempDirectory()
@@ -82,6 +101,7 @@ describe('OpenCode upstream sidecar runtime', () => {
       resourcesPath: root,
       userDataPath: userData,
       isPackaged: false,
+      baseEnv: {},
       executableOverride: executable,
       acquirePort: async () => 43127,
       randomPassword: () => 'p'.repeat(64),
@@ -115,8 +135,14 @@ describe('OpenCode upstream sidecar runtime', () => {
         env: expect.objectContaining({
           OPENCODE_SERVER_USERNAME: 'metrora',
           OPENCODE_SERVER_PASSWORD: 'p'.repeat(64),
-          OPENCODE_CONFIG_DIR: join(userData, 'opencode', OPENCODE_VERSION),
-          OPENCODE_CONFIG: join(userData, 'opencode', OPENCODE_VERSION, 'opencode.json'),
+          OPENCODE_CONFIG_DIR: join(userData, 'opencode', 'runtime', OPENCODE_VERSION, 'config'),
+          OPENCODE_CONFIG: join(userData, 'opencode', 'runtime', OPENCODE_VERSION, 'config', 'opencode.json'),
+          OPENCODE_DATA_DIR: join(userData, 'opencode', 'runtime', OPENCODE_VERSION, 'data'),
+          OPENCODE_DB: join(userData, 'opencode', 'runtime', OPENCODE_VERSION, 'db', 'opencode.db'),
+          XDG_DATA_HOME: join(userData, 'opencode', 'runtime', OPENCODE_VERSION, 'data'),
+          XDG_CACHE_HOME: join(userData, 'opencode', 'runtime', OPENCODE_VERSION, 'cache'),
+          XDG_STATE_HOME: join(userData, 'opencode', 'runtime', OPENCODE_VERSION, 'state'),
+          XDG_CONFIG_HOME: join(userData, 'opencode', 'runtime', OPENCODE_VERSION, 'config'),
           OPENCODE_DISABLE_AUTOUPDATE: '1',
           METRORA_TOOL_BRIDGE_SPEC: expect.any(String),
         }),
@@ -151,6 +177,116 @@ describe('OpenCode upstream sidecar runtime', () => {
     expect(runtime.status()).toMatchObject({ state: 'idle', customToolRegistered: null })
   })
 
+  it('allows cold custom-tool discovery after the health endpoint is ready', async () => {
+    const root = tempDirectory()
+    const userData = join(root, 'user-data')
+    const executable = join(root, 'opencode.exe')
+    writeFileSync(executable, 'official binary placeholder')
+    const child = fakeChild()
+    const runtime = new OpenCodeRuntime({
+      appPath: root,
+      resourcesPath: root,
+      userDataPath: userData,
+      isPackaged: false,
+      baseEnv: {},
+      executableOverride: executable,
+      acquirePort: async () => 43126,
+      spawnProcess: () => child,
+      fetchImpl: async (url, init) => url.endsWith('/global/health')
+        ? jsonResponse({ healthy: true, version: OPENCODE_VERSION })
+        : delayedJsonResponse([...OPENCODE_CUSTOM_TOOL_IDS], 1_100, init?.signal),
+      healthTimeoutMs: 2_000,
+      pollIntervalMs: 1,
+    })
+
+    await expect(runtime.start()).resolves.toMatchObject({ state: 'ready', customToolRegistered: true })
+    await runtime.stop()
+  })
+
+  it('keeps launching against a clean isolated store when history import fails', async () => {
+    const root = tempDirectory()
+    const externalData = join(root, 'external-data')
+    const externalDirectory = join(externalData, 'opencode')
+    mkdirSync(externalDirectory, { recursive: true })
+    writeFileSync(join(externalDirectory, 'opencode.db'), 'not-a-sqlite-database')
+    const userData = join(root, 'user-data')
+    const executable = join(root, 'opencode.exe')
+    writeFileSync(executable, 'official binary placeholder')
+    const child = fakeChild()
+    let launchEnvironment: NodeJS.ProcessEnv | undefined
+    const runtime = new OpenCodeRuntime({
+      appPath: root,
+      resourcesPath: root,
+      userDataPath: userData,
+      isPackaged: false,
+      baseEnv: { XDG_DATA_HOME: externalData },
+      executableOverride: executable,
+      acquirePort: async () => 43125,
+      spawnProcess: vi.fn((_file, _args, options) => {
+        launchEnvironment = options.env
+        return child
+      }),
+      fetchImpl: async url => url.endsWith('/global/health')
+        ? jsonResponse({ healthy: true, version: OPENCODE_VERSION })
+        : jsonResponse([...OPENCODE_CUSTOM_TOOL_IDS]),
+      healthTimeoutMs: 500,
+      pollIntervalMs: 1,
+    })
+
+    await expect(runtime.start()).resolves.toMatchObject({ state: 'ready', customToolRegistered: true })
+    expect(launchEnvironment?.OPENCODE_DB).toBe(runtimePaths(userData).databasePath)
+    expect(existsSync(runtimePaths(userData).databasePath)).toBe(false)
+    await runtime.stop()
+  })
+
+  it('quarantines an imported store that cannot start and retries clean', async () => {
+    const root = tempDirectory()
+    const externalData = join(root, 'external-data')
+    const externalDirectory = join(externalData, 'opencode')
+    mkdirSync(externalDirectory, { recursive: true })
+    const externalPath = join(externalDirectory, 'opencode.db')
+    const externalDatabase = new DatabaseSync(externalPath)
+    externalDatabase.exec('CREATE TABLE sentinel (value TEXT NOT NULL); INSERT INTO sentinel VALUES (\'external-authority\');')
+    externalDatabase.close()
+    const userData = join(root, 'user-data')
+    const executable = join(root, 'opencode.exe')
+    writeFileSync(executable, 'official binary placeholder')
+    const children: Array<SpawnedOpenCodeProcess & { killed: boolean }> = []
+    let healthCalls = 0
+    const runtime = new OpenCodeRuntime({
+      appPath: root,
+      resourcesPath: root,
+      userDataPath: userData,
+      isPackaged: false,
+      baseEnv: { XDG_DATA_HOME: externalData },
+      executableOverride: executable,
+      acquirePort: async () => 43124,
+      spawnProcess: () => {
+        const child = fakeChild()
+        children.push(child)
+        return child
+      },
+      fetchImpl: async url => {
+        if (url.endsWith('/global/health')) {
+          healthCalls += 1
+          return jsonResponse({ healthy: true, version: healthCalls === 1 ? '0.0.0' : OPENCODE_VERSION })
+        }
+        return jsonResponse([...OPENCODE_CUSTOM_TOOL_IDS])
+      },
+      healthTimeoutMs: 500,
+      pollIntervalMs: 1,
+    })
+
+    await expect(runtime.start()).resolves.toMatchObject({ state: 'ready', customToolRegistered: true })
+    const paths = runtimePaths(userData)
+    expect(existsSync(paths.databasePath)).toBe(false)
+    const databaseEntries = await readdir(paths.dbDir)
+    expect(databaseEntries).toEqual(expect.arrayContaining([expect.stringMatching(/^opencode-import-rejected-.*\.db$/u)]))
+    expect(children).toHaveLength(2)
+    expect(children[0]?.killed).toBe(true)
+    await runtime.stop()
+  })
+
   it('fails closed when one expected custom tool is missing', async () => {
     const root = tempDirectory()
     const userData = join(root, 'user-data')
@@ -163,6 +299,7 @@ describe('OpenCode upstream sidecar runtime', () => {
       resourcesPath: root,
       userDataPath: userData,
       isPackaged: false,
+      baseEnv: {},
       executableOverride: executable,
       acquirePort: async () => 43132,
       spawnProcess: () => child,
@@ -192,6 +329,7 @@ describe('OpenCode upstream sidecar runtime', () => {
       resourcesPath: root,
       userDataPath: userData,
       isPackaged: false,
+      baseEnv: {},
       executableOverride: executable,
       acquirePort: async () => 43130,
       randomPassword: () => 'p'.repeat(64),
@@ -237,6 +375,7 @@ describe('OpenCode upstream sidecar runtime', () => {
       resourcesPath: root,
       userDataPath: userData,
       isPackaged: false,
+      baseEnv: {},
       executableOverride: executable,
       acquirePort,
       isLoopbackPortAvailable,
@@ -288,6 +427,7 @@ describe('OpenCode upstream sidecar runtime', () => {
       resourcesPath: root,
       userDataPath: userData,
       isPackaged: false,
+      baseEnv: {},
       executableOverride: executable,
       acquirePort,
       isLoopbackPortAvailable,
@@ -326,6 +466,7 @@ describe('OpenCode upstream sidecar runtime', () => {
       resourcesPath: root,
       userDataPath: userData,
       isPackaged: false,
+      baseEnv: {},
       executableOverride: executable,
       acquirePort: async () => port++,
       spawnProcess: () => fakeChild(),
@@ -359,6 +500,7 @@ describe('OpenCode upstream sidecar runtime', () => {
       resourcesPath: root,
       userDataPath: join(root, 'user-data'),
       isPackaged: false,
+      baseEnv: {},
       executableOverride: executable,
       acquirePort: async () => 43128,
       spawnProcess: () => child,
@@ -379,6 +521,11 @@ describe('OpenCode upstream sidecar runtime', () => {
     const environment = createLaunchEnvironment({ paths, username: 'metrora', password: 'x'.repeat(64), baseEnv: {}, toolBridgeSpec: '{"command":["C:/cli.exe","tools","call"],"environment":{}}' })
     expect(environment.OPENCODE_SERVER_PASSWORD).toBe('x'.repeat(64))
     expect(environment.OPENCODE_CONFIG).toBe(paths.configPath)
+    expect(environment.OPENCODE_DB).toBe(paths.databasePath)
+    expect(environment.XDG_DATA_HOME).toBe(paths.dataDir)
+    expect(environment.XDG_CACHE_HOME).toBe(paths.cacheDir)
+    expect(environment.XDG_STATE_HOME).toBe(paths.stateDir)
+    expect(environment.XDG_CONFIG_HOME).toBe(paths.runtimeDir)
     expect(environment.METRORA_TOOL_BRIDGE_SPEC).toContain('C:/cli.exe')
     const withoutBridge = createLaunchEnvironment({ paths, username: 'metrora', password: 'x'.repeat(64), baseEnv: {} })
     expect(withoutBridge.METRORA_TOOL_BRIDGE_SPEC).toBeUndefined()

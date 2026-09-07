@@ -14,7 +14,13 @@ export type OpenCodeWebSurfaceState = {
 }
 
 export type OpenCodeRuntimePaths = {
+  runtimeRoot: string
   runtimeDir: string
+  dataDir: string
+  cacheDir: string
+  stateDir: string
+  dbDir: string
+  databasePath: string
   configPath: string
   toolsDir: string
   snapshotPath: string
@@ -22,12 +28,19 @@ export type OpenCodeRuntimePaths = {
 }
 
 export function runtimePaths(userDataPath: string): OpenCodeRuntimePaths {
-  const runtimeDir = path.join(userDataPath, 'opencode', OPENCODE_VERSION)
+  const runtimeRoot = path.join(userDataPath, 'opencode', 'runtime', OPENCODE_VERSION)
+  const runtimeDir = path.join(runtimeRoot, 'config')
   return {
+    runtimeRoot,
     runtimeDir,
+    dataDir: path.join(runtimeRoot, 'data'),
+    cacheDir: path.join(runtimeRoot, 'cache'),
+    stateDir: path.join(runtimeRoot, 'state'),
+    dbDir: path.join(runtimeRoot, 'db'),
+    databasePath: path.join(runtimeRoot, 'db', 'opencode.db'),
     configPath: path.join(runtimeDir, 'opencode.json'),
     toolsDir: path.join(runtimeDir, 'tools'),
-    snapshotPath: path.join(runtimeDir, 'metrora-usage-snapshot.json'),
+    snapshotPath: path.join(runtimeRoot, 'metrora-usage-snapshot.json'),
     webSurfacePath: path.join(userDataPath, 'opencode', OPENCODE_WEB_SURFACE_STATE_FILENAME),
   }
 }
@@ -75,7 +88,12 @@ async function restrictPermissions(filePath: string, mode: number): Promise<void
 
 /** Write only the private config/tool files needed by the official runtime. */
 export async function writeRuntimeFiles(paths: OpenCodeRuntimePaths): Promise<void> {
+  await mkdir(paths.runtimeRoot, { recursive: true, mode: 0o700 })
   await mkdir(paths.runtimeDir, { recursive: true, mode: 0o700 })
+  await mkdir(paths.dataDir, { recursive: true, mode: 0o700 })
+  await mkdir(paths.cacheDir, { recursive: true, mode: 0o700 })
+  await mkdir(paths.stateDir, { recursive: true, mode: 0o700 })
+  await mkdir(paths.dbDir, { recursive: true, mode: 0o700 })
   await mkdir(paths.toolsDir, { recursive: true, mode: 0o700 })
   // v1.18.27 eagerly checks for a node_modules directory before loading a
   // custom tool. Keeping this directory empty and declaring the bundled
@@ -83,7 +101,12 @@ export async function writeRuntimeFiles(paths: OpenCodeRuntimePaths): Promise<vo
   // prevents the official runtime from attempting a network install.
   const nodeModulesDir = path.join(paths.runtimeDir, 'node_modules')
   await mkdir(nodeModulesDir, { recursive: true, mode: 0o700 })
+  await restrictPermissions(paths.runtimeRoot, 0o700)
   await restrictPermissions(paths.runtimeDir, 0o700)
+  await restrictPermissions(paths.dataDir, 0o700)
+  await restrictPermissions(paths.cacheDir, 0o700)
+  await restrictPermissions(paths.stateDir, 0o700)
+  await restrictPermissions(paths.dbDir, 0o700)
   await restrictPermissions(paths.toolsDir, 0o700)
   await restrictPermissions(nodeModulesDir, 0o700)
 
