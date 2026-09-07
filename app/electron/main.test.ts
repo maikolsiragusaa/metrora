@@ -110,6 +110,7 @@ const CHANNELS = [
   'metrora:getPerformanceBenchComparison',
   'metrora:runPerformanceBench',
   'metrora:cancelPerformanceBench',
+  'metrora:opencodeImport',
 ] as const
 
 const ARGV_CASES: Array<{ channel: string; args: unknown[]; argv: string[] }> = [
@@ -253,6 +254,32 @@ describe('createBridgeHandlers (channel → argv for all channels)', () => {
 
 describe('createBridgeHandlers (IPC wiring)', () => {
   const withQuota = <T extends object>(value: T) => ({ ...value, getQuota: vi.fn(async () => []) })
+
+  it('routes the Metrora-owned OpenCode import action without accepting renderer arguments', async () => {
+    const openCodeImport = vi.fn(async () => ({
+      discovered: 3,
+      newSessions: 1,
+      imported: 1,
+      alreadyPresent: 2,
+      skipped: 0,
+      failed: 0,
+      reason: null,
+      reasons: [],
+    }))
+    const handlers = createBridgeHandlers({
+      spawnCli: vi.fn(),
+      spawnCliAction: vi.fn(),
+      resolveMetroraPath: () => null,
+      openCodeImport,
+    })
+
+    await expect(handlers['metrora:opencodeImport']!()).resolves.toMatchObject({ ok: true, value: { imported: 1 } })
+    await expect(handlers['metrora:opencodeImport']!('C:\\outside.exe')).resolves.toEqual({
+      ok: false,
+      error: { kind: 'bad-args', message: 'OpenCode session import does not accept arguments.' },
+    })
+    expect(openCodeImport).toHaveBeenCalledOnce()
+  })
   it('returns normalized quota through its own IPC channel and sanitizes unexpected failures', async () => {
     const base = { spawnCli: vi.fn(), spawnCliAction: vi.fn(), resolveMetroraPath: () => null }
     const value = [{

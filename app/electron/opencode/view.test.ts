@@ -224,4 +224,38 @@ describe('OpenCode WebContentsView boundary', () => {
     expect(view.visible).toBe(false)
     expect(window.attached).toEqual(new Set())
   })
+
+  it('stops the isolated runtime and disposes the view around maintenance, then restarts cleanly', async () => {
+    const app: OpenCodeApp = { on: vi.fn(), removeListener: vi.fn() }
+    const connection = { origin: 'http://127.0.0.1:43127', username: 'metrora', password: 'secret-password' }
+    const runtime = {
+      start: vi.fn(async () => status),
+      stop: vi.fn(async () => undefined),
+      status: vi.fn(() => status),
+      getConnection: vi.fn(() => connection),
+    }
+    const window = fakeWindow()
+    const views = [fakeView(), fakeView()]
+    const createdViews: FakeView[] = []
+    const createView = vi.fn(() => {
+      const view = views.shift()!
+      createdViews.push(view)
+      return view
+    })
+    const manager = new OpenCodeViewManager(runtime, { app, createView })
+
+    await manager.activate(window, { x: 0, y: 0, width: 900, height: 600 })
+    const attachedBefore = [...window.attached]
+    await expect(manager.runMaintenance(async () => {
+      expect(window.attached).toEqual(new Set())
+      expect(attachedBefore[0]).toMatchObject({ webContents: { destroyed: true } })
+      return 'imported'
+    })).resolves.toBe('imported')
+
+    expect(runtime.stop).toHaveBeenCalledOnce()
+    expect(runtime.start).toHaveBeenCalledTimes(2)
+    await manager.activate(window, { x: 0, y: 0, width: 900, height: 600 })
+    expect(createView).toHaveBeenCalledTimes(2)
+    expect(window.attached).toEqual(new Set([createdViews[1]]))
+  })
 })

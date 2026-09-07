@@ -10,6 +10,7 @@ import type { DesktopShareRuntime } from './share-runtime'
 import { Telemetry } from './telemetry'
 import type { UpdateStatus } from './updates'
 import { createProjectBridgeHandlers, validateProjectScope } from './project-bridge'
+import type { OpenCodeImportResult } from './opencode/session-import'
 
 export type Envelope<T = unknown> = { ok: true; value: T } | { ok: false; error: { kind: string; message: string } }
 export type TelemetryBridge = Pick<Telemetry, 'status' | 'setEnabled' | 'completeOnboarding' | 'track'>
@@ -37,6 +38,8 @@ type Deps = {
   }
   /** Clear completed CLI projections after any explicit fresh read succeeds. */
   onFreshSuccess?: (provider: string) => void
+  /** Main-process-only standalone OpenCode session import action. */
+  openCodeImport?: () => Promise<OpenCodeImportResult>
 }
 
 export const NO_UPDATE_STATUS: UpdateStatus = { currentVersion: '', latestVersion: null, updateAvailable: false, tag: null }
@@ -484,5 +487,11 @@ export function createBridgeHandlers(deps: Deps): Record<string, Handler> {
     // One-shot read of the cached update-availability status. The check itself
     // runs in the background (launch + 24h); this returns whatever is known.
     'metrora:getUpdateStatus': async () => ({ ok: true, value: deps.getUpdateStatus ? await deps.getUpdateStatus() : NO_UPDATE_STATUS }),
+    'metrora:opencodeImport': async (...args: unknown[]) => {
+      if (args.length > 0) return { ok: false, error: { kind: 'bad-args', message: 'OpenCode session import does not accept arguments.' } }
+      if (!deps.openCodeImport) return { ok: false, error: { kind: 'unavailable', message: 'OpenCode session import is unavailable.' } }
+      try { return { ok: true, value: await deps.openCodeImport() } }
+      catch (err) { return { ok: false, error: toEnvelopeError(err) } }
+    },
   }
 }

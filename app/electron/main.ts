@@ -14,6 +14,7 @@ import { createOpenCodeAccountingEnvironment } from './opencode/config'
 import { createOpenCodeFreshnessCoordinator, createOpenCodeSourceChangeDetector } from './opencode/freshness'
 import { OpenCodeRuntime } from './opencode/runtime'
 import { readOpenCodeDesktopProjects, resolveOpenCodeDesktopGlobalStorePath } from './opencode/project-import'
+import { OpenCodeSessionImporter, type OpenCodeImportResult } from './opencode/session-import'
 import { OpenCodeViewManager, normalizeOpenCodeBounds, type OpenCodeApp, type OpenCodeView, type OpenCodeWindow } from './opencode/view'
 
 export { createApplicationMenuTemplate } from './menu'
@@ -27,6 +28,8 @@ let updateChecker: UpdateChecker | null = null
 // Application-owned OpenCode sidecar + WebContentsView host. It is initialized
 // lazily with the rest of the IPC handlers and survives Code section changes.
 let openCodeViewManager: OpenCodeViewManager | null = null
+let openCodeImportFlight: Promise<OpenCodeImportResult> | null = null
+let cancelOpenCodeImport: (() => void) | null = null
 
 // The upstream Web UI keeps its project registry in browser storage. Keep
 // that storage stable across Metrora launches without sharing it with any
@@ -193,6 +196,34 @@ function registerHandlers(): void {
     readDesktopProjects: () => readOpenCodeDesktopProjects(openCodeDesktopGlobalStorePath, process.platform),
     platform: process.platform,
   })
+  const openCodeSessionImporter = new OpenCodeSessionImporter({
+    userDataPath: app.getPath('userData'),
+    platform: process.platform,
+    environment: process.env,
+    getMetroraCommand: () => openCodeRuntime.createCommandEnvironment(),
+    runWithRuntimeStopped: operation => {
+      if (!openCodeViewManager) return Promise.reject(new Error('OpenCode runtime is unavailable.'))
+      return openCodeViewManager.runMaintenance(operation)
+    },
+  })
+  cancelOpenCodeImport = () => openCodeSessionImporter.cancel()
+  const importOpenCodeSessions = async (): Promise<OpenCodeImportResult> => {
+    if (openCodeImportFlight) return await openCodeImportFlight
+    const promise = (async () => {
+      const result = await openCodeSessionImporter.importNewSessions()
+      if (result.imported > 0) {
+        clearCliReadCache()
+        await openCodeFreshness.onExplicitFreshSuccess('opencode')
+      }
+      return result
+    })()
+    openCodeImportFlight = promise
+    try {
+      return await promise
+    } finally {
+      if (openCodeImportFlight === promise) openCodeImportFlight = null
+    }
+  }
   const handlers = createBridgeHandlers({
     spawnCli,
     spawnCliAction,
@@ -205,6 +236,7 @@ function registerHandlers(): void {
     accountingEnv: openCodeAccountingEnv,
     openCodeFreshness,
     onFreshSuccess: () => clearCliReadCache(),
+    openCodeImport: importOpenCodeSessions,
   })
   const trustedRendererIpcChannels = new Set([
     'metrora:runPerformanceBench',
@@ -213,6 +245,7 @@ function registerHandlers(): void {
     'metrora:opencodeActivate',
     'metrora:opencodeBounds',
     'metrora:opencodeDeactivate',
+    'metrora:opencodeImport',
   ])
   function isTrustedRendererSender(event: { senderFrame?: { url?: string } | null }): boolean {
     const frameUrl = event.senderFrame?.url
@@ -426,7 +459,11 @@ function bootstrap(): void {
     getTelemetry: () => telemetryInstance,
     killAll: shutdownCli,
     stopShare: stopDesktopShareRuntime,
-    stopOpenCode: () => openCodeViewManager?.shutdown() ?? Promise.resolve(),
+    stopOpenCode: async () => {
+      cancelOpenCodeImport?.()
+      await openCodeImportFlight?.catch(() => undefined)
+      await openCodeViewManager?.shutdown()
+    },
     quit: () => app.quit(),
   }))
 

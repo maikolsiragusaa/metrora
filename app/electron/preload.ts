@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 import type { Envelope } from './main'
 import type { OpenCodeRuntimeStatus } from './opencode/types'
+import type { OpenCodeImportResult } from './opencode/session-import'
 
 type DateRange = { from: string; to: string }
 type PriceRates = { input?: number; output?: number; cacheRead?: number; cacheCreation?: number }
@@ -87,6 +88,7 @@ const bridge = {
   opencodeActivate: (bounds: OpenCodeBounds) => invoke('metrora:opencodeActivate', bounds) as Promise<OpenCodeRuntimeStatus>,
   opencodeUpdateBounds: (bounds: OpenCodeBounds) => invoke('metrora:opencodeBounds', bounds) as Promise<boolean>,
   opencodeDeactivate: () => invoke('metrora:opencodeDeactivate') as Promise<boolean>,
+  importOpenCodeSessions: () => invoke('metrora:opencodeImport') as Promise<OpenCodeImportResult>,
   setWindowChromeTheme: (theme: 'dark' | 'light') => invoke('metrora:setWindowChromeTheme', theme) as Promise<boolean>,
   setWindowChromeMode: (mode: 'always' | 'auto') => invoke('metrora:setWindowChromeMode', mode) as Promise<boolean>,
 

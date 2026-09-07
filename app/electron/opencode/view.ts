@@ -4,7 +4,7 @@ import {
   type OpenCodeDesktopProjectSnapshot,
 } from './project-import'
 import type { OpenCodeRuntime } from './runtime'
-import type { OpenCodeConnection, OpenCodeRuntimeStatus } from './types'
+import { OpenCodeError, type OpenCodeConnection, type OpenCodeRuntimeStatus } from './types'
 
 export type OpenCodeBounds = { x: number; y: number; width: number; height: number }
 
@@ -125,6 +125,7 @@ export class OpenCodeViewManager {
   private readonly desiredVisibility = new WeakMap<OpenCodeWindow, boolean>()
   private readonly disposedWindows = new WeakSet<OpenCodeWindow>()
   private readonly loginListener: (event: LoginEvent, webContents: OpenCodeWebContents, details: unknown, authInfo: LoginAuthInfo, callback: LoginCallback) => void
+  private maintenancePromise: Promise<unknown> | null = null
   private shuttingDown = false
 
   constructor(private readonly runtime: Pick<OpenCodeRuntime, 'start' | 'stop' | 'status' | 'getConnection'>, private readonly options: OpenCodeViewManagerOptions) {
@@ -185,10 +186,38 @@ export class OpenCodeViewManager {
     if (record) this.disposeRecord(record)
   }
 
+  /**
+   * Stop the isolated server before a command writes its database, then bring
+   * the server back when the command finishes. The upstream WebContentsView is
+   * disposed so no UI process can race the maintenance write.
+   */
+  async runMaintenance<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.maintenancePromise) await this.maintenancePromise
+    if (this.shuttingDown) throw new OpenCodeError('cancelled', 'OpenCode maintenance was cancelled during shutdown.')
+
+    const promise = (async () => {
+      for (const record of [...this.records]) this.disposeRecord(record)
+      await this.runtime.stop()
+      if (this.shuttingDown) throw new OpenCodeError('cancelled', 'OpenCode maintenance was cancelled during shutdown.')
+      try {
+        return await operation()
+      } finally {
+        if (!this.shuttingDown) await this.runtime.start()
+      }
+    })()
+    this.maintenancePromise = promise
+    try {
+      return await promise
+    } finally {
+      if (this.maintenancePromise === promise) this.maintenancePromise = null
+    }
+  }
+
   async shutdown(): Promise<void> {
     this.shuttingDown = true
     for (const record of [...this.records]) this.disposeRecord(record)
     this.options.app.removeListener?.('login', this.loginListener)
+    await this.maintenancePromise?.catch(() => undefined)
     await this.runtime.stop()
   }
 
