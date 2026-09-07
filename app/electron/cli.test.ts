@@ -568,6 +568,14 @@ describe('spawnCli coalescing (read-only)', () => {
     }
   })
 
+  it('bypasses a completed result cache for automatic reconciliation reads', async () => {
+    const countFile = join(dir, 'spawns')
+    fakeBin('counter-bypass.cjs', `require('fs').appendFileSync(${JSON.stringify(countFile)},'x'); process.stdout.write(JSON.stringify({ok:1}))`)
+    await spawnCli(['reconcile', '--provider', 'opencode'])
+    await spawnCli(['reconcile', '--provider', 'opencode'], { bypassCache: true })
+    expect(readFileSync(countFile, 'utf8')).toBe('xx')
+  })
+
   it('never coalesces config-mutating action calls', async () => {
     const countFile = join(dir, 'spawns')
     fakeBin('action-counter.cjs', `require('fs').appendFileSync(${JSON.stringify(countFile)},'x'); process.stdout.write('done')`)

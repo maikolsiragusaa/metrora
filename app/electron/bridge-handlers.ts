@@ -30,6 +30,13 @@ type Deps = {
   share?: DesktopShareRuntime | null
   /** Narrow Metrora-owned provider roots forwarded to every accounting CLI read. */
   accountingEnv?: NodeJS.ProcessEnv
+  /** Cheap source-change probe and single-flight OpenCode reconciliation. */
+  openCodeFreshness?: {
+    onSnapshotPoll: () => Promise<void>
+    onExplicitFreshSuccess: (provider: string) => Promise<void>
+  }
+  /** Clear completed CLI projections after any explicit fresh read succeeds. */
+  onFreshSuccess?: (provider: string) => void
 }
 
 export const NO_UPDATE_STATUS: UpdateStatus = { currentVersion: '', latestVersion: null, updateAvailable: false, tag: null }
@@ -297,6 +304,9 @@ export function createBridgeHandlers(deps: Deps): Record<string, Handler> {
       const args = buildOverviewArgs(period, provider, range, configSource, projectScopeId)
       const snapshot = !fresh && !configSource
       if (snapshot) {
+        // The source probe is metadata-only and never waits for the potentially
+        // long provider reconciliation. Keep it off the snapshot response path.
+        void deps.openCodeFreshness?.onSnapshotPoll().catch(() => {})
         const value = await deps.spawnCli(args, { extraEnv: snapshotEnv, ...(priority ? { priority } : {}) })
         emitColdStart(false)
         return { ok: true, value }
@@ -313,6 +323,8 @@ export function createBridgeHandlers(deps: Deps): Record<string, Handler> {
         ...(priority ? { priority } : {}),
       })
       emitProgress({ kind: 'done' })
+      try { deps.onFreshSuccess?.(provider) } catch { /* cache invalidation is best-effort */ }
+      if (!configSource) await deps.openCodeFreshness?.onExplicitFreshSuccess(provider)
       emitColdStart(false)
       return { ok: true, value }
     } catch (err) {

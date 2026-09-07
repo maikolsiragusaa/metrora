@@ -586,6 +586,26 @@ describe('createBridgeHandlers (snapshot reads and explicit refresh)', () => {
     expect(opts[1]?.extraEnv).toEqual({ ...accountingEnv, METRORA_PROGRESS: '1', METRORA_READ_MODE: '' })
   })
 
+  it('probes OpenCode in the background for snapshots and acknowledges explicit fresh reads', async () => {
+    const spawnCli = vi.fn(async () => ({ current: { cost: 1 } }))
+    const onSnapshotPoll = vi.fn(async () => undefined)
+    const onExplicitFreshSuccess = vi.fn(async () => undefined)
+    const onFreshSuccess = vi.fn()
+    const handlers = createBridgeHandlers(base({
+      spawnCli,
+      openCodeFreshness: { onSnapshotPoll, onExplicitFreshSuccess },
+      onFreshSuccess,
+    }))
+
+    await handlers['metrora:getOverview']!('today', 'all')
+    expect(onSnapshotPoll).toHaveBeenCalledOnce()
+    expect(onExplicitFreshSuccess).not.toHaveBeenCalled()
+
+    await handlers['metrora:getOverview']!('today', 'opencode', undefined, undefined, false, true)
+    expect(onExplicitFreshSuccess).toHaveBeenCalledWith('opencode')
+    expect(onFreshSuccess).toHaveBeenCalledWith('opencode')
+  })
+
   it('drops a warmed overview to background priority only when the prefetch flag is set', async () => {
     const opts: Array<Record<string, unknown> | undefined> = []
     const spawnCli = vi.fn(async (_args: string[], o?: Record<string, unknown>) => { opts.push(o); return { current: { cost: 1 } } })

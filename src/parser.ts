@@ -69,6 +69,7 @@ import { flushCopilotChatJournalInvalidations, queueCopilotChatJournalSource, re
 import { reconcileMissingProviderSources, shouldReconcileMissingProviderSources } from './parser-source-reconciliation.js'
 import { buildCwdEvidenceIndex, timeBoundCwdRefs } from './pr-attribution-time-bound.js'
 import { flattenString, flattenStringArray, flattenStringPrefix, flattenToolSequence } from './string-retention.js'
+import { traceReconciliation } from './reconciliation-diagnostics.js'
 export { settleSessionCacheCostsForRuntimeV1 } from './session-cache-cost-settlement.js'
 
 // Returns true for sessions whose canonical project key must NOT be derived
@@ -2921,6 +2922,7 @@ async function parseProviderSources(
   readOnly = false,
   allowMissingSourceReconciliation = false,
 ): Promise<ProjectSummary[]> {
+  const providerStartedAt = performance.now()
   const provider = await getProvider(providerName)
   const previousSection = diskCache.providers[providerName]
   if (!provider) return []
@@ -3246,6 +3248,15 @@ async function parseProviderSources(
     }
   }
 
+  traceReconciliation('provider-parse', {
+    provider: providerName,
+    sourceCount: sources.length,
+    changedSourceCount: changedSources.length,
+    unchangedSourceCount: unchangedSources.length,
+    projectCount: projects.length,
+    readOnly,
+    elapsedMs: Math.round(performance.now() - providerStartedAt),
+  })
   return projects
 }
 

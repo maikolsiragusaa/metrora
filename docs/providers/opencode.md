@@ -31,7 +31,33 @@ SQLite (older builds) or file-based JSON (OpenCode 1.1+, under `storage/`).
 
 ## Caching
 
-None.
+The Desktop keeps the canonical session cache as the durable projection. Normal
+polls read that projection in snapshot mode. A metadata-only watcher fingerprints
+the standalone OpenCode database and the Metrora-owned additive database,
+including `-wal` and rollback-journal transitions; when one changes, Desktop
+queues one provider-scoped fresh reconciliation. It never hashes or opens the
+database on the polling path, never scans every provider, and coalesces changes
+while a reconciliation is running. The normal Desktop refresh cadence defaults
+to five minutes; an explicitly saved cadence remains unchanged.
+
+The reconciliation acknowledgement is stored under Metrora's own application
+data directory and contains only a version, metadata signature, and success
+timestamp. A failed or interrupted reconciliation leaves the source
+unacknowledged so the next poll retries it.
+
+## Import boundary
+
+No Metrora import button writes OpenCode SQLite directly. If this is added, the
+boundary should be the Desktop main process: choose a local OpenCode JSON export,
+invoke the official OpenCode import command against the Metrora-owned runtime,
+then let the same database-change detector trigger the targeted accounting
+reconciliation. The import action must be explicit and auditable; it is not part
+of the automatic refresh path.
+
+OpenCode currently exposes session-level JSON `export`/`import` commands and
+session read APIs, but not an incremental accounting export/import protocol.
+That makes the supported CLI boundary preferable to inventing a second writer
+for the database.
 
 ## Pricing evidence
 

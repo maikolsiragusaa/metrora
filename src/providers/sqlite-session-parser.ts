@@ -361,6 +361,7 @@ export function createSharedSqliteSessionParser(
       const cacheHit = entry?.fingerprintKey === fingerprintKey
 
       if (!cacheHit) {
+        const parseStartedAt = performance.now()
         let db: SqliteDatabase
         try {
           db = openDatabase(identity.dbPath)
@@ -388,6 +389,7 @@ export function createSharedSqliteSessionParser(
             cache: 'miss',
             rootCount: callsByRoot.size,
             callCount: [...callsByRoot.values()].reduce((total, calls) => total + calls.length, 0),
+            elapsedMs: Math.round(performance.now() - parseStartedAt),
           })
         } catch (err) {
           failedDatabases.set(identity.dbPath, fingerprintKey)

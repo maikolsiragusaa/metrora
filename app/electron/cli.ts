@@ -58,6 +58,11 @@ const MAX_CONCURRENT_CLI = 2
 const readInflight = new Map<string, Promise<unknown>>()
 const readCache = new Map<string, { at: number; value: unknown }>()
 
+/** Invalidate completed read results after a source reconciliation publishes. */
+export function clearCliReadCache(): void {
+  readCache.clear()
+}
+
 type SlotWaiter = { resolve: (epoch: number) => void; reject: (err: unknown) => void; epoch: number }
 let running = 0
 let cancellationEpoch = 0
@@ -343,6 +348,8 @@ export function spawnCli(
     onProgress?: (event: TrustedProgressEvent) => void
     extraEnv?: NodeJS.ProcessEnv
     priority?: SpawnPriority
+    /** Force a new read while retaining in-flight coalescing. */
+    bypassCache?: boolean
   } = {},
 ): Promise<unknown> {
   if (shutdownRequested) {
@@ -364,7 +371,7 @@ export function spawnCli(
     .filter((entry): entry is [string, string] => entry[1] !== undefined)
     .sort(([a], [b]) => a.localeCompare(b))
   const key = JSON.stringify([spec.bin, ...spec.args, envKey, opts.timeoutMs ?? null, opts.idleTimeoutMs ?? null, Boolean(opts.onStderr), Boolean(opts.onProgress)])
-  const cached = readCache.get(key)
+  const cached = opts.bypassCache ? undefined : readCache.get(key)
   if (cached && Date.now() - cached.at < COALESCE_TTL_MS) return Promise.resolve(cached.value)
 
   const existing = readInflight.get(key)
@@ -382,7 +389,7 @@ export function spawnCli(
     }
   })()
     .then(value => {
-      readCache.set(key, { at: Date.now(), value })
+      if (!opts.bypassCache) readCache.set(key, { at: Date.now(), value })
       return value
     })
     .finally(() => {

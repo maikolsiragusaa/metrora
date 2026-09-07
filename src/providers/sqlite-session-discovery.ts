@@ -3,6 +3,7 @@ import { join } from 'path'
 
 import { isSqliteAvailable, openDatabase, blobToText, type SqliteDatabase } from '../sqlite.js'
 import { sanitize } from './session-message.js'
+import { traceReconciliation } from '../reconciliation-diagnostics.js'
 import {
   validateSchemaDetailed,
   type SessionRow,
@@ -18,7 +19,11 @@ import type { SessionSource } from './types.js'
 export async function discoverSqliteSessions(
   config: SqliteProviderConfig,
 ): Promise<SessionSource[]> {
-  if (!isSqliteAvailable()) return []
+  const startedAt = performance.now()
+  if (!isSqliteAvailable()) {
+    traceReconciliation('sqlite-discovery', { provider: config.providerName, databaseCount: 0, sessionCount: 0, elapsedMs: Math.round(performance.now() - startedAt) })
+    return []
+  }
 
   let dbPaths: string[]
   try {
@@ -28,10 +33,14 @@ export async function discoverSqliteSessions(
       .sort()
       .map((file) => join(config.dbDir, file))
   } catch {
+    traceReconciliation('sqlite-discovery', { provider: config.providerName, databaseCount: 0, sessionCount: 0, elapsedMs: Math.round(performance.now() - startedAt) })
     return []
   }
 
-  if (dbPaths.length === 0) return []
+  if (dbPaths.length === 0) {
+    traceReconciliation('sqlite-discovery', { provider: config.providerName, databaseCount: 0, sessionCount: 0, elapsedMs: Math.round(performance.now() - startedAt) })
+    return []
+  }
 
   const sessions: SessionSource[] = []
   for (const dbPath of dbPaths) {
@@ -66,5 +75,11 @@ export async function discoverSqliteSessions(
     }
   }
 
+  traceReconciliation('sqlite-discovery', {
+    provider: config.providerName,
+    databaseCount: dbPaths.length,
+    sessionCount: sessions.length,
+    elapsedMs: Math.round(performance.now() - startedAt),
+  })
   return sessions
 }

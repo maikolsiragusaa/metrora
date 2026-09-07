@@ -18,10 +18,10 @@ vi.stubGlobal('localStorage', {
 beforeEach(() => { stored.clear() })
 
 describe('refresh cadence default migration', () => {
-  it('defaults to 60s when a cadence was never chosen (silent migration off 30s)', () => {
-    expect(DEFAULT_REFRESH_VALUE).toBe('1m')
-    expect(readRefreshValue()).toBe('1m')
-    expect(refreshValueToMs(readRefreshValue())).toBe(60_000)
+  it('defaults to 5 minutes when a cadence was never chosen', () => {
+    expect(DEFAULT_REFRESH_VALUE).toBe('5m')
+    expect(readRefreshValue()).toBe('5m')
+    expect(refreshValueToMs(readRefreshValue())).toBe(300_000)
   })
 
   it('honors an explicit stored 30s choice over the new default', () => {

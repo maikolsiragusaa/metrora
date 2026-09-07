@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell, WebConte
 import { writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
-import { resolveMetroraPath, resolveMetroraToolBridgeSpec, shutdownCli, spawnCli, spawnCliAction } from './cli'
+import { clearCliReadCache, resolveMetroraPath, resolveMetroraToolBridgeSpec, shutdownCli, spawnCli, spawnCliAction } from './cli'
 import { createApplicationMenuTemplate } from './menu'
 import { getQuota } from './quota'
 import { saveShareCardPng } from './share-card-export'
@@ -11,6 +11,7 @@ import { Telemetry } from './telemetry'
 import { createUpdateChecker, type UpdateChecker, type UpdateStatus } from './updates'
 import { createBridgeHandlers, NO_UPDATE_STATUS } from './bridge-handlers'
 import { createOpenCodeAccountingEnvironment } from './opencode/config'
+import { createOpenCodeFreshnessCoordinator, createOpenCodeSourceChangeDetector } from './opencode/freshness'
 import { OpenCodeRuntime } from './opencode/runtime'
 import { readOpenCodeDesktopProjects, resolveOpenCodeDesktopGlobalStorePath } from './opencode/project-import'
 import { OpenCodeViewManager, normalizeOpenCodeBounds, type OpenCodeApp, type OpenCodeView, type OpenCodeWindow } from './opencode/view'
@@ -145,6 +146,23 @@ export function shouldInstallApplicationMenu(_isDev: boolean, platform = process
 
 function registerHandlers(): void {
   const openCodeAccountingEnv = createOpenCodeAccountingEnvironment(app.getPath('userData'))
+  const openCodeFreshness = createOpenCodeFreshnessCoordinator({
+    detector: createOpenCodeSourceChangeDetector({
+      statePath: path.join(app.getPath('userData'), 'opencode', 'freshness.json'),
+      environment: openCodeAccountingEnv,
+    }),
+    reconcile: () => spawnCli(
+      ['reconcile', '--provider', 'opencode'],
+      {
+        timeoutMs: 10 * 60_000,
+        idleTimeoutMs: 45_000,
+        extraEnv: { ...openCodeAccountingEnv, METRORA_READ_MODE: '', METRORA_PROGRESS: '' },
+        priority: 'background',
+        bypassCache: true,
+      },
+    ),
+    onSuccess: clearCliReadCache,
+  })
   const share = initializeDesktopShareRuntime({
     isPackaged: app.isPackaged,
     resourcesPath: process.resourcesPath,
@@ -185,6 +203,8 @@ function registerHandlers(): void {
     getUpdateStatus: () => updateChecker ? updateChecker.getStatus() : Promise.resolve(NO_UPDATE_STATUS),
     share,
     accountingEnv: openCodeAccountingEnv,
+    openCodeFreshness,
+    onFreshSuccess: () => clearCliReadCache(),
   })
   const trustedRendererIpcChannels = new Set([
     'metrora:runPerformanceBench',
