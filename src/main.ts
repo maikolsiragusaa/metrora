@@ -2090,7 +2090,7 @@ program
   .option('--from <date>', 'Custom range start (YYYY-MM-DD)')
   .option('--to <date>', 'Custom range end (YYYY-MM-DD)')
   .option('--provider <provider>', 'Filter by provider (e.g. claude, codex, cursor)', 'all')
-  .option('--format <format>', 'Output format: table, json', 'table')
+  .option('--format <format>', 'Output format: table, json', 'table').option('--include-token-activity', 'Include canonical call-level token activity in JSON output')
   .option('--by-pr', 'Group spend by the pull requests each session referenced')
   .option('--no-pager', 'Print the complete table directly instead of opening the interactive browser')
   .action(async (opts) => {
@@ -2164,7 +2164,7 @@ program
     }
     const rows = aggregateSessions(projects)
     if (opts.format === 'json') {
-      process.stdout.write(renderJson(rows) + '\n')
+      process.stdout.write(renderJson(rows, { includeTokenActivity: opts.includeTokenActivity === true }) + '\n')
       return
     }
 

@@ -5,8 +5,8 @@ import { aggregateSessions, inferSessionProvider, type SessionRow } from './sess
 export { aggregateSessions }
 export type { SessionRow } from './session-projection.js'
 
-export function renderJson(rows: SessionRow[]): string {
-  return JSON.stringify(rows, null, 2)
+export function renderJson(rows: SessionRow[], options: { includeTokenActivity?: boolean } = {}): string {
+  return JSON.stringify(options.includeTokenActivity ? rows : rows.map(({ tokenActivity: _tokenActivity, ...row }) => row), null, 2)
 }
 
 type SessionColumnKey = 'started' | 'session' | 'project' | 'provider' | 'models' | 'cost' | 'saved' | 'calls' | 'turns'

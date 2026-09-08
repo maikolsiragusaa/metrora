@@ -424,7 +424,7 @@ export function createBridgeHandlers(deps: Deps): Record<string, Handler> {
       ...(validateProjectScope(projectScopeId) ? ['--metrora-project', validateProjectScope(projectScopeId)!] : []),
     ]),
     'metrora:getSessions': run((period: string, provider: string, range?: DateRange, projectScopeId?: string | null) => [
-      'sessions', '--format', 'json', '--period', vPeriod(period), ...providerArgs(vProvider(provider)), ...rangeArgs(vRange(range)),
+      'sessions', '--format', 'json', '--include-token-activity', '--period', vPeriod(period), ...providerArgs(vProvider(provider)), ...rangeArgs(vRange(range)),
       ...(validateProjectScope(projectScopeId) ? ['--metrora-project', validateProjectScope(projectScopeId)!] : []),
     ]),
     'metrora:getCompareModels': run((period: string, provider: string) => [

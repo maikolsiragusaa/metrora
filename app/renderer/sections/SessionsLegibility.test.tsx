@@ -85,7 +85,7 @@ describe('Sessions dense-report legibility', () => {
     const detail = screen.getByRole('complementary', { name: 'Investigate cache' })
     expect(detail).toHaveAttribute('id', 'session-details-claude-projects-metrora-claude-abc-123')
     expect(screen.getByRole('button', { name: /Selected session: Investigate cache/i })).toHaveAttribute('aria-expanded', 'true')
-    expect(within(detail).getByText('No token volume recorded for this session.')).toBeInTheDocument()
+    expect(within(detail).getByText(/Temporal call activity is unavailable for this row/)).toBeInTheDocument()
     expect(within(detail).getByText('Evidence unavailable')).toBeInTheDocument()
 
     await user.click(within(detail).getByRole('tab', { name: 'Reasoning' }))

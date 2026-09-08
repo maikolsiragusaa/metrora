@@ -2461,3 +2461,37 @@
   align-items: center;
   justify-content: center;
 }
+
+/* Sessions uses the same compact refresh affordance as Home while retaining
+   its own page heading and scope controls. */
+@media (min-width: 1121px) {
+  .metrora-shell .bar-refresh-icon-only .refresh-button {
+    width: 36px;
+    min-width: 36px;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .metrora-shell .bar-refresh-icon-only .refresh-button::before {
+    color: currentColor;
+    content: '↻';
+    font-size: 17px;
+    line-height: 1;
+  }
+}
+
+@media (max-width: 1120px) {
+  .metrora-shell .bar-refresh-icon-only .refresh-button {
+    width: 42px;
+    min-width: 42px;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .metrora-shell .bar-refresh-icon-only .refresh-button::before {
+    color: currentColor;
+    content: '↻';
+    font-size: 17px;
+    line-height: 1;
+  }
+}

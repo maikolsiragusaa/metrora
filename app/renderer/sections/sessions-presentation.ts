@@ -2,9 +2,9 @@ import { formatCompact, formatDayLong, formatUsd, shortenProjectPath } from '../
 import { cacheReuseMultiple, cacheShare, costPerMillionTotal, formatReuseMultiple, totalTokenCount } from '../lib/usageMetrics'
 import type { ReasoningLevelOrUnknown, ReasoningMix, SessionRow } from '../lib/types'
 
-export const SESSION_PAGE_SIZE = 20
+export const SESSION_PAGE_SIZE = 30
 
-export type SessionSort = 'recent' | 'cost' | 'tokens' | 'calls' | 'cache' | 'unitCost'
+export type SessionSort = 'recent' | 'cost' | 'tokens' | 'calls' | 'cache' | 'unitCost' | 'duration'
 
 export const SORT_OPTIONS = [
   { value: 'recent', label: 'Recent' },
@@ -12,7 +12,8 @@ export const SORT_OPTIONS = [
   { value: 'tokens', label: 'Total tokens' },
   { value: 'calls', label: 'Calls' },
   { value: 'cache', label: 'Cache reuse' },
-  { value: 'unitCost', label: 'Cost / 1M' },
+  { value: 'unitCost', label: 'Cost/1M' },
+  { value: 'duration', label: 'Duration' },
 ]
 
 export const SORT_ANNOUNCEMENTS: Record<SessionSort, string> = {
@@ -22,6 +23,7 @@ export const SORT_ANNOUNCEMENTS: Record<SessionSort, string> = {
   calls: 'highest call count',
   cache: 'cache reuse',
   unitCost: 'effective cost per one million total tokens',
+  duration: 'longest duration',
 }
 
 export const REASONING_LABELS: Record<ReasoningLevelOrUnknown, string> = {
@@ -94,6 +96,10 @@ function endedAtTime(row: SessionRow): number {
   return Number.isNaN(time) ? 0 : time
 }
 
+function durationValue(row: SessionRow): number {
+  return Number.isFinite(row.durationMs) && row.durationMs > 0 ? row.durationMs : 0
+}
+
 function compareNullableDescending(a: number | null, b: number | null): number {
   if (a == null && b == null) return 0
   if (a == null) return 1
@@ -112,6 +118,8 @@ export function compareRows(sort: SessionSort, a: SessionRow, b: SessionRow): nu
           ? compareNullableDescending(sessionCacheReuse(a), sessionCacheReuse(b))
           : sort === 'unitCost'
             ? compareNullableDescending(sessionUnitCost(a), sessionUnitCost(b))
+            : sort === 'duration'
+              ? durationValue(b) - durationValue(a)
             : endedAtTime(b) - endedAtTime(a)
   return result || sessionIdentity(a).localeCompare(sessionIdentity(b))
 }
@@ -129,11 +137,18 @@ export function groupSortValue(sort: SessionSort, rows: SessionRow[]): number {
     const tokens = rows.reduce((sum, row) => sum + sessionTotalTokens(row), 0)
     return tokens > 0 ? cost / tokens * 1_000_000 : 0
   }
+  if (sort === 'duration') return rows.reduce((longest, row) => Math.max(longest, durationValue(row)), 0)
   return rows.reduce((latest, row) => Math.max(latest, endedAtTime(row)), 0)
 }
 
 export function sessionHeadline(row: SessionRow): string {
-  return row.title?.trim() || shortenProjectPath(row.project)
+  const title = row.title?.trim()
+  if (title) return title
+  const project = shortenProjectPath(row.project)
+  if (project) return project
+  const id = row.sessionId.trim()
+  if (!id) return 'Untitled session'
+  return id.length > 18 ? `${id.slice(0, 10)}…${id.slice(-5)}` : id
 }
 
 export function sessionIdentity(row: SessionRow): string {
@@ -148,7 +163,7 @@ export function sessionRowLabel(row: SessionRow, selected: boolean): string {
   const headline = sessionHeadline(row)
   const project = shortenProjectPath(row.project)
   const parts = [`${selected ? 'Selected' : 'Select'} session: ${headline}.`]
-  if (project !== headline) parts.push(`Project ${project}.`)
+  if (project && project !== headline) parts.push(`Project ${project}.`)
   parts.push(
     `Session ID ${row.sessionId}.`,
     `Last activity ${formatDayLong(row.endedAt)}.`,

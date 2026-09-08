@@ -136,6 +136,8 @@ function SessionTableRow({ row, selected, onSelect }: { row: SessionRow; selecte
   const reuse = sessionCacheReuse(row)
   const share = sessionCacheShare(row)
   const modelLabel = row.models.join(', ') || 'Model not identified'
+  const headline = sessionHeadline(row)
+  const projectLabel = shortenProjectPath(row.project)
   const detailId = sessionDetailId(row)
   return (
     <tr
@@ -159,8 +161,8 @@ function SessionTableRow({ row, selected, onSelect }: { row: SessionRow; selecte
         >
           <span className="session-row-marker" aria-hidden="true" />
           <span className="session-row-copy">
-            <strong className="session-row-title">{sessionHeadline(row)}</strong>
-            <span className="session-row-project" title={row.project}>{shortenProjectPath(row.project)}</span>
+            <strong className="session-row-title">{headline}</strong>
+            {projectLabel && projectLabel !== headline ? <span className="session-row-project" title={row.project}>{projectLabel}</span> : null}
             <span className="session-row-id" title={row.sessionId}>{row.sessionId}</span>
           </span>
         </button>
@@ -332,7 +334,7 @@ export function Sessions({
           ) : (
             <>
               <div className="sessions-table-panel">
-                <div className="sessions-table-scroll" role="region" aria-label="Detailed sessions table" tabIndex={0}>
+                <div className="sessions-table-scroll" role="region" aria-label="Detailed sessions table" data-scroll-mode="page">
                   <table className="sessions-table" aria-label="Detailed sessions">
                     <colgroup>
                       <col className="session-col-session" /><col className="session-col-client" /><col className="session-col-model" />
@@ -345,18 +347,18 @@ export function Sessions({
                         <th>Session</th>
                         <th>Client</th>
                         <th>Model</th>
-                        <th className="session-number">Turns</th>
+                        <th className="session-number">Turn</th>
                         <th className="session-number" title="Canonical API call count; an exact message count is not part of the session projection">Calls</th>
                         <th className="session-number">Input</th>
                         <th className="session-number">Output</th>
                         <th className="session-number">Cache R</th>
                         <th className="session-number">Cache W</th>
-                        <th className="session-number" title="Cached input read per uncached input token">Cache ×</th>
+                        <th className="session-number" title="Cached input read per uncached input token">Cache×</th>
                         <th className="session-number">Total</th>
                         <th className="session-number">Cost</th>
-                        <th className="session-number" title="Effective cost per one million total tokens">Cost / 1M</th>
+                        <th className="session-number" title="Effective cost per one million total tokens">Cost/1M</th>
                         <th className="session-number">Duration</th>
-                        <th>Last active</th>
+                        <th>Last Active</th>
                       </tr>
                     </thead>
                     <tbody>

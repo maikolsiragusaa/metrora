@@ -1,6 +1,17 @@
 import type { ReasoningTokenSemantics } from './model-projection-types'
 import type { ReasoningMix } from './types'
 
+export type SessionTokenActivityPoint = {
+  timestamp: string
+  calls: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  additiveReasoningTokens: number
+  totalTokens: number
+}
+
 export type SessionRow = {
   sessionId: string
   /** Provider + exact id + project/source authority; never raw id alone. */
@@ -24,6 +35,8 @@ export type SessionRow = {
   additiveReasoningTokens?: number
   reasoningSemantics?: ReasoningTokenSemantics
   reasoningMix?: ReasoningMix
+  /** Exact call-level token activity, bucketed only when the series is large. */
+  tokenActivity?: SessionTokenActivityPoint[]
   /** Exact session-level PR links from the canonical parser, when observed. */
   prLinks?: string[]
   startedAt: string

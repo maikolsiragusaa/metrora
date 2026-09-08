@@ -80,7 +80,7 @@ describe('Sessions', () => {
     const headers = within(table).getAllByRole('columnheader').map(header => header.textContent)
     const initialRows = within(table).getAllByRole('row').slice(1)
     expect(initialRows[0]).toHaveTextContent('Active later')
-    expect(within(table).getByRole('columnheader', { name: 'Last active' })).toBeInTheDocument()
+    expect(within(table).getByRole('columnheader', { name: 'Last Active' })).toBeInTheDocument()
     expect(within(table).queryByRole('columnheader', { name: 'Started' })).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('tab', { name: 'Cost' }))
@@ -108,6 +108,21 @@ describe('Sessions', () => {
     expect(within(sortedTable).getAllByRole('columnheader').map(header => header.textContent)).toEqual(headers)
   })
 
+  it('sorts by exact Duration while retaining the full table schema', async () => {
+    const user = userEvent.setup()
+    getSessions.mockResolvedValue([
+      session({ sessionId: 'short', title: 'Short session', project: 'metrora', provider: 'codex', durationMs: 60_000 }),
+      session({ sessionId: 'long', title: 'Long session', project: 'metrora', provider: 'codex', durationMs: 3_600_000 }),
+    ])
+    render(<Sessions period="lifetime" provider="all" />)
+
+    const table = await screen.findByRole('table', { name: 'Detailed sessions' })
+    await user.click(screen.getByRole('tab', { name: 'Duration' }))
+
+    expect(within(table).getAllByRole('row').slice(1)[0]).toHaveTextContent('Long session')
+    expect(within(table).getAllByRole('columnheader')).toHaveLength(15)
+  })
+
   it('explains available detail versus durable historical session totals', async () => {
     render(<Sessions period="lifetime" provider="all" historicalSessionCount={4} />)
 
@@ -126,8 +141,8 @@ describe('Sessions', () => {
     expect(newest).toHaveTextContent('11M')
     expect(newest).toHaveTextContent('$11.00')
     expect(newest).toHaveTextContent('$1.00')
-    expect(within(table).getByRole('columnheader', { name: 'Cache ×' })).toBeInTheDocument()
-    expect(within(table).getByRole('columnheader', { name: 'Cost / 1M' })).toBeInTheDocument()
+    expect(within(table).getByRole('columnheader', { name: 'Cache×' })).toBeInTheDocument()
+    expect(within(table).getByRole('columnheader', { name: 'Cost/1M' })).toBeInTheDocument()
   })
 
   it('preserves observed mixed reasoning while adding only the explicit subtotal', async () => {
@@ -154,7 +169,7 @@ describe('Sessions', () => {
     await user.click(within(row).getByRole('button', { name: /Select session: Mixed reasoning/i }))
     const detail = screen.getByRole('complementary', { name: 'Mixed reasoning' })
     const metrics = detail.querySelector('.session-inspector-metrics') as HTMLElement
-    expect(within(metrics).getByText('Reasoning', { exact: true })).toBeInTheDocument()
+    expect(within(metrics).getByText('Reasoning observed', { exact: true })).toBeInTheDocument()
     expect(within(detail).getByText('50')).toBeInTheDocument()
   })
 
@@ -220,18 +235,57 @@ describe('Sessions', () => {
     const detail = screen.getByRole('complementary', { name: 'Newest Claude' })
     const metrics = detail.querySelector('.session-inspector-metrics') as HTMLElement
 
-    for (const label of ['Total cost', 'Total tokens', 'Calls', 'Duration', 'Input', 'Output', 'Cache read', 'Cache write', 'Cache reuse', 'Cost / 1M']) {
+    for (const label of ['Total cost', 'Total tokens', 'Calls', 'Duration', 'Input', 'Output', 'Cache read', 'Cache write', 'Cache reuse', 'Reasoning observed']) {
       expect(within(metrics).getByText(label, { exact: true })).toBeInTheDocument()
     }
     expect(within(detail).getByText('9×')).toBeInTheDocument()
-    expect(within(detail).getByText('Token composition')).toBeInTheDocument()
-    expect(within(detail).getByRole('img', { name: /Token composition:.*Input.*Output.*Cache read/i })).toBeInTheDocument()
+    expect(within(detail).getByText('Token activity')).toBeInTheDocument()
+    expect(within(detail).getByRole('status')).toHaveTextContent('Temporal call activity is unavailable')
     expect(within(detail).queryByText('Open in Code')).not.toBeInTheDocument()
     expect(within(detail).queryByText('Saved')).not.toBeInTheDocument()
 
     await user.click(within(detail).getByRole('button', { name: 'Close session inspector' }))
     expect(screen.queryByRole('complementary', { name: 'Newest Claude' })).not.toBeInTheDocument()
     expect(open).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('renders canonical token activity when the bounded series reconciles exactly', async () => {
+    const user = userEvent.setup()
+    getSessions.mockResolvedValue([session({
+      sessionId: 'activity',
+      title: 'Activity session',
+      project: 'metrora',
+      provider: 'codex',
+      inputTokens: 10,
+      outputTokens: 20,
+      cacheReadTokens: 30,
+      cacheWriteTokens: 2,
+      tokenActivity: [{
+        timestamp: '2026-08-07T10:10:00.000Z',
+        calls: 1,
+        inputTokens: 10,
+        outputTokens: 20,
+        cacheReadTokens: 30,
+        cacheWriteTokens: 2,
+        additiveReasoningTokens: 0,
+        totalTokens: 62,
+      }],
+    })])
+    render(<Sessions period="lifetime" provider="all" />)
+    await user.click(await screen.findByRole('button', { name: /Select session: Activity session/i }))
+
+    const detail = screen.getByRole('complementary', { name: 'Activity session' })
+    expect(within(detail).getByRole('img', { name: /Token activity: 1 canonical calls across 1 points, reconciling to 62 total tokens/i })).toBeInTheDocument()
+    expect(within(detail).queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it('uses a shortened session id when both title and project are unavailable', async () => {
+    getSessions.mockResolvedValue([session({ sessionId: '123456789012345678901234', title: '', project: '', provider: 'codex' })])
+    render(<Sessions period="lifetime" provider="all" />)
+
+    const table = await screen.findByRole('table', { name: 'Detailed sessions' })
+    const row = within(table).getAllByRole('row')[1]!
+    expect(within(row).getByText('1234567890…01234')).toBeInTheDocument()
   })
 
   it('switches the single inspector between selected rows without duplicating the list', async () => {

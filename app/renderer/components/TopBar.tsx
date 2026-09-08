@@ -51,6 +51,7 @@ export function TopBar({
   onRefresh,
   refreshing = false,
   compactHome = false,
+  iconOnlyRefresh = false,
 }: {
   title: ReactNode
   scope?: ReactNode
@@ -73,9 +74,10 @@ export function TopBar({
   onRefresh?: () => void
   refreshing?: boolean
   compactHome?: boolean
+  iconOnlyRefresh?: boolean
 }) {
   return (
-    <div className={`bar${compactHome ? ' bar-home' : ''}`}>
+    <div className={`bar${compactHome ? ' bar-home' : ''}${iconOnlyRefresh ? ' bar-refresh-icon-only' : ''}`}>
       <button
         type="button"
         className="bar-command"
@@ -122,6 +124,7 @@ export function TopBar({
           onClick={onRefresh}
           disabled={refreshing}
           aria-label={refreshing ? 'Refreshing' : 'Refresh'}
+          title={refreshing ? 'Refreshing' : 'Refresh'}
         >
           {refreshing ? 'Refreshing…' : 'Refresh'}
         </button>

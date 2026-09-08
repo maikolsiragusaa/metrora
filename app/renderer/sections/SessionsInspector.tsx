@@ -3,13 +3,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { ProviderLogo } from '../components/ProviderLogo'
 import { formatCompact, formatDuration, formatUsd, shortenProjectPath } from '../lib/format'
 import { metrora } from '../lib/ipc'
-import { additiveReasoningTokenCount } from '../lib/usageMetrics'
 import type { SessionRow } from '../lib/types'
 import {
   formatPrLabel,
   formatReuseMultiple,
   formatSessionTime,
-  formatUnitCost,
   hasObservedReasoning,
   providerName,
   reasoningCoverageLabel,
@@ -19,73 +17,63 @@ import {
   sessionCacheShare,
   sessionHeadline,
   sessionTotalTokens,
-  sessionUnitCost,
 } from './sessions-presentation'
 
 type InspectorTab = 'overview' | 'reasoning' | 'metadata'
 
-type TokenSegment = {
-  key: string
-  label: string
-  value: number
-}
-
 function InspectorMetric({ label, value, detail }: { label: string; value: string; detail?: string }) {
   return (
-    <div className="session-inspector-metric">
+    <div className="session-inspector-metric" title={detail ? `${label}: ${detail}` : undefined}>
       <span>{label}</span>
       <strong>{value}</strong>
-      {detail ? <small>{detail}</small> : null}
     </div>
   )
 }
 
-function TokenComposition({ session }: { session: SessionRow }) {
-  const segments = useMemo<TokenSegment[]>(() => [
-    { key: 'input', label: 'Input', value: session.inputTokens },
-    { key: 'output', label: 'Output', value: session.outputTokens },
-    { key: 'cache-read', label: 'Cache read', value: session.cacheReadTokens },
-    { key: 'cache-write', label: 'Cache write', value: session.cacheWriteTokens },
-    { key: 'reasoning', label: 'Additive reasoning', value: additiveReasoningTokenCount(session) },
-  ].filter(segment => Number.isFinite(segment.value) && segment.value > 0), [session])
+function TokenActivity({ session }: { session: SessionRow }) {
+  const points = session.tokenActivity ?? []
   const total = sessionTotalTokens(session)
-  const description = segments.length > 0
-    ? segments.map(segment => `${segment.label} ${formatCompact(segment.value)}`).join(', ')
-    : 'No token volume recorded'
+  const maxPoint = useMemo(() => Math.max(0, ...points.map(point => point.totalTokens)), [points])
+  const activityCalls = points.reduce((sum, point) => sum + point.calls, 0)
+  const summary = [
+    `Input ${formatCompact(session.inputTokens)}`,
+    `Output ${formatCompact(session.outputTokens)}`,
+    `Cache R ${formatCompact(session.cacheReadTokens)}`,
+    `Cache W ${formatCompact(session.cacheWriteTokens)}`,
+  ].join(' · ')
 
   return (
-    <section className="session-inspector-chart" aria-labelledby="session-token-composition-title">
+    <section className="session-inspector-chart" aria-labelledby="session-token-activity-title">
       <div className="session-inspector-section-head">
         <div>
-          <h3 id="session-token-composition-title">Token composition</h3>
-          <span>Aggregate session evidence</span>
+          <h3 id="session-token-activity-title">Token activity</h3>
+          <span>{points.length > 0 ? `${activityCalls.toLocaleString('en-US')} calls · ${points.length} points` : 'Temporal call evidence unavailable'}</span>
         </div>
         <span>{formatCompact(total)} total</span>
       </div>
-      <div
-        className={segments.length > 0 ? 'session-token-bar' : 'session-token-bar is-empty'}
-        role="img"
-        aria-label={`Token composition: ${description}`}
-      >
-        {segments.map(segment => (
-          <span
-            key={segment.key}
-            className={`session-token-segment session-token-segment--${segment.key}`}
-            style={{ width: `${total > 0 ? segment.value / total * 100 : 0}%` }}
-          />
-        ))}
-      </div>
-      {segments.length > 0 ? (
-        <div className="session-token-legend">
-          {segments.map(segment => (
-            <span key={segment.key}>
-              <i className={`session-token-dot session-token-dot--${segment.key}`} aria-hidden="true" />
-              <b>{segment.label}</b>
-              <em>{formatCompact(segment.value)}</em>
-            </span>
-          ))}
+      {points.length > 0 ? (
+        <div className="session-token-activity-plot" role="img" aria-label={`Token activity: ${activityCalls.toLocaleString('en-US')} canonical calls across ${points.length} points, reconciling to ${formatCompact(total)} total tokens.`}>
+          <div className="session-token-activity-grid">
+            {points.map((point, index) => (
+              <span
+                className="session-token-activity-bar"
+                key={`${point.timestamp}-${index}`}
+                title={`${formatSessionTime(point.timestamp)} · ${point.calls.toLocaleString('en-US')} calls · ${formatCompact(point.totalTokens)} total`}
+                style={{ height: `${maxPoint > 0 ? Math.max(8, point.totalTokens / maxPoint * 100) : 8}%` }}
+              >
+                <i className="session-token-activity-segment session-token-activity-segment--input" style={{ flexGrow: point.inputTokens }} />
+                <i className="session-token-activity-segment session-token-activity-segment--output" style={{ flexGrow: point.outputTokens }} />
+                <i className="session-token-activity-segment session-token-activity-segment--cache-read" style={{ flexGrow: point.cacheReadTokens }} />
+                <i className="session-token-activity-segment session-token-activity-segment--cache-write" style={{ flexGrow: point.cacheWriteTokens }} />
+                <i className="session-token-activity-segment session-token-activity-segment--reasoning" style={{ flexGrow: point.additiveReasoningTokens }} />
+              </span>
+            ))}
+          </div>
         </div>
-      ) : <p className="session-inspector-empty-note">No token volume recorded for this session.</p>}
+      ) : (
+        <div className="session-token-activity-unavailable" role="status">Temporal call activity is unavailable for this row; aggregate totals remain canonical.</div>
+      )}
+      <div className="session-token-activity-summary">{summary}</div>
     </section>
   )
 }
@@ -217,8 +205,7 @@ export function SessionsInspector({ session, inspectorId, onClose }: { session: 
         <InspectorMetric label="Cache reuse" value={formatReuseMultiple(reuse)} detail={share == null ? 'no comparable input' : `${Math.round(share * 1000) / 10}% cache share`} />
         <InspectorMetric label="Input" value={formatCompact(session.inputTokens)} detail="uncached input" />
         <InspectorMetric label="Output" value={formatCompact(session.outputTokens)} detail="generated output" />
-        <InspectorMetric label="Cost / 1M" value={formatUnitCost(sessionUnitCost(session))} detail="total-token basis" />
-        {observedReasoning ? <InspectorMetric label="Reasoning" value={formatCompact(session.reasoningTokens!)} detail="observed evidence" /> : null}
+        <InspectorMetric label="Reasoning observed" value={observedReasoning ? formatCompact(session.reasoningTokens!) : '—'} detail={observedReasoning ? 'observed evidence' : 'not exposed by this source'} />
       </div>
 
       <div className="session-inspector-tabs" role="tablist" aria-label="Session detail views">
@@ -230,19 +217,19 @@ export function SessionsInspector({ session, inspectorId, onClose }: { session: 
       <div className="session-inspector-tab-panel" role="tabpanel">
         {tab === 'overview' ? (
           <>
-            <TokenComposition session={session} />
+            <TokenActivity session={session} />
             <div className="session-inspector-evidence">
               <span>Reasoning</span>
               <strong>{observedReasoning ? reasoningMixLabel(session.reasoningMix) : 'Evidence unavailable'}</strong>
               <small>{observedReasoning ? reasoningCoverageLabel(session.reasoningMix) : 'This source did not expose an observed reasoning-token count.'}</small>
             </div>
+            <LinkedPullRequests session={session} />
           </>
         ) : tab === 'reasoning' ? (
           <ReasoningView session={session} />
         ) : <MetadataView session={session} />}
       </div>
 
-      <LinkedPullRequests session={session} />
     </aside>
   )
 }
