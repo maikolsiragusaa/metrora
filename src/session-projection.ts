@@ -22,6 +22,9 @@ export type SessionRow = {
   additiveReasoningTokens?: number
   reasoningSemantics: ReasoningTokenSemantics
   reasoningMix?: ReasoningMix
+  /// Exact session-level PR links already captured by the canonical parser.
+  /// This is a bounded projection field; it is absent when no linkage exists.
+  prLinks?: string[]
   startedAt: string
   endedAt: string
   durationMs: number
@@ -97,6 +100,7 @@ export function aggregateSessions(projects: ProjectSummary[]): SessionRow[] {
       ...(reasoning.semantics !== 'unavailable' ? { additiveReasoningTokens: reasoning.additiveReasoningTokens } : {}),
       reasoningSemantics: reasoning.semantics,
       ...(session.reasoningMix ? { reasoningMix: session.reasoningMix } : {}),
+      ...(session.prLinks?.length ? { prLinks: [...session.prLinks] } : {}),
       startedAt: session.firstTimestamp,
       endedAt: session.lastTimestamp,
       durationMs: durationMs(session.firstTimestamp, session.lastTimestamp),

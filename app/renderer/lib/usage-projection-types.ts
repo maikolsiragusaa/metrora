@@ -24,6 +24,8 @@ export type SessionRow = {
   additiveReasoningTokens?: number
   reasoningSemantics?: ReasoningTokenSemantics
   reasoningMix?: ReasoningMix
+  /** Exact session-level PR links from the canonical parser, when observed. */
+  prLinks?: string[]
   startedAt: string
   endedAt: string
   durationMs: number

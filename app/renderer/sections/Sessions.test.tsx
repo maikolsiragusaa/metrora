@@ -80,8 +80,8 @@ describe('Sessions', () => {
     const headers = within(table).getAllByRole('columnheader').map(header => header.textContent)
     const initialRows = within(table).getAllByRole('row').slice(1)
     expect(initialRows[0]).toHaveTextContent('Active later')
-    expect(within(table).getByRole('columnheader', { name: 'Started' })).toBeInTheDocument()
-    expect(within(table).getByRole('columnheader', { name: 'Last activity' })).toBeInTheDocument()
+    expect(within(table).getByRole('columnheader', { name: 'Last active' })).toBeInTheDocument()
+    expect(within(table).queryByRole('columnheader', { name: 'Started' })).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('tab', { name: 'Cost' }))
     const sortedTable = screen.getByRole('table', { name: 'Detailed sessions' })
@@ -111,7 +111,9 @@ describe('Sessions', () => {
   it('explains available detail versus durable historical session totals', async () => {
     render(<Sessions period="lifetime" provider="all" historicalSessionCount={4} />)
 
-    expect(await screen.findByText(/3 detailed sessions/)).toHaveTextContent('4 sessions in historical totals')
+    const heading = await screen.findByRole('heading', { name: 'Sessions' })
+    expect(heading.parentElement).toHaveTextContent('3 sessions')
+    expect(heading.parentElement).toHaveTextContent('$13.00 total spend')
     expect(screen.getByText(/1 older session remain in durable historical totals/i)).toBeInTheDocument()
   })
 
@@ -129,6 +131,7 @@ describe('Sessions', () => {
   })
 
   it('preserves observed mixed reasoning while adding only the explicit subtotal', async () => {
+    const user = userEvent.setup()
     getSessions.mockResolvedValue([session({
       sessionId: 'mixed',
       title: 'Mixed reasoning',
@@ -147,8 +150,12 @@ describe('Sessions', () => {
 
     const table = await screen.findByRole('table', { name: 'Detailed sessions' })
     const row = within(table).getAllByRole('row')[1]!
-    expect(row).toHaveTextContent('50')
     expect(row).toHaveTextContent('230')
+    await user.click(within(row).getByRole('button', { name: /Select session: Mixed reasoning/i }))
+    const detail = screen.getByRole('complementary', { name: 'Mixed reasoning' })
+    const metrics = detail.querySelector('.session-inspector-metrics') as HTMLElement
+    expect(within(metrics).getByText('Reasoning', { exact: true })).toBeInTheDocument()
+    expect(within(detail).getByText('50')).toBeInTheDocument()
   })
 
   it('keeps provider grouping as an explicit optional lens', async () => {
@@ -203,24 +210,64 @@ describe('Sessions', () => {
     expect(screen.getByRole('table', { name: 'Detailed sessions' })).toBeInTheDocument()
   })
 
-  it('expands richer session detail and hides Saved when it is zero', async () => {
+  it('opens a persistent inspector with truthful aggregate detail and hides unsupported actions', async () => {
     const user = userEvent.setup()
     render(<Sessions period="lifetime" provider="all" />)
     await screen.findByRole('table', { name: 'Detailed sessions' })
 
-    const open = screen.getByRole('button', { name: /Open session: Newest Claude/i })
+    const open = screen.getByRole('button', { name: /Select session: Newest Claude/i })
     await user.click(open)
-    const detail = screen.getByRole('region', { name: 'obsign session details' })
+    const detail = screen.getByRole('complementary', { name: 'Newest Claude' })
+    const metrics = detail.querySelector('.session-inspector-metrics') as HTMLElement
 
-    for (const label of ['Cost', 'Cost / 1M', 'Calls', 'Turns', 'Input', 'Output', 'Cache read', 'Cache write', 'Cache reuse', 'Total']) {
-      expect(within(detail).getByText(label)).toBeInTheDocument()
+    for (const label of ['Total cost', 'Total tokens', 'Calls', 'Duration', 'Input', 'Output', 'Cache read', 'Cache write', 'Cache reuse', 'Cost / 1M']) {
+      expect(within(metrics).getByText(label, { exact: true })).toBeInTheDocument()
     }
     expect(within(detail).getByText('9×')).toBeInTheDocument()
-    expect(within(detail).getByText('90% cache share')).toBeInTheDocument()
+    expect(within(detail).getByText('Token composition')).toBeInTheDocument()
+    expect(within(detail).getByRole('img', { name: /Token composition:.*Input.*Output.*Cache read/i })).toBeInTheDocument()
+    expect(within(detail).queryByText('Open in Code')).not.toBeInTheDocument()
     expect(within(detail).queryByText('Saved')).not.toBeInTheDocument()
+
+    await user.click(within(detail).getByRole('button', { name: 'Close session inspector' }))
+    expect(screen.queryByRole('complementary', { name: 'Newest Claude' })).not.toBeInTheDocument()
+    expect(open).toHaveAttribute('aria-expanded', 'false')
   })
 
-  it('caps large lists client-side without fetching again', async () => {
+  it('switches the single inspector between selected rows without duplicating the list', async () => {
+    const user = userEvent.setup()
+    render(<Sessions period="lifetime" provider="all" />)
+    await screen.findByRole('table', { name: 'Detailed sessions' })
+
+    await user.click(screen.getByRole('button', { name: /Select session: Newest Claude/i }))
+    expect(screen.getByRole('heading', { name: 'Newest Claude' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Select session: Older Codex/i }))
+
+    expect(screen.getByRole('heading', { name: 'Older Codex' })).toBeInTheDocument()
+    expect(screen.getAllByRole('complementary')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: /Selected session: Older Codex/i })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: /Select session: Newest Claude/i })).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('shows exact linked pull requests when the canonical session projection provides them', async () => {
+    getSessions.mockResolvedValue([session({
+      sessionId: 'linked',
+      title: 'Linked work',
+      project: 'metrora',
+      provider: 'codex',
+      prLinks: ['https://github.com/org/repo/pull/42'],
+    })])
+    const user = userEvent.setup()
+    render(<Sessions period="lifetime" provider="all" />)
+    await user.click(await screen.findByRole('button', { name: /Select session: Linked work/i }))
+
+    const prs = screen.getByRole('region', { name: 'Linked pull requests' })
+    expect(within(prs).getByText('org/repo#42')).toBeInTheDocument()
+    expect(within(prs).getByText('Exact session linkage')).toBeInTheDocument()
+    expect(within(prs).getByRole('link', { name: 'org/repo#42' })).toHaveAttribute('href', 'https://github.com/org/repo/pull/42')
+  })
+
+  it('paginates the bounded list client-side without fetching again', async () => {
     const user = userEvent.setup()
     const largeRows = Array.from({ length: INITIAL_VISIBLE + 5 }, (_, index) => session({
       sessionId: `session-${index}`,
@@ -232,9 +279,10 @@ describe('Sessions', () => {
     getSessions.mockResolvedValue(largeRows)
     render(<Sessions period="lifetime" provider="all" />)
 
-    expect(await screen.findByText(`Showing ${INITIAL_VISIBLE} of ${INITIAL_VISIBLE + 5}`)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Show 5 more · 5 remaining' }))
-    expect(screen.getByText(`Showing ${INITIAL_VISIBLE + 5} of ${INITIAL_VISIBLE + 5}`)).toBeInTheDocument()
+    expect(await screen.findByText(`Showing 1–${INITIAL_VISIBLE} of ${INITIAL_VISIBLE + 5}`)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Go to page 2' }))
+    expect(screen.getByText(`Showing ${INITIAL_VISIBLE + 1}–${INITIAL_VISIBLE + 5} of ${INITIAL_VISIBLE + 5}`)).toBeInTheDocument()
+    expect(screen.getByText(`Session ${INITIAL_VISIBLE + 4}`)).toBeInTheDocument()
     expect(getSessions).toHaveBeenCalledTimes(1)
   })
 

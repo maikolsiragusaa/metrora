@@ -31,15 +31,15 @@ describe('desktop navigation authority', () => {
   it('exposes the control-center destinations while retaining internal routes', () => {
     expect(DESKTOP_NAVIGATION_GROUPS).toEqual([
       { id: 'home', label: null, placement: 'primary', sections: ['overview'] },
-      { id: 'primary', label: null, placement: 'primary', sections: ['activity', 'models', 'spend', 'plans', 'bench', 'workspace', 'code'] },
+      { id: 'primary', label: null, placement: 'primary', sections: ['sessions', 'models', 'spend', 'plans', 'bench', 'workspace', 'code'] },
       { id: 'utility', label: null, placement: 'utility', sections: ['companion', 'settings'] },
     ])
     expect(DESKTOP_NAVIGATION_ORDER).toEqual([
-      'overview', 'activity', 'models', 'spend', 'plans', 'bench', 'workspace', 'code', 'companion', 'settings',
+      'overview', 'sessions', 'models', 'spend', 'plans', 'bench', 'workspace', 'code', 'companion', 'settings',
     ])
     expect(DESKTOP_NAVIGATION_ORDER).not.toContain('optimize')
     expect(DESKTOP_NAVIGATION_ORDER).not.toContain('compare')
-    expect(DESKTOP_NAVIGATION_ORDER).not.toContain('sessions')
+    expect(DESKTOP_NAVIGATION_ORDER).not.toContain('activity')
     expect(DESKTOP_NAVIGATION_ORDER).not.toContain('pullRequests')
     expect(DESKTOP_NAVIGATION_ITEMS.optimize.label).toBe('Insights')
     expect(DESKTOP_NAVIGATION_ITEMS.code.label).toBe('Code')
@@ -47,6 +47,8 @@ describe('desktop navigation authority', () => {
     expect(DESKTOP_NAVIGATION_ITEMS.plans.id).toBe('plans')
     expect(DESKTOP_NAVIGATION_ITEMS.plans.label).toBe('Capacity')
     expect(DESKTOP_NAVIGATION_ITEMS.plans.shortcut).toBe('6')
+    expect(DESKTOP_NAVIGATION_ITEMS.sessions.shortcut).toBe('2')
+    expect(DESKTOP_NAVIGATION_ITEMS.activity.shortcut).toBe('')
     expect(DESKTOP_NAVIGATION_ITEMS.workspace.shortcut).toBe('7')
     expect(DESKTOP_NAVIGATION_ITEMS.companion.label).toBe('Companion')
     expect(DESKTOP_NAVIGATION_ITEMS.settings.shortcut).toBe(',')

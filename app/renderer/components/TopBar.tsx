@@ -17,7 +17,7 @@ export const PERIOD_OPTIONS: SegOption[] = [
   { value: '30days', label: '30D' },
   { value: 'month', label: 'Month' },
   { value: 'all', label: '6M' },
-  { value: 'lifetime', label: 'Life' },
+  { value: 'lifetime', label: 'Lifetime' },
 ]
 
 const DEFAULT_CAPABILITIES: DesktopSectionCapabilities = {

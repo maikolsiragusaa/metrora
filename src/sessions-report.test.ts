@@ -82,4 +82,37 @@ describe('session projection identity', () => {
 
     expect(rows[0]).toMatchObject({ reasoningSemantics: 'mixed', reasoningTokens: 7, additiveReasoningTokens: 7 })
   })
+
+  it('carries exact session-level pull request links into the bounded row projection', () => {
+    const links = ['https://github.com/acme/repo/pull/42']
+    const rows = aggregateSessions([{
+      project: 'linked',
+      projectPath: 'C:/linked',
+      sessions: [{
+        sessionId: 'linked-session',
+        project: 'linked',
+        firstTimestamp: '2026-08-08T10:00:00.000Z',
+        lastTimestamp: '2026-08-08T10:05:00.000Z',
+        totalCostUSD: 1,
+        totalSavingsUSD: 0,
+        totalInputTokens: 20,
+        totalOutputTokens: 40,
+        totalReasoningTokens: 0,
+        totalCacheReadTokens: 0,
+        totalCacheWriteTokens: 0,
+        apiCalls: 1,
+        prLinks: links,
+        modelBreakdown: {},
+        toolBreakdown: {},
+        mcpBreakdown: {},
+        bashBreakdown: {},
+        categoryBreakdown: {},
+        skillBreakdown: {},
+        subagentBreakdown: {},
+        turns: [{ assistantCalls: [{ provider: 'codex', model: 'gpt-5.4' }] }],
+      }],
+    }] as unknown as ProjectSummary[])
+
+    expect(rows[0]?.prLinks).toEqual(links)
+  })
 })
