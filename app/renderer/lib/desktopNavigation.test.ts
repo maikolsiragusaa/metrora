@@ -40,6 +40,7 @@ describe('desktop navigation authority', () => {
     expect(DESKTOP_NAVIGATION_ORDER).not.toContain('optimize')
     expect(DESKTOP_NAVIGATION_ORDER).not.toContain('compare')
     expect(DESKTOP_NAVIGATION_ORDER).not.toContain('activity')
+    expect(SECTION_IDS).toContain('activity')
     expect(DESKTOP_NAVIGATION_ORDER).not.toContain('pullRequests')
     expect(DESKTOP_NAVIGATION_ITEMS.optimize.label).toBe('Insights')
     expect(DESKTOP_NAVIGATION_ITEMS.code.label).toBe('Code')

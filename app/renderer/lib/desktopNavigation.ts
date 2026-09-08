@@ -33,8 +33,7 @@ export type DesktopNavigationGroup = {
 
 export const DESKTOP_NAVIGATION_ITEMS: Record<Section, DesktopNavigationItem> = {
   overview: { id: 'overview', label: 'Home', title: 'Home', shortcut: '1' },
-  // Activity remains a routable compatibility id, but is no longer a visible
-  // primary destination. Sessions owns the second keyboard slot now.
+  // Activity remains a routable destination without a keyboard shortcut.
   activity: { id: 'activity', label: 'Activity', title: 'Activity', shortcut: '' },
   sessions: { id: 'sessions', label: 'Sessions', title: 'Sessions', shortcut: '2' },
   pullRequests: { id: 'pullRequests', label: 'Pull requests', title: 'Pull requests', shortcut: '' },

@@ -99,7 +99,8 @@ describe('Sessions', () => {
 
     const table = await screen.findByRole('table', { name: 'Detailed sessions' })
     const headers = within(table).getAllByRole('columnheader').map(header => header.textContent)
-    expect(headers).toHaveLength(15)
+    expect(headers).toEqual(['Session', 'Client', 'Model', 'Turn', 'Calls', 'Input', 'Output', 'Cache R', 'Cache W', 'Cache×', 'Total', 'Cost', 'Cost/1M', 'Duration', 'Last Active'])
+    expect(table.closest('[data-scroll-mode="page"]')).toBeInTheDocument()
 
     await user.click(screen.getByRole('tab', { name: 'Calls' }))
 
@@ -168,9 +169,8 @@ describe('Sessions', () => {
     expect(row).toHaveTextContent('230')
     await user.click(within(row).getByRole('button', { name: /Select session: Mixed reasoning/i }))
     const detail = screen.getByRole('complementary', { name: 'Mixed reasoning' })
-    const metrics = detail.querySelector('.session-inspector-metrics') as HTMLElement
-    expect(within(metrics).getByText('Reasoning observed', { exact: true })).toBeInTheDocument()
-    expect(within(detail).getByText('50')).toBeInTheDocument()
+    expect(within(detail).getByRole('tab', { name: 'Reasoning' })).toBeInTheDocument()
+    expect(within(detail).getByText('50 observed tokens', { exact: true })).toBeInTheDocument()
   })
 
   it('keeps provider grouping as an explicit optional lens', async () => {
@@ -208,6 +208,32 @@ describe('Sessions', () => {
     expect(onProviderChange).toHaveBeenLastCalledWith('claude')
   })
 
+  it('keeps every detected provider directly reachable in one overflow strip', async () => {
+    const providers = Array.from({ length: 11 }, (_, index) => ({ id: `provider-${index}`, label: `Provider ${index}` }))
+    render(<Sessions period="lifetime" provider="all" detectedProviders={providers} />)
+
+    await screen.findByRole('table', { name: 'Detailed sessions' })
+    expect(screen.getByRole('button', { name: 'Provider 10' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^More$/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Filter sessions by provider' })).toHaveAttribute('data-provider-strip', 'true')
+  })
+
+  it('keeps the visible Project, Model, Client, and Date controls as real row filters', async () => {
+    const user = userEvent.setup()
+    render(<Sessions period="lifetime" provider="all" />)
+    const table = await screen.findByRole('table', { name: 'Detailed sessions' })
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Project' }), 'obsign')
+    expect(within(table).getByText('Newest Claude')).toBeInTheDocument()
+    expect(within(table).queryByText('Middle Codex')).not.toBeInTheDocument()
+    expect(within(table).queryByText('Older Codex')).not.toBeInTheDocument()
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Model' }), 'claude-opus-4-6')
+    expect(within(table).getByText('Newest Claude')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Client' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Date' })).toBeInTheDocument()
+  })
+
   it('filters searchable session metadata and clears an empty search', async () => {
     const user = userEvent.setup()
     render(<Sessions period="lifetime" provider="all" />)
@@ -233,16 +259,22 @@ describe('Sessions', () => {
     const open = screen.getByRole('button', { name: /Select session: Newest Claude/i })
     await user.click(open)
     const detail = screen.getByRole('complementary', { name: 'Newest Claude' })
-    const metrics = detail.querySelector('.session-inspector-metrics') as HTMLElement
+    const metrics = detail.querySelector('.session-inspector-metrics-primary') as HTMLElement
 
-    for (const label of ['Total cost', 'Total tokens', 'Calls', 'Duration', 'Input', 'Output', 'Cache read', 'Cache write', 'Cache reuse', 'Reasoning observed']) {
+    for (const label of ['Total cost', 'Total tokens', 'API calls', 'Duration', 'Cache read', 'Cache write']) {
       expect(within(metrics).getByText(label, { exact: true })).toBeInTheDocument()
+    }
+    const tokenMetrics = detail.querySelector('.session-inspector-metrics-secondary') as HTMLElement
+    for (const label of ['Cache multiplier', 'Input', 'Output']) {
+      expect(within(tokenMetrics).getByText(label, { exact: true })).toBeInTheDocument()
     }
     expect(within(detail).getByText('9×')).toBeInTheDocument()
     expect(within(detail).getByText('Token activity')).toBeInTheDocument()
+    expect(within(detail).getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true')
     expect(within(detail).getByRole('status')).toHaveTextContent('Temporal call activity is unavailable')
     expect(within(detail).queryByText('Open in Code')).not.toBeInTheDocument()
-    expect(within(detail).queryByText('Saved')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save view' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'More filters' })).not.toBeInTheDocument()
 
     await user.click(within(detail).getByRole('button', { name: 'Close session inspector' }))
     expect(screen.queryByRole('complementary', { name: 'Newest Claude' })).not.toBeInTheDocument()

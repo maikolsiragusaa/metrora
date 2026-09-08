@@ -41,6 +41,16 @@ type SequenceEntry =
   | { type: 'row'; row: SessionRow }
 
 type ProviderFilter = { id: string; label: string }
+type SessionDateFilter = 'all' | 'today' | '7days' | '30days' | 'month' | '6months'
+
+const SESSION_DATE_FILTERS: Array<{ value: SessionDateFilter; label: string }> = [
+  { value: 'all', label: 'Date' },
+  { value: 'today', label: 'Today' },
+  { value: '7days', label: '7D' },
+  { value: '30days', label: '30D' },
+  { value: 'month', label: 'Month' },
+  { value: '6months', label: '6M' },
+]
 
 function providerFilters(rows: SessionRow[], detectedProviders: ProviderFilter[]): ProviderFilter[] {
   const entries = new Map<string, ProviderFilter>()
@@ -57,10 +67,65 @@ function providerLabel(provider: string): string {
   return provider.replace(/[-\s]+/g, ' ').replace(/\b\w/g, value => value.toUpperCase())
 }
 
+function filterOptions(rows: SessionRow[], getValue: (row: SessionRow) => string): string[] {
+  return [...new Set(rows.map(getValue).map(value => value.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b))
+}
+
+function sessionDateStart(filter: SessionDateFilter): number | null {
+  if (filter === 'all') return null
+  const now = new Date()
+  now.setHours(0, 0, 0, 0)
+  if (filter === 'today') return now.getTime()
+  if (filter === 'month') return new Date(now.getFullYear(), now.getMonth(), 1).getTime()
+  const days = filter === '7days' ? 7 : filter === '30days' ? 30 : 183
+  now.setDate(now.getDate() - days + 1)
+  return now.getTime()
+}
+
+function matchesSessionDate(iso: string, filter: SessionDateFilter): boolean {
+  const timestamp = new Date(iso).getTime()
+  const start = sessionDateStart(filter)
+  return start === null || (Number.isFinite(timestamp) && timestamp >= start)
+}
+
+function SessionFilterSelect({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string
+  value: string
+  options: Array<{ value: string; label: string }>
+  onChange: (value: string) => void
+}) {
+  return (
+    <label className="sessions-filter-select">
+      <span className="sr-only">{label}</span>
+      <select aria-label={label} value={value} onChange={event => onChange(event.target.value)}>
+        <option value="all">{label}</option>
+        {options.filter(option => option.value !== 'all').map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>
+    </label>
+  )
+}
+
 function ProviderFilterRow({ provider, detectedProviders, onProviderChange }: { provider: string; detectedProviders: ProviderFilter[]; onProviderChange: (value: string) => void }) {
   if (detectedProviders.length === 0) return null
   return (
-    <div className="session-provider-filter" role="group" aria-label="Filter sessions by provider">
+    <div
+      className="session-provider-filter"
+      role="group"
+      aria-label="Filter sessions by provider"
+      data-provider-strip="true"
+      onWheel={event => {
+        if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
+          event.currentTarget.scrollLeft += event.deltaY
+          event.preventDefault()
+        }
+      }}
+    >
       <button type="button" className={provider === 'all' ? 'on' : undefined} aria-pressed={provider === 'all'} onClick={() => onProviderChange('all')}>
         <span className="session-provider-all-icon" aria-hidden="true">✦</span>
         All providers
@@ -228,6 +293,10 @@ export function Sessions({
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
+  const [projectFilter, setProjectFilter] = useState('all')
+  const [modelFilter, setModelFilter] = useState('all')
+  const [clientFilter, setClientFilter] = useState('all')
+  const [dateFilter, setDateFilter] = useState<SessionDateFilter>('all')
   const [sort, setSort] = useState<SessionSort>('recent')
   const [grouped, setGrouped] = useState(false)
   const [page, setPage] = useState(0)
@@ -250,7 +319,14 @@ export function Sessions({
     row.reasoningMix?.rows.map(item => item.level).join(' ') ?? '',
     row.prLinks?.join(' ') ?? '',
   ].some(value => value.toLowerCase().includes(q)))
+    .filter(row => projectFilter === 'all' || row.project === projectFilter)
+    .filter(row => modelFilter === 'all' || row.models.includes(modelFilter))
+    .filter(row => clientFilter === 'all' || row.provider === clientFilter)
+    .filter(row => matchesSessionDate(row.endedAt, dateFilter))
   const availableProviders = useMemo(() => providerFilters(rows, detectedProviders), [rows, detectedProviders])
+  const projectOptions = useMemo(() => filterOptions(rows, row => row.project).map(value => ({ value, label: shortenProjectPath(value) })), [rows])
+  const modelOptions = useMemo(() => [...new Set(rows.flatMap(row => row.models.map(model => model.trim()).filter(Boolean)))].sort((a, b) => a.localeCompare(b)).map(value => ({ value, label: value })), [rows])
+  const clientOptions = useMemo(() => filterOptions(rows, row => row.provider).map(value => ({ value, label: providerLabel(value) })), [rows])
   const sequence = useMemo(() => sequenceForRows(filtered, grouped, sort), [filtered, grouped, sort])
   const totalPages = Math.max(1, Math.ceil(filtered.length / SESSION_PAGE_SIZE))
   const selectedSession = selectedId ? rows.find(row => sessionIdentity(row) === selectedId) ?? null : null
@@ -258,7 +334,7 @@ export function Sessions({
 
   useEffect(() => {
     setPage(0)
-  }, [query, sort, grouped, period, provider, projectScopeId, range?.from, range?.to])
+  }, [query, sort, grouped, period, provider, projectScopeId, range?.from, range?.to, projectFilter, modelFilter, clientFilter, dateFilter])
 
   useEffect(() => {
     setPage(current => Math.min(current, totalPages - 1))
@@ -287,6 +363,14 @@ export function Sessions({
     if (next === 'recent') setGrouped(false)
   }
 
+  const clearFilters = () => {
+    setQuery('')
+    setProjectFilter('all')
+    setModelFilter('all')
+    setClientFilter('all')
+    setDateFilter('all')
+  }
+
   return (
     <div className={selectedSession ? 'sessions-page has-inspector' : 'sessions-page'}>
       <div className="sessions-workspace">
@@ -306,8 +390,15 @@ export function Sessions({
             <label className="session-search-field">
               <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.3" /><path d="m16 16 4.5 4.5" /></svg>
               <span className="sr-only">Search sessions</span>
-              <input aria-label="Search sessions" placeholder="Search sessions, clients, models, or IDs…" value={query} onChange={event => setQuery(event.target.value)} />
+              <input aria-label="Search sessions" placeholder="Filter sessions…" value={query} onChange={event => setQuery(event.target.value)} />
             </label>
+            <SessionFilterSelect label="Project" value={projectFilter} options={projectOptions} onChange={setProjectFilter} />
+            <SessionFilterSelect label="Model" value={modelFilter} options={modelOptions} onChange={setModelFilter} />
+            <SessionFilterSelect label="Client" value={clientFilter} options={clientOptions} onChange={setClientFilter} />
+            <SessionFilterSelect label="Date" value={dateFilter} options={SESSION_DATE_FILTERS} onChange={value => setDateFilter(value as SessionDateFilter)} />
+          </div>
+
+          <div className="sessions-sort-toolbar">
             <div className="sessions-sort" aria-label="Sort sessions">
               <SegTabs options={SORT_OPTIONS} value={sort} onChange={onSortChange} />
             </div>
@@ -328,8 +419,8 @@ export function Sessions({
             </div>
           ) : filtered.length === 0 ? (
             <div className="sessions-empty-state">
-              <strong>No sessions match &quot;{query}&quot;.</strong>
-              <button type="button" onClick={() => setQuery('')}>Clear search</button>
+              <strong>{q ? `No sessions match "${query}".` : 'No sessions match the current filters.'}</strong>
+              <button type="button" onClick={clearFilters}>{q ? 'Clear search' : 'Clear filters'}</button>
             </div>
           ) : (
             <>
@@ -367,7 +458,12 @@ export function Sessions({
                           <td colSpan={15}><ProviderLogo provider={entry.provider} size={14} /><strong>{providerLabel(entry.provider)}</strong><span>{entry.count.toLocaleString('en-US')} sessions · {formatUsd(entry.cost)}</span></td>
                         </tr>
                       ) : (
-                        <SessionTableRow key={sessionIdentity(entry.row)} row={entry.row} selected={selectedId === sessionIdentity(entry.row)} onSelect={() => setSelectedId(sessionIdentity(entry.row))} />
+                        <SessionTableRow
+                          key={sessionIdentity(entry.row)}
+                          row={entry.row}
+                          selected={selectedId === sessionIdentity(entry.row)}
+                          onSelect={() => setSelectedId(sessionIdentity(entry.row))}
+                        />
                       ))}
                     </tbody>
                   </table>

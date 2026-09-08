@@ -16,16 +16,25 @@ import {
   sessionCacheReuse,
   sessionCacheShare,
   sessionHeadline,
+  sessionUnitCost,
   sessionTotalTokens,
+  formatUnitCost,
 } from './sessions-presentation'
 
 type InspectorTab = 'overview' | 'reasoning' | 'metadata'
+
+function shortSessionId(sessionId: string): string {
+  const value = sessionId.trim()
+  if (value.length <= 18) return value || 'Untitled session'
+  return `${value.slice(0, 12)}…${value.slice(-4)}`
+}
 
 function InspectorMetric({ label, value, detail }: { label: string; value: string; detail?: string }) {
   return (
     <div className="session-inspector-metric" title={detail ? `${label}: ${detail}` : undefined}>
       <span>{label}</span>
       <strong>{value}</strong>
+      {detail ? <small>{detail}</small> : null}
     </div>
   )
 }
@@ -49,7 +58,10 @@ function TokenActivity({ session }: { session: SessionRow }) {
           <h3 id="session-token-activity-title">Token activity</h3>
           <span>{points.length > 0 ? `${activityCalls.toLocaleString('en-US')} calls · ${points.length} points` : 'Temporal call evidence unavailable'}</span>
         </div>
-        <span>{formatCompact(total)} total</span>
+        <div className="session-token-activity-legend" aria-label="Token activity legend">
+          <span><i className="input" aria-hidden="true" />Input</span>
+          <span><i className="output" aria-hidden="true" />Output</span>
+        </div>
       </div>
       {points.length > 0 ? (
         <div className="session-token-activity-plot" role="img" aria-label={`Token activity: ${activityCalls.toLocaleString('en-US')} canonical calls across ${points.length} points, reconciling to ${formatCompact(total)} total tokens.`}>
@@ -69,11 +81,18 @@ function TokenActivity({ session }: { session: SessionRow }) {
               </span>
             ))}
           </div>
+          <div className="session-token-activity-axis" aria-hidden="true">
+            <span>0</span>
+            <span>{Math.max(1, Math.round(points.length / 4))}</span>
+            <span>{Math.max(1, Math.round(points.length / 2))}</span>
+            <span>{Math.max(1, Math.round(points.length * 3 / 4))}</span>
+            <span>{points.length}</span>
+          </div>
         </div>
       ) : (
         <div className="session-token-activity-unavailable" role="status">Temporal call activity is unavailable for this row; aggregate totals remain canonical.</div>
       )}
-      <div className="session-token-activity-summary">{summary}</div>
+      <div className="session-token-activity-summary"><span>{summary}</span><strong>{formatCompact(total)} total</strong></div>
     </section>
   )
 }
@@ -136,7 +155,7 @@ function LinkedPullRequests({ session }: { session: SessionRow }) {
           <h3>Linked pull requests</h3>
           <span>Exact session linkage</span>
         </div>
-        <span>{session.prLinks.length}</span>
+        <span>{session.prLinks.length} · View all →</span>
       </div>
       <ul>
         {session.prLinks.map(url => (
@@ -161,67 +180,85 @@ function LinkedPullRequests({ session }: { session: SessionRow }) {
 
 export function SessionsInspector({ session, inspectorId, onClose }: { session: SessionRow; inspectorId: string; onClose: () => void }) {
   const [tab, setTab] = useState<InspectorTab>('overview')
-  const hasReasoningTab = Boolean(session.reasoningMix)
+  const [copied, setCopied] = useState(false)
   const reuse = sessionCacheReuse(session)
   const share = sessionCacheShare(session)
+  const unitCost = sessionUnitCost(session)
   const observedReasoning = hasObservedReasoning(session)
   const titleId = `${inspectorId}-title`
+  const sourceUrl = session.prLinks?.[0]
+  const tabId = (value: InspectorTab) => `${inspectorId}-tab-${value}`
+  const panelId = `${inspectorId}-panel-${tab}`
 
   useEffect(() => {
     setTab('overview')
+    setCopied(false)
   }, [inspectorId])
 
-  useEffect(() => {
-    if (!hasReasoningTab && tab === 'reasoning') setTab('overview')
-  }, [hasReasoningTab, tab])
+  const copySessionId = async () => {
+    try {
+      await navigator.clipboard?.writeText(session.sessionId)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch {
+      setCopied(false)
+    }
+  }
 
   return (
     <aside className="session-inspector" id={inspectorId} aria-label="Session inspector" aria-labelledby={titleId}>
       <div className="session-inspector-header">
         <div className="session-inspector-kicker">Session detail</div>
-        <button type="button" className="session-inspector-close" aria-label="Close session inspector" onClick={onClose}>×</button>
-        <h2 id={titleId} title={sessionHeadline(session)}>{sessionHeadline(session)}</h2>
-        <div className="session-inspector-id" title={session.sessionId}>{session.sessionId}</div>
+        <div className="session-inspector-actions">
+          {sourceUrl ? <button type="button" aria-label="Open linked session source" title="Open linked session source" onClick={() => { if (typeof metrora.openExternal === 'function') void metrora.openExternal(sourceUrl) }}>↗</button> : null}
+          <button type="button" aria-label="Copy session ID" title={copied ? 'Copied' : 'Copy session ID'} onClick={() => { void copySessionId() }}>{copied ? '✓' : '⧉'}</button>
+          <button type="button" className="session-inspector-close" aria-label="Close session inspector" onClick={onClose}>×</button>
+        </div>
+        <h2 id={titleId} title={session.sessionId}>{sessionHeadline(session)}</h2>
+        <div className="session-inspector-id" title={session.sessionId}>{shortSessionId(session.sessionId)}</div>
         <div className="session-inspector-identity">
           <ProviderLogo provider={session.provider} size={16} />
           <strong>{providerName(session.provider)}</strong>
           <span>·</span>
-          <span title={session.models.join(', ')}>{session.models.join(', ') || 'Model not identified'}</span>
-        </div>
-        <div className="session-inspector-project" title={session.project}>{shortenProjectPath(session.project)}</div>
-        <div className="session-inspector-time">
-          <span>{formatSessionTime(session.startedAt)} → {formatSessionTime(session.endedAt)}</span>
+          <span>{formatSessionTime(session.startedAt)} – {formatSessionTime(session.endedAt)}</span>
+          <span>·</span>
           <strong>{formatDuration(session.durationMs)}</strong>
         </div>
+        <div className="session-inspector-tags">
+          <span className="session-inspector-tag model" title={session.models.join(', ')}>{session.models.join(', ') || 'Model not identified'}</span>
+          {session.project ? <span className="session-inspector-tag project" title={session.project}>{shortenProjectPath(session.project)}</span> : null}
+        </div>
       </div>
 
-      <div className="session-inspector-metrics" aria-label="Session metrics">
-        <InspectorMetric label="Total cost" value={formatUsd(session.cost)} detail="API-equivalent value" />
-        <InspectorMetric label="Total tokens" value={formatCompact(sessionTotalTokens(session))} detail="observed volume" />
-        <InspectorMetric label="Calls" value={session.calls.toLocaleString('en-US')} detail="API calls" />
-        <InspectorMetric label="Duration" value={formatDuration(session.durationMs)} detail="source span" />
-        <InspectorMetric label="Cache read" value={formatCompact(session.cacheReadTokens)} detail="reused input" />
-        <InspectorMetric label="Cache write" value={formatCompact(session.cacheWriteTokens)} detail="written input" />
-        <InspectorMetric label="Cache reuse" value={formatReuseMultiple(reuse)} detail={share == null ? 'no comparable input' : `${Math.round(share * 1000) / 10}% cache share`} />
+      <div className="session-inspector-metrics session-inspector-metrics-primary" aria-label="Session metrics">
+        <InspectorMetric label="Total cost" value={formatUsd(session.cost)} detail={unitCost == null ? 'API-equivalent value' : `${formatUnitCost(unitCost)} / 1M tokens`} />
+        <InspectorMetric label="Total tokens" value={formatCompact(sessionTotalTokens(session))} detail={`${formatCompact(session.inputTokens)} in · ${formatCompact(session.outputTokens)} out`} />
+        <InspectorMetric label="API calls" value={session.calls.toLocaleString('en-US')} />
+        <InspectorMetric label="Duration" value={formatDuration(session.durationMs)} />
+        <InspectorMetric label="Cache read" value={formatCompact(session.cacheReadTokens)} detail={share == null ? 'hit rate unavailable' : `${Math.round(share * 1000) / 10}% hit rate`} />
+        <InspectorMetric label="Cache write" value={formatCompact(session.cacheWriteTokens)} />
+      </div>
+      <div className="session-inspector-metrics session-inspector-metrics-secondary" aria-label="Session token metrics">
+        <InspectorMetric label="Cache multiplier" value={formatReuseMultiple(reuse)} detail={share == null ? 'no comparable input' : `${Math.round(share * 1000) / 10}% cache share`} />
         <InspectorMetric label="Input" value={formatCompact(session.inputTokens)} detail="uncached input" />
         <InspectorMetric label="Output" value={formatCompact(session.outputTokens)} detail="generated output" />
-        <InspectorMetric label="Reasoning observed" value={observedReasoning ? formatCompact(session.reasoningTokens!) : '—'} detail={observedReasoning ? 'observed evidence' : 'not exposed by this source'} />
       </div>
+
+      <TokenActivity session={session} />
 
       <div className="session-inspector-tabs" role="tablist" aria-label="Session detail views">
-        <button type="button" role="tab" aria-selected={tab === 'overview'} tabIndex={tab === 'overview' ? 0 : -1} onClick={() => setTab('overview')}>Overview</button>
-        {hasReasoningTab ? <button type="button" role="tab" aria-selected={tab === 'reasoning'} tabIndex={tab === 'reasoning' ? 0 : -1} onClick={() => setTab('reasoning')}>Reasoning</button> : null}
-        <button type="button" role="tab" aria-selected={tab === 'metadata'} tabIndex={tab === 'metadata' ? 0 : -1} onClick={() => setTab('metadata')}>Metadata</button>
+        <button id={tabId('overview')} type="button" role="tab" aria-controls={`${inspectorId}-panel-overview`} aria-selected={tab === 'overview'} tabIndex={tab === 'overview' ? 0 : -1} onClick={() => setTab('overview')}>Overview</button>
+        <button id={tabId('reasoning')} type="button" role="tab" aria-controls={`${inspectorId}-panel-reasoning`} aria-selected={tab === 'reasoning'} tabIndex={tab === 'reasoning' ? 0 : -1} onClick={() => setTab('reasoning')}>Reasoning</button>
+        <button id={tabId('metadata')} type="button" role="tab" aria-controls={`${inspectorId}-panel-metadata`} aria-selected={tab === 'metadata'} tabIndex={tab === 'metadata' ? 0 : -1} onClick={() => setTab('metadata')}>Metadata</button>
       </div>
 
-      <div className="session-inspector-tab-panel" role="tabpanel">
+      <div className="session-inspector-tab-panel" id={panelId} role="tabpanel" aria-labelledby={tabId(tab)} tabIndex={0}>
         {tab === 'overview' ? (
           <>
-            <TokenActivity session={session} />
             <div className="session-inspector-evidence">
               <span>Reasoning</span>
-              <strong>{observedReasoning ? reasoningMixLabel(session.reasoningMix) : 'Evidence unavailable'}</strong>
-              <small>{observedReasoning ? reasoningCoverageLabel(session.reasoningMix) : 'This source did not expose an observed reasoning-token count.'}</small>
+              <strong>{observedReasoning ? (session.reasoningMix ? reasoningMixLabel(session.reasoningMix) : `${formatCompact(session.reasoningTokens ?? 0)} observed tokens`) : 'Evidence unavailable'}</strong>
+              <small>{observedReasoning ? (session.reasoningMix ? reasoningCoverageLabel(session.reasoningMix) : 'Observed reasoning is reported without call-level attribution.') : 'This source did not expose an observed reasoning-token count.'}</small>
             </div>
             <LinkedPullRequests session={session} />
           </>

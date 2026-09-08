@@ -228,7 +228,7 @@ function AppMain() {
               projectScopeId={metroraProjectId}
               onProjectScopeSelect={onProjectScopeSelect}
               capabilities={sectionCapabilities}
-              onOpenCode={openCode}
+              onOpenCode={section === 'sessions' ? undefined : openCode}
               onRefresh={refreshVisible}
               refreshing={overview.loading}
               compactHome={section === 'overview'}
