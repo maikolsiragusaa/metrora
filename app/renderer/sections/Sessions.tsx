@@ -148,13 +148,20 @@ function ProviderFilterRow({ provider, detectedProviders, onProviderChange }: { 
         if (!drag || drag.pointerId !== event.pointerId) return
         const deltaX = event.clientX - drag.startX
         if (!drag.moved && Math.abs(deltaX) < 4) return
-        drag.moved = true
+        if (!drag.moved) {
+          drag.moved = true
+          // Keep a normal click targeted at the provider button. Capture only
+          // after the pointer has crossed the drag threshold, otherwise
+          // Chromium retargets the subsequent click to this strip container.
+          event.currentTarget.setPointerCapture?.(event.pointerId)
+        }
         event.currentTarget.classList.add('is-dragging')
         event.currentTarget.scrollLeft = drag.startScrollLeft - deltaX
         event.preventDefault()
       }}
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
+      onLostPointerCapture={endDrag}
       onClickCapture={event => {
         if (!suppressClickRef.current) return
         suppressClickRef.current = false

@@ -208,6 +208,27 @@ describe('Sessions', () => {
     expect(onProviderChange).toHaveBeenLastCalledWith('claude')
   })
 
+  it('keeps a provider click active after the strip pointer lifecycle runs', async () => {
+    const user = userEvent.setup()
+    const onProviderChange = vi.fn()
+    render(
+      <Sessions
+        period="lifetime"
+        provider="all"
+        detectedProviders={[{ id: 'codex', label: 'Codex' }, { id: 'claude', label: 'Claude' }]}
+        onProviderChange={onProviderChange}
+      />,
+    )
+
+    await screen.findByRole('table', { name: 'Detailed sessions' })
+    const strip = screen.getByRole('group', { name: 'Filter sessions by provider' })
+    fireEvent.pointerDown(strip, { pointerId: 2, pointerType: 'mouse', button: 0, clientX: 200 })
+    fireEvent.pointerUp(strip, { pointerId: 2, pointerType: 'mouse', button: 0, clientX: 200 })
+    await user.click(screen.getByRole('button', { name: 'Claude' }))
+
+    expect(onProviderChange).toHaveBeenCalledWith('claude')
+  })
+
   it('keeps every detected provider directly reachable in one overflow strip', async () => {
     const providers = Array.from({ length: 11 }, (_, index) => ({ id: `provider-${index}`, label: `Provider ${index}` }))
     render(<Sessions period="lifetime" provider="all" detectedProviders={providers} />)

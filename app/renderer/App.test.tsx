@@ -237,6 +237,7 @@ describe('App shortcuts', () => {
 
     fireEvent.keyDown(document, { key: '4', metaKey: true })
     expect(await screen.findByRole('heading', { name: 'Models' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Refresh' }).parentElement).toHaveClass('bar-refresh-icon-only')
 
     fireEvent.keyDown(document, { key: '5', metaKey: true })
     expect(await screen.findByRole('heading', { name: 'Bench' })).toBeInTheDocument()

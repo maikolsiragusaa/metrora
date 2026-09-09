@@ -232,7 +232,7 @@ function AppMain() {
               onRefresh={refreshVisible}
               refreshing={overview.loading}
               compactHome={section === 'overview'}
-              iconOnlyRefresh={section === 'sessions'}
+              iconOnlyRefresh={section === 'sessions' || section === 'models'}
             />
             <div className={motionClass('body', 'section-fade')}>
               {section === 'overview' ? (
