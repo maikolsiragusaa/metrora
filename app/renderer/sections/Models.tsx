@@ -398,7 +398,7 @@ function AuditTable({ rows, selectedId, onSelect }: { rows: AuditRow[]; selected
       <thead>
         <tr>
           <th scope="col">Model</th>
-          <th scope="col">Provider</th>
+          <th scope="col" title="Metrora client/source that produced the audited row">Source</th>
           <th scope="col">Calls</th>
           <th scope="col">Total tokens</th>
           <th scope="col">Cost</th>
@@ -463,7 +463,7 @@ function ModelsByTaskTable({ rows, onAddAlias }: { rows: ModelReportRow[]; onAdd
         <tr>
           <th>Task</th>
           <th>Model</th>
-          <th>Provider</th>
+          <th title="Metrora client/source that produced the task row">Source</th>
           <th>Calls</th>
           <th>Reasoning</th>
           <th>Input</th>

@@ -331,9 +331,10 @@ describe('Models', () => {
     expect(within(otherRow).getAllByRole('cell')[12]).toHaveTextContent('—')
   })
 
-  it('filters canonical model rows by search, provider, and source without fetching again', () => {
-    const codexAccounting = durableRow('GPT-5.4', 20, 20, 0, { provider: 'openai', sourceProviders: ['codex'], rawModels: ['gpt-5.4'] })
-    const claudeAccounting = durableRow('Claude Opus 4.8', 10, 10, 0, { provider: 'anthropic', sourceProviders: ['claude'], rawModels: ['claude-opus-4-8'] })
+  it('filters canonical model rows by search, model house, and source without fetching again', () => {
+    const codexAccounting = durableRow('GPT-5.4', 20, 20, 0, { brandId: 'openai', provider: 'openai', sourceProviders: ['codex'], rawModels: ['gpt-5.4'] })
+    const openAiSibling = durableRow('GPT-5.5', 8, 8, 0, { brandId: 'openai', provider: 'amazon-bedrock', sourceProviders: ['zed'], rawModels: ['openai.gpt-5.5'] })
+    const claudeAccounting = durableRow('Claude Opus 4.8', 10, 10, 0, { brandId: 'anthropic', provider: 'anthropic', sourceProviders: ['claude'], rawModels: ['claude-opus-4-8'] })
     const present = (row: DurableModelAccountingRow, identity: string): DurableModelPresentationRow => ({
       ...row,
       presentationIdentity: identity,
@@ -350,20 +351,20 @@ describe('Models', () => {
     })
     const overview = loadedOverview({
       modelAccounting: {
-        rows: [codexAccounting, claudeAccounting],
+        rows: [codexAccounting, openAiSibling, claudeAccounting],
         gap: { cost: 0, savingsUSD: 0, calls: 0 },
         coverage: { cost: 1, calls: 1 },
         tokenCoverage: { cost: 1, calls: 1 },
       },
       modelPresentation: {
-        rows: [present(codexAccounting, 'test:codex'), present(claudeAccounting, 'test:claude')],
-        accountingRowCount: 2,
+        rows: [present(codexAccounting, 'test:codex'), present(openAiSibling, 'test:openai-sibling'), present(claudeAccounting, 'test:claude')],
+        accountingRowCount: 3,
       },
     })
     render(<Models period="lifetime" provider="all" overview={overview} />)
     const table = () => screen.getByRole('table', { name: 'Model usage' })
     const search = screen.getByRole('textbox', { name: 'Filter models' })
-    const providerStrip = screen.getByRole('group', { name: 'Filter models by provider' })
+    const providerStrip = screen.getByRole('group', { name: 'Filter models by model house' })
 
     expect(screen.queryByRole('combobox', { name: 'Provider' })).not.toBeInTheDocument()
 
@@ -375,11 +376,14 @@ describe('Models', () => {
     fireEvent.click(within(providerStrip).getByRole('button', { name: 'Anthropic' }))
     expect(within(table()).getByRole('row', { name: /Claude Opus/ })).toBeInTheDocument()
     expect(within(table()).queryByRole('row', { name: /GPT-5\.4/ })).not.toBeInTheDocument()
+    expect(within(table()).queryByRole('row', { name: /GPT-5\.5/ })).not.toBeInTheDocument()
 
-    fireEvent.click(within(providerStrip).getByRole('button', { name: 'All providers' }))
-    fireEvent.change(screen.getByRole('combobox', { name: 'Source' }), { target: { value: 'codex' } })
+    fireEvent.click(within(providerStrip).getByRole('button', { name: 'All model houses' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Client/source' }))
+    fireEvent.click(screen.getByRole('option', { name: 'Codex' }))
     expect(within(table()).getByRole('row', { name: /GPT-5\.4/ })).toBeInTheDocument()
     expect(within(table()).queryByRole('row', { name: /Claude Opus/ })).not.toBeInTheDocument()
+    expect(within(table()).queryByRole('row', { name: /GPT-5\.5/ })).not.toBeInTheDocument()
     expect(getModels).not.toHaveBeenCalled()
   })
 
@@ -396,7 +400,7 @@ describe('Models', () => {
     expect(within(screen.getByRole('table', { name: 'Models grouped by task' })).getAllByText('Anthropic')).toHaveLength(2)
     expect(screen.getByText(/Task attribution needs the original session records/i)).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Model' })).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: 'Provider' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Source' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Cache ×' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Cost / 1M' })).toBeInTheDocument()
   })
@@ -422,7 +426,7 @@ describe('Models', () => {
     await waitFor(() => expect(getAudit).toHaveBeenCalledWith('30days', 'all'))
     const evidenceTable = screen.getByRole('table', { name: 'Model usage evidence' })
     expect(within(evidenceTable).getAllByRole('columnheader').map(header => header.textContent)).toEqual([
-      'Model', 'Provider', 'Calls', 'Total tokens', 'Cost', 'Cost / 1M', 'Evidence', 'Pricing', 'Recon', 'Reasoning',
+      'Model', 'Source', 'Calls', 'Total tokens', 'Cost', 'Cost / 1M', 'Evidence', 'Pricing', 'Recon', 'Reasoning',
     ])
     expect(within(evidenceTable).getByText('102M')).toBeInTheDocument()
     expect(within(evidenceTable).getByText('$252.00')).toBeInTheDocument()

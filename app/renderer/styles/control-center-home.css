@@ -2495,3 +2495,23 @@
     line-height: 1;
   }
 }
+
+/* Models and Sessions share Home's compact refresh affordance. Keep the
+   glyph centered by the button box itself, independent of the inherited
+   legacy button padding and line-height rules. */
+.metrora-shell .bar-refresh-icon-only .refresh-button {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  line-height: 1;
+  text-align: center;
+  text-indent: 0;
+}
+
+.metrora-shell .bar-refresh-icon-only .refresh-button::before {
+  display: block;
+  margin: 0;
+  line-height: 1;
+}

@@ -28,7 +28,9 @@ const DEFAULT_CAPABILITIES: DesktopSectionCapabilities = {
   globalRefresh: true,
 }
 
-/** The shared top bar renders only scope dimensions supported by the active section. */
+/** The shared top bar renders only scope dimensions supported by the active section.
+ * Its provider control is the desktop client/source scope used by Sessions;
+ * model-house and delivery-route filters stay local to Models. */
 export function TopBar({
   title,
   scope,

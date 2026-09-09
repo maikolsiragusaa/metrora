@@ -194,24 +194,24 @@ function aggregateTasks(rows: ModelReportRow[]): TaskAggregate[] {
   return [...grouped.values()].sort((a, b) => b.calls - a.calls || b.tokens - a.tokens)
 }
 
-function aggregateProviders(rows: ModelReportRow[]): Array<TaskAggregate & { provider: string }> {
-  const grouped = new Map<string, TaskAggregate & { provider: string }>()
+function aggregateSources(rows: ModelReportRow[]): Array<TaskAggregate & { source: string }> {
+  const grouped = new Map<string, TaskAggregate & { source: string }>()
   for (const row of rows) {
-    const provider = row.providerDisplayName || row.provider || 'Unknown provider'
-    const current = grouped.get(provider) ?? { label: provider, provider, calls: 0, tokens: 0, cost: 0 }
+    const source = row.providerDisplayName || row.provider || 'Unknown source'
+    const current = grouped.get(source) ?? { label: source, source, calls: 0, tokens: 0, cost: 0 }
     current.calls += row.calls
     current.tokens += reportTotal(row)
     current.cost += row.costUSD
-    grouped.set(provider, current)
+    grouped.set(source, current)
   }
   return [...grouped.values()].sort((a, b) => b.tokens - a.tokens || b.calls - a.calls)
 }
 
-function reportModelTotals(rows: ModelReportRow[]): Array<TaskAggregate & { model: string; provider: string }> {
-  const grouped = new Map<string, TaskAggregate & { model: string; provider: string }>()
+function reportModelTotals(rows: ModelReportRow[]): Array<TaskAggregate & { model: string; source: string }> {
+  const grouped = new Map<string, TaskAggregate & { model: string; source: string }>()
   for (const row of rows) {
     const key = `${row.provider}\u0000${row.model}`
-    const current = grouped.get(key) ?? { label: row.modelDisplayName, model: row.modelDisplayName, provider: row.providerDisplayName || row.provider, calls: 0, tokens: 0, cost: 0 }
+    const current = grouped.get(key) ?? { label: row.modelDisplayName, model: row.modelDisplayName, source: row.providerDisplayName || row.provider, calls: 0, tokens: 0, cost: 0 }
     current.calls += row.calls
     current.tokens += reportTotal(row)
     current.cost += row.costUSD
@@ -234,7 +234,7 @@ function ReportBarList({ rows, value }: { rows: TaskAggregate[]; value: 'calls' 
 
 export function ModelsTaskInsightsRail({ rows }: { rows: ModelReportRow[] }) {
   const tasks = useMemo(() => aggregateTasks(rows), [rows])
-  const providers = useMemo(() => aggregateProviders(rows), [rows])
+  const sources = useMemo(() => aggregateSources(rows), [rows])
   const models = useMemo(() => reportModelTotals(rows), [rows])
   const mostUsed = models[0] ?? null
   const cheapest = [...models]
@@ -259,12 +259,12 @@ export function ModelsTaskInsightsRail({ rows }: { rows: ModelReportRow[] }) {
         <div className="models-side-card-head compact"><div><span className="models-side-eyebrow">Usage by task</span><h2 id="models-task-usage-title">Available task detail</h2></div><span className="models-side-link">{taskCalls.toLocaleString('en-US')} calls</span></div>
         <ReportBarList rows={tasks} value="calls" />
       </section>
-      <section className="models-side-card" aria-labelledby="models-provider-tokens-title">
-        <div className="models-side-card-head compact"><div><span className="models-side-eyebrow">Total tokens by provider</span><h2 id="models-provider-tokens-title">Observed volume</h2></div></div>
+      <section className="models-side-card" aria-labelledby="models-source-tokens-title">
+        <div className="models-side-card-head compact"><div><span className="models-side-eyebrow">Total tokens by source</span><h2 id="models-source-tokens-title">Observed volume</h2></div></div>
         <div className="models-provider-bars">
-          {providers.slice(0, 5).map((row, index) => {
-            const max = providers[0]?.tokens ?? 0
-            return <div className="models-provider-bar-row" key={row.provider}><div><ProviderLogo provider={providerLogoKey(row.provider)} size={14} /><span>{row.provider} usage</span></div><span className="models-task-bar-track"><i className={`tone-${index % 5}`} style={{ width: `${max > 0 ? Math.max(6, row.tokens / max * 100) : 0}%` }} /></span><strong>{formatCompact(row.tokens)}</strong></div>
+          {sources.slice(0, 5).map((row, index) => {
+            const max = sources[0]?.tokens ?? 0
+            return <div className="models-provider-bar-row" key={row.source}><div><ProviderLogo provider={providerLogoKey(row.source)} size={14} /><span>{row.source} usage</span></div><span className="models-task-bar-track"><i className={`tone-${index % 5}`} style={{ width: `${max > 0 ? Math.max(6, row.tokens / max * 100) : 0}%` }} /></span><strong>{formatCompact(row.tokens)}</strong></div>
           })}
         </div>
       </section>
@@ -289,20 +289,20 @@ function auditPricingLabel(row: AuditRow): string {
   return Math.abs(row.cost.recomputedTotalUSD - row.attributedCostUSD) > 0.005 ? 'Estimated' : 'Priced'
 }
 
-type ProviderPricingResolution = { provider: string; total: number; resolved: number }
+type SourcePricingResolution = { source: string; total: number; resolved: number }
 
-function providerPricingResolution(rows: AuditRow[]): ProviderPricingResolution[] {
-  const grouped = new Map<string, ProviderPricingResolution>()
+function sourcePricingResolution(rows: AuditRow[]): SourcePricingResolution[] {
+  const grouped = new Map<string, SourcePricingResolution>()
   for (const row of rows) {
-    const current = grouped.get(row.provider) ?? { provider: row.provider, total: 0, resolved: 0 }
+    const current = grouped.get(row.provider) ?? { source: row.provider, total: 0, resolved: 0 }
     current.total += 1
     if (row.rates) current.resolved += 1
     grouped.set(row.provider, current)
   }
-  return [...grouped.values()].sort((a, b) => b.resolved - a.resolved || b.total - a.total || a.provider.localeCompare(b.provider))
+  return [...grouped.values()].sort((a, b) => b.resolved - a.resolved || b.total - a.total || a.source.localeCompare(b.source))
 }
 
-function providerPricingLabel(row: ProviderPricingResolution): string {
+function sourcePricingLabel(row: SourcePricingResolution): string {
   if (row.resolved === row.total) return 'Resolved'
   if (row.resolved === 0) return 'Unresolved'
   return 'Partial'
@@ -342,12 +342,12 @@ export function ModelsEvidencePanel({ rows, selected, onClose }: { rows: AuditRo
   const recon = auditRecon(selected)
   const pricingState = auditPricingLabel(selected)
   const priced = selected.rates != null
-  const providerCoverage = providerPricingResolution(rows)
+  const sourceCoverage = sourcePricingResolution(rows)
 
   return (
     <aside className="models-side-rail" aria-label="Model evidence detail">
       <section className="models-side-card models-evidence-head">
-        <div className="models-side-card-head"><div><span className="models-side-eyebrow">Model detail</span><h2>{selected.modelDisplayName}</h2><p>{selected.providerDisplayName}</p></div><button type="button" className="models-side-close" aria-label="Close model evidence detail" onClick={onClose}>×</button></div>
+        <div className="models-side-card-head"><div><span className="models-side-eyebrow">Model detail</span><h2>{selected.modelDisplayName}</h2><p>Client/source · {selected.providerDisplayName}</p></div><button type="button" className="models-side-close" aria-label="Close model evidence detail" onClick={onClose}>×</button></div>
         <div className="models-summary-tags"><span className={`models-side-chip ${pricingState === 'Unpriced' ? 'is-warn' : pricingState === 'Estimated' ? 'is-warn' : ''}`}>{pricingState}</span><span className="models-side-chip">{rawComplete ? 'Raw evidence' : 'Partial evidence'}</span>{recon != null ? <span className="models-side-chip">Cost aligned</span> : null}</div>
       </section>
       <section className="models-side-card" aria-label="Evidence and pricing status">
@@ -359,10 +359,10 @@ export function ModelsEvidencePanel({ rows, selected, onClose }: { rows: AuditRo
         </div>
       </section>
       <AuditTokenChart row={selected} />
-      <section className="models-side-card" aria-labelledby="models-evidence-provider-title">
-        <div className="models-side-card-head compact"><div><span className="models-side-eyebrow">Pricing resolution by provider</span><h2 id="models-evidence-provider-title">Resolved rate records</h2></div><span className="models-side-link">{rows.length} rows</span></div>
+      <section className="models-side-card" aria-labelledby="models-evidence-source-title">
+        <div className="models-side-card-head compact"><div><span className="models-side-eyebrow">Pricing resolution by source</span><h2 id="models-evidence-source-title">Resolved rate records</h2></div><span className="models-side-link">{rows.length} rows</span></div>
         <div className="models-provider-bars">
-          {providerCoverage.slice(0, 6).map((row, index) => <div className="models-provider-bar-row" key={row.provider}><div><ProviderLogo provider={providerLogoKey(row.provider)} size={14} /><span>{formatProviderLabel(row.provider)}</span></div><span className="models-task-bar-track" title={`${row.resolved} of ${row.total} audited rows have a resolved rate record`}><i className={`tone-${index % 5}`} style={{ width: `${row.total > 0 ? row.resolved / row.total * 100 : 0}%` }} /></span><strong>{providerPricingLabel(row)}</strong></div>)}
+          {sourceCoverage.slice(0, 6).map((row, index) => <div className="models-provider-bar-row" key={row.source}><div><ProviderLogo provider={providerLogoKey(row.source)} size={14} /><span>{formatProviderLabel(row.source)}</span></div><span className="models-task-bar-track" title={`${row.resolved} of ${row.total} audited rows have a resolved rate record`}><i className={`tone-${index % 5}`} style={{ width: `${row.total > 0 ? row.resolved / row.total * 100 : 0}%` }} /></span><strong>{sourcePricingLabel(row)}</strong></div>)}
         </div>
       </section>
     </aside>
@@ -380,20 +380,20 @@ function CompareMetric({ label, value, detail }: { label: string; value: string;
 function CompareBars({ rows, metric }: { rows: ModelRow[]; metric: 'tokens' | 'cost' }) {
   const values = rows.map(row => ({ row, value: metric === 'tokens' ? totalFor(row) : row.cost })).filter((entry): entry is { row: ModelRow; value: number } => entry.value != null)
   const max = Math.max(0, ...values.map(entry => entry.value))
-  return <div className="models-compare-bars">{values.map((entry, index) => <div className="models-compare-bar-item" key={entry.row.presentationIdentity}><div className="models-compare-bar-label"><ModelIdentity name={entry.row.name} /><strong>{metric === 'tokens' ? formatCompact(entry.value) : formatUsd(entry.value)}</strong></div><span className="models-compare-bar-track"><i className={`tone-${index % 5}`} style={{ width: `${max > 0 ? Math.max(6, entry.value / max * 100) : 0}%` }} /></span></div>)}</div>
+  return <div className="models-compare-bars">{values.map((entry, index) => <div className="models-compare-bar-item" key={entry.row.presentationIdentity}><div className="models-compare-bar-label"><ModelIdentity name={entry.row.name} brandId={entry.row.brandId} /><strong>{metric === 'tokens' ? formatCompact(entry.value) : formatUsd(entry.value)}</strong></div><span className="models-compare-bar-track"><i className={`tone-${index % 5}`} style={{ width: `${max > 0 ? Math.max(6, entry.value / max * 100) : 0}%` }} /></span></div>)}</div>
 }
 
 function CompareTokenMix({ rows }: { rows: ModelRow[] }) {
   return <div className="models-compare-mix-list">{rows.map(row => {
     const parts = tokenParts(row)
     const total = parts.reduce((sum, part) => sum + part.value, 0)
-    return <div className="models-compare-mix-row" key={row.presentationIdentity}><div><ModelIdentity name={row.name} /></div>{total > 0 ? <span className="models-token-bar">{parts.map(part => <i className={part.className} key={part.label} style={{ width: `${part.value / total * 100}%` }} title={`${part.label}: ${formatCompact(part.value)}`} />)}</span> : <span className="models-compare-unavailable">Token detail unavailable</span>}<strong>{total > 0 ? formatCompact(total) : '—'}</strong></div>
+    return <div className="models-compare-mix-row" key={row.presentationIdentity}><div><ModelIdentity name={row.name} brandId={row.brandId} /></div>{total > 0 ? <span className="models-token-bar">{parts.map(part => <i className={part.className} key={part.label} style={{ width: `${part.value / total * 100}%` }} title={`${part.label}: ${formatCompact(part.value)}`} />)}</span> : <span className="models-compare-unavailable">Token detail unavailable</span>}<strong>{total > 0 ? formatCompact(total) : '—'}</strong></div>
   })}</div>
 }
 
 function CompareSignals({ rows }: { rows: ModelRow[] }) {
   const entries = rows.map(row => ({ row, unit: unitCostFor(row), cache: cacheFor(row), timing: timingFor(row) }))
-  return <div className="models-compare-signal-list">{entries.map(entry => <div className="models-compare-signal-row" key={entry.row.presentationIdentity}><ModelIdentity name={entry.row.name} /><span><small>Cost / 1M</small><strong>{entry.unit == null ? '—' : formatUsd(entry.unit)}</strong></span><span><small>Cache reuse</small><strong>{formatReuseMultiple(entry.cache)}</strong></span><span><small>ms / 1K</small><strong>{formatTiming(entry.timing)}</strong></span></div>)}</div>
+  return <div className="models-compare-signal-list">{entries.map(entry => <div className="models-compare-signal-row" key={entry.row.presentationIdentity}><ModelIdentity name={entry.row.name} brandId={entry.row.brandId} /><span><small>Cost / 1M</small><strong>{entry.unit == null ? '—' : formatUsd(entry.unit)}</strong></span><span><small>Cache reuse</small><strong>{formatReuseMultiple(entry.cache)}</strong></span><span><small>ms / 1K</small><strong>{formatTiming(entry.timing)}</strong></span></div>)}</div>
 }
 
 function CompareTakeaways({ rows }: { rows: ModelRow[] }) {
@@ -484,7 +484,7 @@ export function ModelsCompareWorkspace({ rows, onExit }: { rows: ModelRow[]; onE
           <span className="models-compare-selection-note">{selectedRows.length}/3 selected</span>
         </div>
         <div className="models-sort-toolbar"><span className="models-side-muted">Select up to three models for a factual comparison.</span><span className="models-result-count">{filtered.length.toLocaleString('en-US')} models</span></div>
-        {filtered.length === 0 ? <div className="models-empty-state"><strong>No models match the current filters.</strong></div> : <div className="models-table-panel models-compare-table-panel"><table className="models-table models-compare-table" aria-label="Models available for comparison"><colgroup><col className="models-compare-col-check" /><col className="models-col-model" /><col className="models-col-provider" /><col className="models-col-calls" /><col className="models-col-total" /><col className="models-col-cost" /><col className="models-col-unit" /><col className="models-col-cachex" /><col className="models-col-timing" /></colgroup><thead><tr><th aria-label="Select" /><th>Model</th><th>Provider</th><th className="models-number">Calls</th><th className="models-number">Tokens</th><th className="models-number">Cost</th><th className="models-number">Cost / 1M</th><th className="models-number">Cache×</th><th className="models-number">ms/1K</th></tr></thead><tbody>{filtered.map(row => { const checked = selectedIds.includes(row.presentationIdentity); const disabled = !checked && selectedIds.length >= 3; return <tr key={row.presentationIdentity} className={checked ? 'is-selected' : undefined}><td className="models-compare-check"><input type="checkbox" aria-label={`Compare ${row.name}`} checked={checked} disabled={disabled} onChange={() => toggle(row)} /></td><td><ModelIdentity name={row.name} /></td><td><span className="models-provider-value"><ProviderLogo provider={providerLogoKey(modelRowProvider(row))} size={14} /><span>{providerText(row)}</span></span></td><td className="models-number">{row.calls.toLocaleString('en-US')}</td><td className="models-number models-total">{totalFor(row) == null ? '—' : formatCompact(totalFor(row)!)}</td><td className="models-number">{formatUsd(row.cost)}</td><td className="models-number models-unit-cost">{unitCostFor(row) == null ? '—' : formatUsd(unitCostFor(row)!)}</td><td className="models-number">{formatReuseMultiple(cacheFor(row))}</td><td className="models-number">{formatTiming(timingFor(row))}</td></tr>})}</tbody></table></div>}
+        {filtered.length === 0 ? <div className="models-empty-state"><strong>No models match the current filters.</strong></div> : <div className="models-table-panel models-compare-table-panel"><table className="models-table models-compare-table" aria-label="Models available for comparison"><colgroup><col className="models-compare-col-check" /><col className="models-col-model" /><col className="models-col-provider" /><col className="models-col-calls" /><col className="models-col-total" /><col className="models-col-cost" /><col className="models-col-unit" /><col className="models-col-cachex" /><col className="models-col-timing" /></colgroup><thead><tr><th aria-label="Select" /><th>Model</th><th>Provider</th><th className="models-number">Calls</th><th className="models-number">Tokens</th><th className="models-number">Cost</th><th className="models-number">Cost / 1M</th><th className="models-number">Cache×</th><th className="models-number">ms/1K</th></tr></thead><tbody>{filtered.map(row => { const checked = selectedIds.includes(row.presentationIdentity); const disabled = !checked && selectedIds.length >= 3; return <tr key={row.presentationIdentity} className={checked ? 'is-selected' : undefined}><td className="models-compare-check"><input type="checkbox" aria-label={`Compare ${row.name}`} checked={checked} disabled={disabled} onChange={() => toggle(row)} /></td><td><ModelIdentity name={row.name} brandId={row.brandId} /></td><td><span className="models-provider-value"><ProviderLogo provider={providerLogoKey(modelRowProvider(row))} size={14} /><span>{providerText(row)}</span></span></td><td className="models-number">{row.calls.toLocaleString('en-US')}</td><td className="models-number models-total">{totalFor(row) == null ? '—' : formatCompact(totalFor(row)!)}</td><td className="models-number">{formatUsd(row.cost)}</td><td className="models-number models-unit-cost">{unitCostFor(row) == null ? '—' : formatUsd(unitCostFor(row)!)}</td><td className="models-number">{formatReuseMultiple(cacheFor(row))}</td><td className="models-number">{formatTiming(timingFor(row))}</td></tr>})}</tbody></table></div>}
         <div className="models-bounded-note">{selectedRows.length === 0 ? 'No models selected' : `${selectedRows.length} selected · selection is based on observed Metrora accounting`}</div>
       </section>
       {selectedRows.length > 0 ? <CompareModelsPanel rows={selectedRows} onClear={clear} onRemove={id => setSelectedIds(current => current.filter(value => value !== id))} onExit={onExit} /> : null}

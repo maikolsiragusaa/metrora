@@ -12,6 +12,8 @@ export type DurableModelAccountingRow = {
   cacheReadTokens: number
   cacheWriteTokens: number
   tokenDetail: boolean
+  /** Canonical model-house identity; distinct from the delivery provider. */
+  brandId?: string
   provider?: string
   sourceProviders?: string[]
   rawModels?: string[]

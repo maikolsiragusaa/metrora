@@ -5,21 +5,24 @@ import { ProviderLogo } from './ProviderLogo'
 export type ProviderFilterOption = { id: string; label: string; logoProvider?: string }
 
 /**
- * One-row provider scope strip shared by the dense Sessions and Models
- * surfaces. Pointer dragging and wheel translation keep every detected
- * provider reachable without exposing a native scrollbar.
+ * One-row scope strip shared by the dense Sessions and Models surfaces.
+ * Sessions supplies client/source entries; Models supplies model-house
+ * entries. Pointer dragging and wheel translation keep every entry reachable
+ * without exposing a native scrollbar.
  */
 export function ProviderFilterStrip({
   provider,
   providers,
   onProviderChange,
   ariaLabel,
+  allLabel = 'All providers',
   className = 'session-provider-filter',
 }: {
   provider: string
   providers: ProviderFilterOption[]
   onProviderChange: (value: string) => void
   ariaLabel: string
+  allLabel?: string
   className?: string
 }) {
   const dragRef = useRef<{ pointerId: number; startX: number; startScrollLeft: number; moved: boolean } | null>(null)
@@ -84,7 +87,7 @@ export function ProviderFilterStrip({
     >
       <button type="button" className={provider === 'all' ? 'on' : undefined} aria-pressed={provider === 'all'} onClick={() => onProviderChange('all')}>
         <span className="session-provider-all-icon" aria-hidden="true">✦</span>
-        All providers
+        {allLabel}
       </button>
       {providers.map(entry => (
         <button key={entry.id} type="button" className={provider === entry.id ? 'on' : undefined} aria-pressed={provider === entry.id} onClick={() => onProviderChange(entry.id)}>

@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 
+import { Dropdown } from '../components/Dropdown'
 import { EmptyNote } from '../components/EmptyState'
 import { ProviderFilterStrip, type ProviderFilterOption } from '../components/ProviderFilterStrip'
 import { ProviderLogo } from '../components/ProviderLogo'
 import { formatCompact, formatDayShort, formatUsd } from '../lib/format'
+import { modelHouseLabel, modelHouseLogoKey, modelHouseValues, type ModelHouseId } from '../lib/modelPresentation'
 import { formatProviderLabel, providerLogoKey } from '../lib/providerPresentation'
 import { additiveReasoningTokenCount, cacheReuseMultiple, costPerMillionTotal, formatReuseMultiple, totalTokenCount } from '../lib/usageMetrics'
 import type { DurableModelAccountingRow, DurableModelPresentationRow, MenubarPayload, ModelAccounting, ModelPresentation } from '../lib/types'
@@ -39,12 +41,14 @@ function formatLabel(value: string): string {
     .replace(/\b\w/g, letter => letter.toUpperCase())
 }
 
-function providerValues(row: DurableModelRow): string[] {
+/** Delivery/API providers; never use this for the model-house strip. */
+function deliveryProviderValues(row: DurableModelRow): string[] {
   if (row.providers.length > 0) return row.providers
   return row.provider ? [row.provider] : []
 }
 
-function sourceValues(row: DurableModelRow): string[] {
+/** Metrora clients/sources that contributed the observed row. */
+function clientSourceValues(row: DurableModelRow): string[] {
   return row.sourceProviders.filter(value => value.trim().length > 0)
 }
 
@@ -169,26 +173,29 @@ function Metric({ label, value, detail }: { label: string; value: string; detail
   )
 }
 
-function FilterSelect({
-  label,
+function SourceFilter({
   value,
   options,
   onChange,
 }: {
-  label: string
   value: string
   options: string[]
   onChange: (value: string) => void
 }) {
   return (
-    <label className="models-filter-select">
-      <span className="sr-only">{label}</span>
-      <select aria-label={label} value={value} onChange={event => onChange(event.target.value)}>
-        <option value="all">All {label.toLowerCase()}s</option>
-        {options.map(option => <option key={option} value={option}>{formatProviderLabel(option)}</option>)}
-      </select>
-      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>
-    </label>
+    <div className="models-source-filter">
+      <Dropdown
+        id="models-source-filter"
+        ariaLabel="Client/source"
+        value={value}
+        width="100%"
+        options={[{ value: 'all', label: 'All sources' }, ...options.map(option => ({ value: option, label: formatProviderLabel(option) }))]}
+        onChange={onChange}
+        renderIcon={source => source === 'all'
+          ? <span className="models-source-filter-icon" aria-hidden="true">◌</span>
+          : <ProviderLogo provider={providerLogoKey(source)} size={13} />}
+      />
+    </div>
   )
 }
 
@@ -202,10 +209,10 @@ function CostCell({ row, quality }: { row: DurableModelRow; quality: CostQuality
 }
 
 function ProviderCell({ row }: { row: DurableModelRow }) {
-  const values = providerValues(row)
+  const values = deliveryProviderValues(row)
   const identity = compactIdentity(values)
   return (
-    <span className="models-provider-value" title={identity.title}>
+    <span className="models-provider-value" title={`Delivery provider/API route: ${identity.title}`}>
       {values.length > 0 ? <ProviderLogo provider={providerLogoKey(values[0]!)} size={14} /> : null}
       <span>{identity.label}</span>
     </span>
@@ -213,10 +220,10 @@ function ProviderCell({ row }: { row: DurableModelRow }) {
 }
 
 function SourceCell({ row }: { row: DurableModelRow }) {
-  const values = sourceValues(row)
+  const values = clientSourceValues(row)
   const identity = compactIdentity(values)
   return (
-    <span className={`models-source-value${values.length === 0 ? ' is-unavailable' : ''}`} title={identity.title}>
+    <span className={`models-source-value${values.length === 0 ? ' is-unavailable' : ''}`} title={`Metrora client/source: ${identity.title}`}>
       {values.length > 0 ? <ProviderLogo provider={providerLogoKey(values[0]!)} size={13} /> : null}
       <span>{identity.label}</span>
     </span>
@@ -250,7 +257,7 @@ function ModelTableRow({
           onClick={onSelect}
         >
           <span className="models-row-marker" aria-hidden="true" />
-          <ModelIdentity name={row.name} />
+          <ModelIdentity name={row.name} brandId={row.brandId} />
         </button>
       </td>
       <td><ProviderCell row={row} /></td>
@@ -354,8 +361,8 @@ function ModelInspector({ row, unpricedModels, history, onClose }: { row: Durabl
   const reuse = modelCacheReuse(row)
   const unitCost = quality.kind === 'unpriced' ? null : modelUnitCost(row)
   const timing = modelMsPer1K(row)
-  const providers = providerValues(row)
-  const sources = sourceValues(row)
+  const deliveryProviders = deliveryProviderValues(row)
+  const clientSources = clientSourceValues(row)
   const pricingLabel = quality.kind === 'settled' ? 'Priced' : statusLabel(quality.kind)
   return (
     <aside className="models-inspector" aria-label="Model inspector">
@@ -363,10 +370,11 @@ function ModelInspector({ row, unpricedModels, history, onClose }: { row: Durabl
         <div className="models-inspector-kicker">Model detail</div>
         <button type="button" className="models-inspector-close" aria-label="Close model inspector" onClick={onClose}>×</button>
         <div className="models-inspector-title-row">
-          <ModelIdentity name={row.name} />
-          <span className="models-inspector-provider">{providers.length > 0 ? providers.map(formatProviderLabel).join(', ') : 'Provider unavailable'}</span>
+          <ModelIdentity name={row.name} brandId={row.brandId} />
+          <span className="models-inspector-provider">{deliveryProviders.length > 0 ? deliveryProviders.map(formatProviderLabel).join(', ') : 'Provider unavailable'}</span>
         </div>
-        <div className="models-inspector-source">{sources.length > 0 ? sources.map(formatProviderLabel).join(', ') : 'Source unavailable'}</div>
+        <div className="models-inspector-house">Model house · {modelHouseValues(row).map(modelHouseLabel).join(', ')}</div>
+        <div className="models-inspector-source">{clientSources.length > 0 ? clientSources.map(formatProviderLabel).join(', ') : 'Source unavailable'}</div>
         <div className="models-inspector-tags">
           <span className={`models-status-chip ${quality.kind}`}>{pricingLabel}</span>
           <span className={`models-status-chip ${row.tokenDetail ? 'available' : 'unavailable'}`}>{row.tokenDetail ? 'Token detail' : 'Token detail unavailable'}</span>
@@ -402,8 +410,9 @@ function ModelInspector({ row, unpricedModels, history, onClose }: { row: Durabl
       {tab === 'overview' ? <section className="models-inspector-section models-inspector-provenance" aria-label="Model provenance">
         <div className="models-inspector-section-head"><div><h3>Provenance</h3><span>Recorded route and collector facts</span></div></div>
         <dl>
-          <div><dt>Provider</dt><dd>{providers.length > 0 ? providers.map(formatProviderLabel).join(', ') : 'Unavailable'}</dd></div>
-          <div><dt>Source</dt><dd>{sources.length > 0 ? sources.map(formatProviderLabel).join(', ') : 'Unavailable'}</dd></div>
+          <div><dt>Model house</dt><dd>{modelHouseValues(row).map(modelHouseLabel).join(', ')}</dd></div>
+          <div><dt>Delivery provider</dt><dd>{deliveryProviders.length > 0 ? deliveryProviders.map(formatProviderLabel).join(', ') : 'Unavailable'}</dd></div>
+          <div><dt>Client/source</dt><dd>{clientSources.length > 0 ? clientSources.map(formatProviderLabel).join(', ') : 'Unavailable'}</dd></div>
           <div><dt>Delivery state</dt><dd>{statusLabel(row.deliveryStatus)}</dd></div>
         </dl>
       </section> : tab === 'providers' ? <section className="models-inspector-section" aria-label="Recorded model deliveries">
@@ -411,11 +420,11 @@ function ModelInspector({ row, unpricedModels, history, onClose }: { row: Durabl
         <div className="models-delivery-list">
           {row.deliveryRows.map((delivery, index) => {
             const deliveryCost = deliveryQuality(delivery)
-            const provider = delivery.provider ? formatProviderLabel(delivery.provider) : 'Provider unavailable'
-            const source = delivery.sourceProviders?.length ? delivery.sourceProviders.map(formatProviderLabel).join(', ') : 'Source unavailable'
+            const deliveryProvider = delivery.provider ? formatProviderLabel(delivery.provider) : 'Provider unavailable'
+            const clientSource = delivery.sourceProviders?.length ? delivery.sourceProviders.map(formatProviderLabel).join(', ') : 'Source unavailable'
             return (
               <div className="models-delivery-item" key={`${delivery.name}-${delivery.provider ?? 'unknown'}-${index}`}>
-                <div><strong>{formatLabel(delivery.semanticVariant ?? 'default')}</strong><span>{provider} · {source}</span></div>
+                <div><strong>{formatLabel(delivery.semanticVariant ?? 'default')}</strong><span>Provider: {deliveryProvider} · Client/source: {clientSource}</span></div>
                 <div><strong>{fmtInt(delivery.calls)}</strong><span>{deliveryCost.kind === 'unpriced' ? 'unpriced' : formatUsd(delivery.cost)}</span></div>
               </div>
             )
@@ -454,7 +463,7 @@ export function ModelsControlCenter({
   onExitCompare?: () => void
 }) {
   const [query, setQuery] = useState('')
-  const [providerFilter, setProviderFilter] = useState('all')
+  const [modelHouseFilter, setModelHouseFilter] = useState('all')
   const [sourceFilter, setSourceFilter] = useState('all')
   const [sort, setSort] = useState<ModelSort>('cost')
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -475,58 +484,64 @@ export function ModelsControlCenter({
     return values
   }, [accounting, legacyPresentationRow, presentation.rows])
 
-  const providerOptions = useMemo(() => [...new Set(rows.flatMap(providerValues))].sort((a, b) => a.localeCompare(b)), [rows])
-  const providerStripOptions = useMemo<ProviderFilterOption[]>(() => providerOptions.map(value => ({ id: value, label: formatProviderLabel(value), logoProvider: providerLogoKey(value) })), [providerOptions])
-  const sourceOptions = useMemo(() => [...new Set(rows.flatMap(sourceValues))].sort((a, b) => a.localeCompare(b)), [rows])
+  const modelHouseOptions = useMemo<ModelHouseId[]>(() => [...new Set(rows.flatMap(modelHouseValues))].sort((a, b) => {
+    if (a === 'unresolved') return 1
+    if (b === 'unresolved') return -1
+    return modelHouseLabel(a).localeCompare(modelHouseLabel(b))
+  }), [rows])
+  const modelHouseStripOptions = useMemo<ProviderFilterOption[]>(() => modelHouseOptions.map(value => ({ id: value, label: modelHouseLabel(value), logoProvider: modelHouseLogoKey(value) })), [modelHouseOptions])
+  const sourceOptions = useMemo(() => [...new Set(rows.flatMap(clientSourceValues))].sort((a, b) => a.localeCompare(b)), [rows])
   const filteredRows = useMemo(() => {
     const normalizedQuery = normalize(query)
     const values = rows.filter(row => {
-      const providers = providerValues(row)
-      const sources = sourceValues(row)
-      const haystack = [row.name, ...row.rawModels, ...providers, ...sources].map(normalize).join(' ')
+      const deliveryProviders = deliveryProviderValues(row)
+      const modelHouses = modelHouseValues(row)
+      const clientSources = clientSourceValues(row)
+      const haystack = [row.name, ...row.rawModels, ...modelHouses.map(modelHouseLabel), ...deliveryProviders, ...clientSources].map(normalize).join(' ')
       return (!normalizedQuery || haystack.includes(normalizedQuery))
-        && (providerFilter === 'all' || providers.includes(providerFilter))
-        && (sourceFilter === 'all' || sources.includes(sourceFilter))
+        && (modelHouseFilter === 'all' || modelHouses.includes(modelHouseFilter as ModelHouseId))
+        && (sourceFilter === 'all' || clientSources.includes(sourceFilter))
     })
     return sortRows(values, sort)
-  }, [providerFilter, query, rows, sort, sourceFilter])
+  }, [modelHouseFilter, query, rows, sort, sourceFilter])
 
   useEffect(() => {
     if (selectedId && !filteredRows.some(row => row.presentationIdentity === selectedId)) setSelectedId(null)
   }, [filteredRows, selectedId])
 
   useEffect(() => {
-    if (providerFilter !== 'all' && !providerOptions.includes(providerFilter)) setProviderFilter('all')
-  }, [providerFilter, providerOptions])
+    if (modelHouseFilter !== 'all' && !modelHouseOptions.includes(modelHouseFilter as ModelHouseId)) setModelHouseFilter('all')
+  }, [modelHouseFilter, modelHouseOptions])
 
   const selectedRow = selectedId ? filteredRows.find(row => row.presentationIdentity === selectedId) ?? null : null
-  const hasFilters = query.trim().length > 0 || providerFilter !== 'all' || sourceFilter !== 'all'
+  const hasFilters = query.trim().length > 0 || modelHouseFilter !== 'all' || sourceFilter !== 'all'
 
   if (mode === 'compare') return <ModelsCompareWorkspace rows={rows} onExit={onExitCompare} />
 
   const clearFilters = () => {
     setQuery('')
-    setProviderFilter('all')
+    setModelHouseFilter('all')
     setSourceFilter('all')
   }
 
   return (
     <div className={`models-workspace${selectedRow ? ' has-right-rail' : ''}`}>
       <section className="models-list-pane" aria-label="Models control center">
-        <ProviderFilterStrip
-          provider={providerFilter}
-          providers={providerStripOptions}
-          onProviderChange={setProviderFilter}
-          ariaLabel="Filter models by provider"
+        {modelHouseStripOptions.length > 0 && <ProviderFilterStrip
+          provider={modelHouseFilter}
+          providers={modelHouseStripOptions}
+          onProviderChange={setModelHouseFilter}
+          ariaLabel="Filter models by model house"
+          allLabel="All model houses"
           className="session-provider-filter models-provider-filter"
-        />
+        />}
         <div className="models-filter-row">
           <label className="models-search-field">
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.3" /><path d="m16 16 4.5 4.5" /></svg>
             <span className="sr-only">Filter models</span>
-            <input aria-label="Filter models" value={query} onChange={event => setQuery(event.target.value)} placeholder="Filter models, providers, or sources…" />
+            <input aria-label="Filter models" value={query} onChange={event => setQuery(event.target.value)} placeholder="Filter models, houses, providers, or sources…" />
           </label>
-          <FilterSelect label="Source" value={sourceFilter} options={sourceOptions} onChange={setSourceFilter} />
+          <SourceFilter value={sourceFilter} options={sourceOptions} onChange={setSourceFilter} />
           {hasFilters ? <button type="button" className="models-clear-filter" onClick={clearFilters}>Clear filters</button> : null}
         </div>
 
@@ -551,7 +566,7 @@ export function ModelsControlCenter({
               </colgroup>
               <thead>
                 <tr>
-                  <th>Model</th><th>Provider</th><th>Source</th><th className="models-number">Calls</th><th className="models-number">Input</th><th className="models-number">Output</th>
+                  <th title="Model house identity and display name">Model</th><th title="Delivery provider or API route">Provider</th><th title="Metrora client/source that contributed the usage">Source</th><th className="models-number">Calls</th><th className="models-number">Input</th><th className="models-number">Output</th>
                   <th className="models-number">Cache R</th><th className="models-number">Cache W</th><th className="models-number" title="Cached input read per uncached input token">Cache×</th>
                   <th className="models-number">Total</th><th className="models-number" title="Active generation milliseconds per 1,000 generated tokens">ms/1K</th><th className="models-number">Cost</th><th className="models-number">Cost/1M</th>
                 </tr>

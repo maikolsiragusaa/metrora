@@ -206,34 +206,78 @@
 
 .models-search-field input::placeholder { color: var(--mut2); }
 
-.models-filter-select {
-  position: relative;
-  display: inline-flex;
+.models-source-filter {
+  width: 100%;
   min-width: 0;
   height: 34px;
-  align-items: center;
-  border: 1px solid var(--line);
+}
+
+.models-source-filter .dropdown,
+.models-source-filter .dropdown-trigger { width: 100%; min-width: 0; }
+
+.models-source-filter .dropdown-trigger {
+  box-sizing: border-box;
+  height: 34px;
+  min-height: 34px;
+  gap: 7px;
+  border-color: var(--line);
   border-radius: 8px;
   background: var(--models-surface);
+  padding: 0 10px;
   color: var(--mut);
-}
-
-.models-filter-select select {
-  width: 100%;
-  height: 100%;
-  appearance: none;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  padding: 0 27px 0 10px;
-  color: inherit;
-  font: inherit;
   font-size: 10.5px;
-  cursor: pointer;
 }
 
-.models-filter-select svg { position: absolute; right: 8px; width: 13px; height: 13px; pointer-events: none; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.6; }
-.models-filter-select:focus-within { border-color: color-mix(in srgb, var(--models-accent) 62%, var(--line)); color: var(--ink); }
+.models-source-filter .dropdown-trigger:hover,
+.models-source-filter .dropdown-trigger[aria-expanded='true'] {
+  border-color: color-mix(in srgb, var(--models-accent) 62%, var(--line));
+  color: var(--ink);
+}
+
+.models-source-filter .dropdown-trigger:focus-visible {
+  border-color: color-mix(in srgb, var(--models-accent) 72%, var(--line));
+  outline: 1px solid color-mix(in srgb, var(--models-accent) 72%, transparent);
+  outline-offset: 1px;
+}
+
+.models-source-filter .dropdown-menu {
+  left: 0;
+  right: auto;
+  width: max-content;
+  min-width: 100%;
+  max-width: min(280px, calc(100vw - 24px));
+  max-height: 280px;
+  padding: 5px;
+  border-color: color-mix(in srgb, var(--models-accent) 28%, var(--line));
+  background: var(--models-surface-raised);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, .32), inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent);
+}
+
+.models-source-filter .dropdown-menu .pop-item {
+  min-height: 28px;
+  padding: 5px 8px;
+  color: var(--ink);
+  font-size: 10.5px;
+}
+
+.models-source-filter .dropdown-menu .pop-item.on {
+  background: var(--models-accent-soft);
+  color: var(--models-accent-strong);
+}
+
+.models-source-filter-icon {
+  display: inline-flex;
+  width: 13px;
+  height: 13px;
+  flex: 0 0 13px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--models-accent) 62%, var(--line));
+  border-radius: 50%;
+  color: var(--models-accent-strong);
+  font-size: 10px;
+  line-height: 1;
+}
 
 .models-clear-filter {
   height: 34px;
@@ -454,6 +498,7 @@
 .models-inspector-title-row > span:first-child { min-width: 0; flex: 0 1 auto; overflow: hidden; }
 .models-inspector-title-row > span:first-child > span:last-child { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .models-inspector-provider { min-width: 0; overflow: hidden; color: var(--ink); font-size: 11px; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
+.models-inspector-house { margin-top: 2px; color: var(--models-accent-strong); font-family: var(--mono); font-size: 8px; font-weight: 600; letter-spacing: .02em; }
 .models-inspector-source { margin-top: 3px; color: var(--mut2); font-family: var(--mono); font-size: 8.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .models-inspector-tags { display: flex; min-width: 0; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .models-status-chip { display: inline-flex; min-height: 20px; align-items: center; border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; color: var(--mut); font-size: 8px; font-weight: 600; }
@@ -543,7 +588,8 @@
   .models-workspace { gap: 10px; }
   .models-list-pane { gap: 7px; }
   .models-filter-row { gap: 6px; }
-  .models-search-field, .models-filter-select, .models-clear-filter { height: 30px; }
+  .models-search-field, .models-source-filter, .models-clear-filter { height: 30px; }
+  .models-source-filter .dropdown-trigger { height: 30px; min-height: 30px; }
   .models-sort-toolbar { margin-top: -1px; }
 }
 

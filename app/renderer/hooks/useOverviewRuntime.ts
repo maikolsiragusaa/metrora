@@ -33,7 +33,7 @@ export type OverviewRuntime = {
   onConfigMutated: (kind?: ConfigMutationKind) => void
 }
 
-/** Derive stable provider picker entries from the canonical Overview payload. */
+/** Derive stable client/source picker entries for the desktop/header scope. */
 export function detectedProvidersFromOverview(payload: MenubarPayload): DetectedProvider[] {
   const details = payload.current.providerDetails
   if (details) {
