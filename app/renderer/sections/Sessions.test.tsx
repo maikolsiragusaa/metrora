@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -216,6 +216,23 @@ describe('Sessions', () => {
     expect(screen.getByRole('button', { name: 'Provider 10' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^More$/ })).not.toBeInTheDocument()
     expect(screen.getByRole('group', { name: 'Filter sessions by provider' })).toHaveAttribute('data-provider-strip', 'true')
+  })
+
+  it('supports horizontal drag scrolling without activating a provider button', async () => {
+    const providers = Array.from({ length: 11 }, (_, index) => ({ id: `provider-${index}`, label: `Provider ${index}` }))
+    const onProviderChange = vi.fn()
+    render(<Sessions period="lifetime" provider="all" detectedProviders={providers} onProviderChange={onProviderChange} />)
+
+    await screen.findByRole('table', { name: 'Detailed sessions' })
+    const strip = screen.getByRole('group', { name: 'Filter sessions by provider' })
+    fireEvent.pointerDown(strip, { pointerId: 1, pointerType: 'mouse', button: 0, clientX: 200 })
+    fireEvent.pointerMove(strip, { pointerId: 1, pointerType: 'mouse', buttons: 1, clientX: 120 })
+    fireEvent.pointerUp(strip, { pointerId: 1, pointerType: 'mouse', button: 0, clientX: 120 })
+
+    expect(strip).toHaveAttribute('data-scroll-interaction', 'drag-or-wheel')
+    expect(strip.scrollLeft).toBe(80)
+    fireEvent.click(screen.getByRole('button', { name: 'Provider 0' }))
+    expect(onProviderChange).not.toHaveBeenCalled()
   })
 
   it('keeps the visible Project, Model, Client, and Date controls as real row filters', async () => {
