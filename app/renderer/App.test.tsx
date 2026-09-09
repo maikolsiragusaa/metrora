@@ -216,7 +216,7 @@ describe('App shortcuts', () => {
     expect(await screen.findByLabelText('Metrora AI Control Center')).toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: '2', metaKey: true })
-    expect(await screen.findByText('Recent sessions')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Sessions' })).toBeInTheDocument()
   })
 
   it('keeps command navigation, settings, and refresh shortcuts active without stale hints', async () => {
@@ -230,7 +230,7 @@ describe('App shortcuts', () => {
     expect(screen.queryByText('Export view')).not.toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: '2', metaKey: true })
-    expect(await screen.findByText('Recent sessions')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Sessions' })).toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: '3', metaKey: true })
     expect(await screen.findByLabelText('Daily spend by model')).toBeInTheDocument()

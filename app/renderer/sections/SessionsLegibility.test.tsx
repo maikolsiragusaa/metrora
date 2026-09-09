@@ -71,7 +71,7 @@ describe('Sessions dense-report legibility', () => {
     render(<Sessions period="30days" provider="all" />)
 
     const sessionRow = await screen.findByRole('button', {
-      name: /Open session: Investigate cache\. Project projects\/metrora\. Session ID claude\/abc:123\./i,
+      name: /Select session: Investigate cache\. Project projects\/metrora\. Session ID claude\/abc:123\./i,
     })
     const status = screen.getByRole('status')
     expect(status).toHaveTextContent('Sessions sorted by most recent, not grouped by provider. 1 session after filters.')
@@ -82,11 +82,14 @@ describe('Sessions dense-report legibility', () => {
 
     await user.click(row)
 
-    const detail = screen.getByRole('region', { name: 'projects/metrora session details' })
-    expect(detail.closest('td')).toHaveAttribute('id', 'session-details-claude-projects-metrora-claude-abc-123')
-    expect(screen.getByRole('button', { name: /Collapse session: Investigate cache/i })).toHaveAttribute('aria-expanded', 'true')
-    expect(within(detail).getByText('No comparable input')).toBeInTheDocument()
-    expect(within(detail).getByText('Reasoning-token count unavailable')).toBeInTheDocument()
+    const detail = screen.getByRole('complementary', { name: 'Investigate cache' })
+    expect(detail).toHaveAttribute('id', 'session-details-claude-projects-metrora-claude-abc-123')
+    expect(screen.getByRole('button', { name: /Selected session: Investigate cache/i })).toHaveAttribute('aria-expanded', 'true')
+    expect(within(detail).getByText(/Temporal call activity is unavailable for this row/)).toBeInTheDocument()
+    expect(within(detail).getByText('Evidence unavailable')).toBeInTheDocument()
+
+    await user.click(within(detail).getByRole('tab', { name: 'Reasoning' }))
+    expect(within(detail).getByText('0 of 1 calls known · 0% coverage')).toBeInTheDocument()
     expect(within(detail).getAllByText('Not identified').length).toBeGreaterThan(0)
 
     await user.click(screen.getByRole('tab', { name: 'Cost' }))

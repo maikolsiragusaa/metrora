@@ -33,8 +33,9 @@ export type DesktopNavigationGroup = {
 
 export const DESKTOP_NAVIGATION_ITEMS: Record<Section, DesktopNavigationItem> = {
   overview: { id: 'overview', label: 'Home', title: 'Home', shortcut: '1' },
-  activity: { id: 'activity', label: 'Activity', title: 'Activity', shortcut: '2' },
-  sessions: { id: 'sessions', label: 'Sessions', title: 'Sessions', shortcut: '' },
+  // Activity remains a routable destination without a keyboard shortcut.
+  activity: { id: 'activity', label: 'Activity', title: 'Activity', shortcut: '' },
+  sessions: { id: 'sessions', label: 'Sessions', title: 'Sessions', shortcut: '2' },
   pullRequests: { id: 'pullRequests', label: 'Pull requests', title: 'Pull requests', shortcut: '' },
   spend: { id: 'spend', label: 'Spend', title: 'Spend', shortcut: '3' },
   optimize: { id: 'optimize', label: 'Insights', title: 'Insights', shortcut: '' },
@@ -50,7 +51,7 @@ export const DESKTOP_NAVIGATION_ITEMS: Record<Section, DesktopNavigationItem> = 
 
 export const DESKTOP_NAVIGATION_GROUPS: readonly DesktopNavigationGroup[] = [
   { id: 'home', label: null, placement: 'primary', sections: ['overview'] },
-  { id: 'primary', label: null, placement: 'primary', sections: ['activity', 'models', 'spend', 'plans', 'bench', 'workspace', 'code'] },
+  { id: 'primary', label: null, placement: 'primary', sections: ['sessions', 'models', 'spend', 'plans', 'bench', 'workspace', 'code'] },
   { id: 'utility', label: null, placement: 'utility', sections: ['companion', 'settings'] },
 ]
 

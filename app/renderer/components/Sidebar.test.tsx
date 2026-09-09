@@ -11,12 +11,12 @@ describe('Sidebar', () => {
 
     expect(screen.getByRole('navigation', { name: 'Metrora navigation' })).toBeInTheDocument()
     const home = screen.getByRole('group', { name: 'Home' })
-    const primary = screen.getByRole('group', { name: 'Activity' })
+    const primary = screen.getByRole('group', { name: 'Sessions' })
     const utility = screen.getByRole('group', { name: 'Companion' })
 
     expect(within(home).getByRole('button', { name: /Home.*⌘1/ })).toBeInTheDocument()
     expect(within(primary).getAllByRole('button').map(item => item.textContent)).toEqual([
-      'Activity⌘2',
+      'Sessions⌘2',
       'Models⌘4',
       'Spend⌘3',
       'Capacity⌘6',
@@ -38,10 +38,11 @@ describe('Sidebar', () => {
     await user.click(screen.getByRole('button', { name: /Spend/ }))
     expect(onNavigate).toHaveBeenCalledWith('spend')
 
-    const activity = screen.getByRole('button', { name: /Activity/ })
-    activity.focus()
+    const sessions = screen.getByRole('button', { name: /Sessions/ })
+    sessions.focus()
     await user.keyboard('{Enter}')
-    expect(onNavigate).toHaveBeenCalledWith('activity')
+    expect(onNavigate).toHaveBeenCalledWith('sessions')
+    expect(screen.queryByRole('button', { name: /Activity/ })).not.toBeInTheDocument()
   })
 
   it('marks the active item with the current-page contract', () => {

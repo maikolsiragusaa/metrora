@@ -211,8 +211,8 @@ function AppMain() {
         ) : (
           <>
             <TopBar
-              title={SECTION_TITLES[section]}
-              scope={scope}
+              title={section === 'sessions' ? null : SECTION_TITLES[section]}
+              scope={section === 'sessions' ? undefined : scope}
               period={period}
               onPeriodChange={onPeriodChange}
               customRange={customRange}
@@ -228,10 +228,11 @@ function AppMain() {
               projectScopeId={metroraProjectId}
               onProjectScopeSelect={onProjectScopeSelect}
               capabilities={sectionCapabilities}
-              onOpenCode={openCode}
+              onOpenCode={section === 'sessions' ? undefined : openCode}
               onRefresh={refreshVisible}
               refreshing={overview.loading}
               compactHome={section === 'overview'}
+              iconOnlyRefresh={section === 'sessions'}
             />
             <div className={motionClass('body', 'section-fade')}>
               {section === 'overview' ? (

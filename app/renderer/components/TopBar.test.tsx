@@ -13,11 +13,11 @@ const full: DesktopSectionCapabilities = {
   globalRefresh: true,
 }
 
-function renderTopBar(capabilities: DesktopSectionCapabilities, onOpenCode?: () => void, onRefresh?: () => void) {
-  render(
+function renderTopBar(capabilities: DesktopSectionCapabilities, onOpenCode?: () => void, onRefresh?: () => void, iconOnlyRefresh = false, hideShellLabels = false) {
+  return render(
     <TopBar
-      title="Workspace"
-      scope="Last 7 days · All providers"
+      title={hideShellLabels ? null : 'Workspace'}
+      scope={hideShellLabels ? undefined : 'Last 7 days · All providers'}
       period="week"
       onPeriodChange={vi.fn()}
       customRange={null}
@@ -35,6 +35,7 @@ function renderTopBar(capabilities: DesktopSectionCapabilities, onOpenCode?: () 
       capabilities={capabilities}
       onOpenCode={onOpenCode}
       onRefresh={onRefresh}
+      iconOnlyRefresh={iconOnlyRefresh}
     />,
   )
 }
@@ -55,6 +56,27 @@ describe('TopBar scope capabilities', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
 
     expect(onRefresh).toHaveBeenCalledOnce()
+  })
+
+  it('reuses the compact Home refresh semantics for dense Sessions', () => {
+    const onRefresh = vi.fn()
+    const { container } = renderTopBar(full, undefined, onRefresh, true)
+    const bar = container.firstElementChild as HTMLElement
+    const button = screen.getByRole('button', { name: 'Refresh' })
+
+    expect(bar).toHaveClass('bar-refresh-icon-only')
+    expect(button).toHaveClass('refresh-button')
+    expect(button).toHaveAttribute('title', 'Refresh')
+    fireEvent.click(button)
+    expect(onRefresh).toHaveBeenCalledOnce()
+  })
+
+  it('can keep the period selector while removing duplicated page labels', () => {
+    renderTopBar(full, undefined, undefined, true, true)
+
+    expect(screen.queryByText('Workspace')).not.toBeInTheDocument()
+    expect(screen.queryByText('Last 7 days · All providers')).not.toBeInTheDocument()
+    expect(screen.getByText('7D')).toBeInTheDocument()
   })
 
   it('keeps read-only scope context without implying Workspace filters', () => {
