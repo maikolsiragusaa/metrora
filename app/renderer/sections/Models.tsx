@@ -5,7 +5,6 @@ import { EmptyNote } from '../components/EmptyState'
 import { seriesColorForModel } from '../components/ListRow'
 import { Panel } from '../components/Panel'
 import { SectionSkeleton } from '../components/Skeleton'
-import { SegTabs } from '../components/SegTabs'
 import { StaleBanner } from '../components/StaleBanner'
 import type { Section } from '../components/Sidebar'
 import { usePolled, type Polled } from '../hooks/usePolled'
@@ -15,7 +14,8 @@ import { additiveReasoningTokenCount, cacheReuseMultiple, costPerMillionTotal, f
 import type { AuditRow, DateRange, DurableModelAccountingRow, DurableModelPresentationRow, MenubarPayload, ModelAccounting, ModelPresentation, ModelReportRow, Period, ReasoningTokenSemantics } from '../lib/types'
 import type { SettingsPane } from './Settings'
 import { combineModelPricing, modelPricingPresentation } from './modelPricingPresentation'
-import { DurableModelsTable, ModelIdentity, providerTagStyle } from './ModelsDurableTable'
+import { ModelIdentity, providerTagStyle } from './ModelsDurableTable'
+import { ModelsControlCenter } from './ModelsControlCenter'
 
 type ModelsLens = 'model' | 'task' | 'audit'
 type DurableModelAccounting = ModelAccounting
@@ -123,15 +123,13 @@ export function Models({
   const onAddAlias = () => onNavigate?.('settings', 'aliases')
 
   return (
-    <>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, alignSelf: 'flex-start' }}>
-        <SegTabs options={LENSES} value={lens} onChange={value => setLens(value as ModelsLens)} />
-        {lens !== 'audit' && (
-          <button type="button" className="btn btn-s" onClick={() => onNavigate?.('compare')}>
-            Compare…
-          </button>
-        )}
-      </div>
+    <div className="models-page">
+      <ModelsHeading
+        current={overview.data?.current}
+        lens={lens}
+        onLensChange={value => setLens(value)}
+        onCompare={() => onNavigate?.('compare')}
+      />
       {lens === 'audit' ? (
         <AuditLens period={period} provider={provider} range={range} refreshToken={refreshToken} ready={ready} />
       ) : (
@@ -147,7 +145,63 @@ export function Models({
           ready={ready}
         />
       )}
-    </>
+    </div>
+  )
+}
+
+function meteredTokenTotal(current: MenubarPayload['current'] | undefined): number | null {
+  if (!current) return null
+  const values = [current.inputTokens, current.outputTokens, current.cacheReadTokens, current.cacheWriteTokens]
+  return values.every(value => typeof value === 'number' && Number.isFinite(value))
+    ? values.reduce((sum, value) => sum + value, 0)
+    : null
+}
+
+function ModelsHeading({
+  current,
+  lens,
+  onLensChange,
+  onCompare,
+}: {
+  current?: MenubarPayload['current']
+  lens: ModelsLens
+  onLensChange: (value: ModelsLens) => void
+  onCompare: () => void
+}) {
+  const modelCount = current?.modelPresentation?.rows.length ?? current?.modelAccounting?.rows.length ?? current?.topModels.length ?? null
+  const tokenTotal = meteredTokenTotal(current)
+  const lensId = (value: ModelsLens) => `models-lens-${value}`
+
+  return (
+    <header className="models-heading">
+      <div className="models-title-line">
+        <h1>Models</h1>
+        <span>
+          {modelCount == null ? 'Loading usage' : `${modelCount.toLocaleString('en-US')} models`}
+          {current ? <><i>·</i>{current.calls.toLocaleString('en-US')} calls<i>·</i>{tokenTotal == null ? 'tokens unavailable' : `${formatCompact(tokenTotal)} metered tokens`}<i>·</i>{formatUsd(current.cost)} total spend</> : null}
+        </span>
+      </div>
+      <p>Compare observed model usage, pricing evidence, and route coverage across the selected scope.</p>
+      <div className="models-view-tabs" role="tablist" aria-label="Model views">
+        {LENSES.map(option => (
+          <button
+            key={option.value}
+            id={lensId(option.value as ModelsLens)}
+            type="button"
+            role="tab"
+            aria-selected={lens === option.value}
+            onClick={() => onLensChange(option.value as ModelsLens)}
+          >
+            <span className="models-view-tab-icon" aria-hidden="true">{option.value === 'model' ? '◈' : option.value === 'task' ? '✣' : '◌'}</span>
+            {option.label}
+          </button>
+        ))}
+        <button type="button" className="models-view-tab models-view-tab-route" role="tab" aria-selected="false" onClick={onCompare}>
+          <span className="models-view-tab-icon" aria-hidden="true">⇄</span>
+          Compare
+        </button>
+      </div>
+    </header>
   )
 }
 
@@ -217,22 +271,14 @@ function ModelsUsage({
   return (
     <>
       {overview.error && <StaleBanner error={overview.error} />}
-      <Panel className="models-panel">
-        <div style={{ padding: '12px 14px 4px' }}>
-          <strong>Model usage</strong>
-          <div style={authorityNoteStyle}>Calls, cost, and savings by model for the selected scope.</div>
-        </div>
-        {hasAccountingValue(accounting) ? (
-          <DurableModelsTable
-            accounting={accounting}
-            presentation={presentation}
-            legacyPresentationRow={legacyPresentationRow}
-            unpricedModels={overview.data.current.unpricedModels}
-          />
-        ) : (
-          <EmptyNote>No model usage in this range yet.</EmptyNote>
-        )}
-      </Panel>
+      {hasAccountingValue(accounting) ? (
+        <ModelsControlCenter
+          accounting={accounting}
+          presentation={presentation}
+          legacyPresentationRow={legacyPresentationRow}
+          unpricedModels={overview.data.current.unpricedModels}
+        />
+      ) : <div className="models-empty-state"><strong>No model usage in this range yet.</strong><EmptyNote>Change the scope or refresh after new activity is collected.</EmptyNote></div>}
     </>
   )
 }

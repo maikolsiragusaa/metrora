@@ -236,7 +236,7 @@ describe('App shortcuts', () => {
     expect(await screen.findByLabelText('Daily spend by model')).toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: '4', metaKey: true })
-    expect(await screen.findByText('Model usage')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Models' })).toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: '5', metaKey: true })
     expect(await screen.findByRole('heading', { name: 'Bench' })).toBeInTheDocument()
