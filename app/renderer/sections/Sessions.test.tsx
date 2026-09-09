@@ -222,6 +222,11 @@ describe('Sessions', () => {
     const user = userEvent.setup()
     render(<Sessions period="lifetime" provider="all" />)
     const table = await screen.findByRole('table', { name: 'Detailed sessions' })
+    const filters = screen.getByRole('group', { name: 'Session filters' })
+
+    expect(within(filters).getByRole('textbox', { name: 'Search sessions' })).toBeInTheDocument()
+    expect(within(filters).getAllByRole('combobox')).toHaveLength(4)
+    expect(filters).toHaveAttribute('data-filter-layout', 'single-row-when-closed')
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Project' }), 'obsign')
     expect(within(table).getByText('Newest Claude')).toBeInTheDocument()
@@ -271,10 +276,25 @@ describe('Sessions', () => {
     expect(within(detail).getByText('9×')).toBeInTheDocument()
     expect(within(detail).getByText('Token activity')).toBeInTheDocument()
     expect(within(detail).getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true')
+    expect(within(detail).getByRole('tabpanel')).toHaveAttribute('data-scroll-mode', 'page')
     expect(within(detail).getByRole('status')).toHaveTextContent('Temporal call activity is unavailable')
     expect(within(detail).queryByText('Open in Code')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Save view' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'More filters' })).not.toBeInTheDocument()
+
+    await user.click(within(detail).getByRole('tab', { name: 'Reasoning' }))
+    expect(within(detail).getByRole('tabpanel')).toHaveAttribute('data-scroll-mode', 'tab')
+    expect(within(detail).getByRole('tab', { name: 'Reasoning' })).toHaveAttribute('aria-selected', 'true')
+
+    await user.click(within(detail).getByRole('tab', { name: 'Metadata' }))
+    const metadataPanel = within(detail).getByRole('tabpanel')
+    expect(metadataPanel).toHaveAttribute('data-scroll-mode', 'tab')
+    for (const label of ['Session ID', 'Client', 'Project', 'Model', 'Started', 'Last activity', 'Duration']) {
+      expect(within(metadataPanel).getByText(label, { exact: true })).toBeInTheDocument()
+    }
+
+    await user.click(within(detail).getByRole('tab', { name: 'Overview' }))
+    expect(within(detail).getByRole('tabpanel')).toHaveAttribute('data-scroll-mode', 'page')
 
     await user.click(within(detail).getByRole('button', { name: 'Close session inspector' }))
     expect(screen.queryByRole('complementary', { name: 'Newest Claude' })).not.toBeInTheDocument()

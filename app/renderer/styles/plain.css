@@ -1058,6 +1058,10 @@ td:first-child { font-size: var(--fs-body); font-weight: var(--fw-body); }
 .session-inspector-tabs button[aria-selected='true']::after { position: absolute; right: 7px; bottom: -1px; left: 7px; height: 2px; background: var(--session-accent); content: ''; }
 .session-inspector-tabs button:focus-visible { box-shadow: inset 0 0 0 1px var(--session-accent); }
 .session-inspector-tab-panel { display: flex; min-width: 0; flex-direction: column; gap: 6px; padding: 8px; }
+.session-inspector-tab-panel.is-scrollable { max-height: min(32vh, 280px); overflow-y: auto; overscroll-behavior: contain; scrollbar-color: color-mix(in srgb, var(--session-accent) 62%, var(--line)) transparent; scrollbar-width: thin; }
+.session-inspector-tab-panel.is-scrollable::-webkit-scrollbar { width: 6px; }
+.session-inspector-tab-panel.is-scrollable::-webkit-scrollbar-track { background: transparent; }
+.session-inspector-tab-panel.is-scrollable::-webkit-scrollbar-thumb { border: 1px solid transparent; border-radius: 999px; background: color-mix(in srgb, var(--session-accent) 62%, var(--line)); background-clip: padding-box; }
 .session-inspector-section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; color: var(--mut2); font-family: var(--mono); font-size: 9px; font-variant-numeric: tabular-nums; }
 .session-inspector-section-head h3 { margin: 0; color: var(--ink); font-family: inherit; font-size: 10.5px; font-weight: 650; }
 .session-inspector-section-head span { display: block; margin-top: 3px; }
@@ -1104,6 +1108,13 @@ td:first-child { font-size: var(--fs-body); font-weight: var(--fw-body); }
 .session-pr-icon { display: inline-flex; width: 18px; height: 18px; align-items: center; justify-content: center; border: 1px solid color-mix(in srgb, var(--session-accent) 48%, var(--line)); border-radius: 5px; color: var(--session-accent-strong); font-size: 10px; }
 .session-linked-prs a { min-width: 0; overflow: hidden; color: var(--ink); font-family: var(--mono); font-size: 9.5px; text-overflow: ellipsis; white-space: nowrap; }
 .session-linked-prs a:hover, .session-linked-prs a:focus-visible { color: var(--session-accent-strong); outline: none; text-decoration: underline; text-underline-offset: 2px; }
+
+@media (min-width: 981px) {
+  .sessions-page:not(.has-inspector) .sessions-toolbar { flex-wrap: nowrap; }
+  .sessions-page:not(.has-inspector) .session-search-field { min-width: 0; flex-basis: 0; }
+  .sessions-page:not(.has-inspector) .sessions-filter-select { min-width: 86px; flex: 1 1 0; }
+  .sessions-page:not(.has-inspector) .sessions-filter-select select { min-width: 0; }
+}
 
 @media (max-width: 1180px) {
   .sessions-page.has-inspector .sessions-workspace { grid-template-columns: minmax(0, 1fr) minmax(300px, 320px); }

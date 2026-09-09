@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { ProviderLogo } from '../components/ProviderLogo'
 import { formatCompact, formatDuration, formatUsd, shortenProjectPath } from '../lib/format'
@@ -181,6 +181,7 @@ function LinkedPullRequests({ session }: { session: SessionRow }) {
 export function SessionsInspector({ session, inspectorId, onClose }: { session: SessionRow; inspectorId: string; onClose: () => void }) {
   const [tab, setTab] = useState<InspectorTab>('overview')
   const [copied, setCopied] = useState(false)
+  const tabPanelRef = useRef<HTMLDivElement>(null)
   const reuse = sessionCacheReuse(session)
   const share = sessionCacheShare(session)
   const unitCost = sessionUnitCost(session)
@@ -194,6 +195,10 @@ export function SessionsInspector({ session, inspectorId, onClose }: { session: 
     setTab('overview')
     setCopied(false)
   }, [inspectorId])
+
+  useEffect(() => {
+    if (tabPanelRef.current) tabPanelRef.current.scrollTop = 0
+  }, [tab])
 
   const copySessionId = async () => {
     try {
@@ -252,7 +257,15 @@ export function SessionsInspector({ session, inspectorId, onClose }: { session: 
         <button id={tabId('metadata')} type="button" role="tab" aria-controls={`${inspectorId}-panel-metadata`} aria-selected={tab === 'metadata'} tabIndex={tab === 'metadata' ? 0 : -1} onClick={() => setTab('metadata')}>Metadata</button>
       </div>
 
-      <div className="session-inspector-tab-panel" id={panelId} role="tabpanel" aria-labelledby={tabId(tab)} tabIndex={0}>
+      <div
+        ref={tabPanelRef}
+        className={tab === 'overview' ? 'session-inspector-tab-panel' : 'session-inspector-tab-panel is-scrollable'}
+        id={panelId}
+        role="tabpanel"
+        aria-labelledby={tabId(tab)}
+        data-scroll-mode={tab === 'overview' ? 'page' : 'tab'}
+        tabIndex={0}
+      >
         {tab === 'overview' ? (
           <>
             <div className="session-inspector-evidence">

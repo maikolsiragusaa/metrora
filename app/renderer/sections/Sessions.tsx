@@ -386,7 +386,7 @@ export function Sessions({
 
           <ProviderFilterRow provider={provider} detectedProviders={availableProviders} onProviderChange={onProviderChange} />
 
-          <div className="sessions-toolbar">
+          <div className="sessions-toolbar" role="group" aria-label="Session filters" data-filter-layout="single-row-when-closed">
             <label className="session-search-field">
               <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.3" /><path d="m16 16 4.5 4.5" /></svg>
               <span className="sr-only">Search sessions</span>
