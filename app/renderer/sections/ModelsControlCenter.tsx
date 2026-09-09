@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import { EmptyNote } from '../components/EmptyState'
+import { ProviderFilterStrip, type ProviderFilterOption } from '../components/ProviderFilterStrip'
 import { ProviderLogo } from '../components/ProviderLogo'
 import { formatCompact, formatDayShort, formatUsd } from '../lib/format'
+import { formatProviderLabel, providerLogoKey } from '../lib/providerPresentation'
 import { additiveReasoningTokenCount, cacheReuseMultiple, costPerMillionTotal, formatReuseMultiple, totalTokenCount } from '../lib/usageMetrics'
 import type { DurableModelAccountingRow, DurableModelPresentationRow, MenubarPayload, ModelAccounting, ModelPresentation } from '../lib/types'
 import { ModelIdentity } from './ModelsDurableTable'
@@ -37,17 +39,6 @@ function formatLabel(value: string): string {
     .replace(/\b\w/g, letter => letter.toUpperCase())
 }
 
-function providerLogoKey(value: string): string {
-  const normalizedValue = normalize(value)
-  if (normalizedValue.includes('openai') || normalizedValue === 'codex') return 'codex'
-  if (normalizedValue.includes('anthropic') || normalizedValue.includes('claude')) return 'claude'
-  if (normalizedValue.includes('google') || normalizedValue.includes('gemini')) return 'gemini'
-  if (normalizedValue.includes('mistral')) return 'mistral-vibe'
-  if (normalizedValue.includes('alibaba') || normalizedValue.includes('qwen')) return 'qwen'
-  if (normalizedValue.includes('x.ai') || normalizedValue.includes('grok')) return 'grok'
-  return value
-}
-
 function providerValues(row: DurableModelRow): string[] {
   if (row.providers.length > 0) return row.providers
   return row.provider ? [row.provider] : []
@@ -55,6 +46,15 @@ function providerValues(row: DurableModelRow): string[] {
 
 function sourceValues(row: DurableModelRow): string[] {
   return row.sourceProviders.filter(value => value.trim().length > 0)
+}
+
+function compactIdentity(values: string[], emptyLabel = 'Unavailable'): { label: string; title: string } {
+  const labels = values.map(formatProviderLabel)
+  if (labels.length === 0) return { label: emptyLabel, title: emptyLabel }
+  return {
+    label: labels.length > 1 ? `${labels[0]} +${labels.length - 1}` : labels[0]!,
+    title: labels.join(', '),
+  }
 }
 
 function modelTotal(row: DurableModelRow): number | null {
@@ -185,7 +185,7 @@ function FilterSelect({
       <span className="sr-only">{label}</span>
       <select aria-label={label} value={value} onChange={event => onChange(event.target.value)}>
         <option value="all">All {label.toLowerCase()}s</option>
-        {options.map(option => <option key={option} value={option}>{formatLabel(option)}</option>)}
+        {options.map(option => <option key={option} value={option}>{formatProviderLabel(option)}</option>)}
       </select>
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>
     </label>
@@ -203,19 +203,24 @@ function CostCell({ row, quality }: { row: DurableModelRow; quality: CostQuality
 
 function ProviderCell({ row }: { row: DurableModelRow }) {
   const values = providerValues(row)
-  const label = values.length > 0 ? values.map(formatLabel).join(', ') : 'Unavailable'
+  const identity = compactIdentity(values)
   return (
-    <span className="models-provider-value" title={label}>
+    <span className="models-provider-value" title={identity.title}>
       {values.length > 0 ? <ProviderLogo provider={providerLogoKey(values[0]!)} size={14} /> : null}
-      <span>{label}</span>
+      <span>{identity.label}</span>
     </span>
   )
 }
 
 function SourceCell({ row }: { row: DurableModelRow }) {
   const values = sourceValues(row)
-  const label = values.length > 0 ? values.map(formatLabel).join(', ') : 'Unavailable'
-  return <span className={`models-source-value${values.length === 0 ? ' is-unavailable' : ''}`} title={label}>{label}</span>
+  const identity = compactIdentity(values)
+  return (
+    <span className={`models-source-value${values.length === 0 ? ' is-unavailable' : ''}`} title={identity.title}>
+      {values.length > 0 ? <ProviderLogo provider={providerLogoKey(values[0]!)} size={13} /> : null}
+      <span>{identity.label}</span>
+    </span>
+  )
 }
 
 function ModelTableRow({
@@ -327,7 +332,7 @@ function ModelActivityChart({ row, history }: { row: DurableModelRow; history?: 
   return (
     <section className="models-inspector-chart" aria-labelledby="models-token-activity-title">
       <div className="models-inspector-section-head">
-        <div><h3 id="models-token-activity-title">Token activity</h3><span>{points.length > 0 ? `${calls.toLocaleString('en-US')} calls · daily top-model evidence` : 'Daily model detail unavailable'}</span></div>
+        <div><h3 id="models-token-activity-title">Available daily token activity</h3><span>{points.length > 0 ? `${calls.toLocaleString('en-US')} calls · derived from available daily top-model evidence` : 'No available daily token activity for this model'}</span></div>
         <div className="models-activity-legend"><span><i className="input" aria-hidden="true" />Input</span><span><i className="output" aria-hidden="true" />Output</span></div>
       </div>
       {points.length > 0 ? <>
@@ -359,9 +364,9 @@ function ModelInspector({ row, unpricedModels, history, onClose }: { row: Durabl
         <button type="button" className="models-inspector-close" aria-label="Close model inspector" onClick={onClose}>×</button>
         <div className="models-inspector-title-row">
           <ModelIdentity name={row.name} />
-          <span className="models-inspector-provider">{providers.length > 0 ? providers.map(formatLabel).join(', ') : 'Provider unavailable'}</span>
+          <span className="models-inspector-provider">{providers.length > 0 ? providers.map(formatProviderLabel).join(', ') : 'Provider unavailable'}</span>
         </div>
-        <div className="models-inspector-source">{sources.length > 0 ? sources.map(formatLabel).join(', ') : 'Source unavailable'}</div>
+        <div className="models-inspector-source">{sources.length > 0 ? sources.map(formatProviderLabel).join(', ') : 'Source unavailable'}</div>
         <div className="models-inspector-tags">
           <span className={`models-status-chip ${quality.kind}`}>{pricingLabel}</span>
           <span className={`models-status-chip ${row.tokenDetail ? 'available' : 'unavailable'}`}>{row.tokenDetail ? 'Token detail' : 'Token detail unavailable'}</span>
@@ -397,8 +402,8 @@ function ModelInspector({ row, unpricedModels, history, onClose }: { row: Durabl
       {tab === 'overview' ? <section className="models-inspector-section models-inspector-provenance" aria-label="Model provenance">
         <div className="models-inspector-section-head"><div><h3>Provenance</h3><span>Recorded route and collector facts</span></div></div>
         <dl>
-          <div><dt>Provider</dt><dd>{providers.length > 0 ? providers.map(formatLabel).join(', ') : 'Unavailable'}</dd></div>
-          <div><dt>Source</dt><dd>{sources.length > 0 ? sources.map(formatLabel).join(', ') : 'Unavailable'}</dd></div>
+          <div><dt>Provider</dt><dd>{providers.length > 0 ? providers.map(formatProviderLabel).join(', ') : 'Unavailable'}</dd></div>
+          <div><dt>Source</dt><dd>{sources.length > 0 ? sources.map(formatProviderLabel).join(', ') : 'Unavailable'}</dd></div>
           <div><dt>Delivery state</dt><dd>{statusLabel(row.deliveryStatus)}</dd></div>
         </dl>
       </section> : tab === 'providers' ? <section className="models-inspector-section" aria-label="Recorded model deliveries">
@@ -406,8 +411,8 @@ function ModelInspector({ row, unpricedModels, history, onClose }: { row: Durabl
         <div className="models-delivery-list">
           {row.deliveryRows.map((delivery, index) => {
             const deliveryCost = deliveryQuality(delivery)
-            const provider = delivery.provider ? formatLabel(delivery.provider) : 'Provider unavailable'
-            const source = delivery.sourceProviders?.length ? delivery.sourceProviders.map(formatLabel).join(', ') : 'Source unavailable'
+            const provider = delivery.provider ? formatProviderLabel(delivery.provider) : 'Provider unavailable'
+            const source = delivery.sourceProviders?.length ? delivery.sourceProviders.map(formatProviderLabel).join(', ') : 'Source unavailable'
             return (
               <div className="models-delivery-item" key={`${delivery.name}-${delivery.provider ?? 'unknown'}-${index}`}>
                 <div><strong>{formatLabel(delivery.semanticVariant ?? 'default')}</strong><span>{provider} · {source}</span></div>
@@ -471,6 +476,7 @@ export function ModelsControlCenter({
   }, [accounting, legacyPresentationRow, presentation.rows])
 
   const providerOptions = useMemo(() => [...new Set(rows.flatMap(providerValues))].sort((a, b) => a.localeCompare(b)), [rows])
+  const providerStripOptions = useMemo<ProviderFilterOption[]>(() => providerOptions.map(value => ({ id: value, label: formatProviderLabel(value), logoProvider: providerLogoKey(value) })), [providerOptions])
   const sourceOptions = useMemo(() => [...new Set(rows.flatMap(sourceValues))].sort((a, b) => a.localeCompare(b)), [rows])
   const filteredRows = useMemo(() => {
     const normalizedQuery = normalize(query)
@@ -489,6 +495,10 @@ export function ModelsControlCenter({
     if (selectedId && !filteredRows.some(row => row.presentationIdentity === selectedId)) setSelectedId(null)
   }, [filteredRows, selectedId])
 
+  useEffect(() => {
+    if (providerFilter !== 'all' && !providerOptions.includes(providerFilter)) setProviderFilter('all')
+  }, [providerFilter, providerOptions])
+
   const selectedRow = selectedId ? filteredRows.find(row => row.presentationIdentity === selectedId) ?? null : null
   const hasFilters = query.trim().length > 0 || providerFilter !== 'all' || sourceFilter !== 'all'
 
@@ -503,13 +513,19 @@ export function ModelsControlCenter({
   return (
     <div className={`models-workspace${selectedRow ? ' has-right-rail' : ''}`}>
       <section className="models-list-pane" aria-label="Models control center">
+        <ProviderFilterStrip
+          provider={providerFilter}
+          providers={providerStripOptions}
+          onProviderChange={setProviderFilter}
+          ariaLabel="Filter models by provider"
+          className="session-provider-filter models-provider-filter"
+        />
         <div className="models-filter-row">
           <label className="models-search-field">
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.3" /><path d="m16 16 4.5 4.5" /></svg>
             <span className="sr-only">Filter models</span>
             <input aria-label="Filter models" value={query} onChange={event => setQuery(event.target.value)} placeholder="Filter models, providers, or sources…" />
           </label>
-          <FilterSelect label="Provider" value={providerFilter} options={providerOptions} onChange={setProviderFilter} />
           <FilterSelect label="Source" value={sourceFilter} options={sourceOptions} onChange={setSourceFilter} />
           {hasFilters ? <button type="button" className="models-clear-filter" onClick={clearFilters}>Clear filters</button> : null}
         </div>

@@ -89,8 +89,8 @@ export function TopBar({
         <span>Search sections</span>
         <kbd>⌘K / Ctrl+K</kbd>
       </button>
-      <div className="t">{title}</div>
-      {scope !== undefined && <span className="scope">{scope}</span>}
+      {title !== null && title !== undefined && <div className="t">{title}</div>}
+      {scope !== null && scope !== undefined && <span className="scope">{scope}</span>}
       <div className="sp" />
       {onOpenCode && (
         <button type="button" className="btn btn-s open-code-button" onClick={onOpenCode}>

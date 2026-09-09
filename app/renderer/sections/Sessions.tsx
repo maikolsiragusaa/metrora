@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { CliErrorPanel } from '../components/CliErrorPanel'
 import { EmptyNote } from '../components/EmptyState'
+import { ProviderFilterStrip } from '../components/ProviderFilterStrip'
 import { ProviderLogo } from '../components/ProviderLogo'
 import { SectionSkeleton } from '../components/Skeleton'
 import { SegTabs } from '../components/SegTabs'
@@ -108,84 +109,6 @@ function SessionFilterSelect({
       </select>
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>
     </label>
-  )
-}
-
-function ProviderFilterRow({ provider, detectedProviders, onProviderChange }: { provider: string; detectedProviders: ProviderFilter[]; onProviderChange: (value: string) => void }) {
-  const dragRef = useRef<{ pointerId: number; startX: number; startScrollLeft: number; moved: boolean } | null>(null)
-  const suppressClickRef = useRef(false)
-
-  if (detectedProviders.length === 0) return null
-
-  const endDrag = (event: PointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current
-    if (!drag || drag.pointerId !== event.pointerId) return
-    if (drag.moved) suppressClickRef.current = true
-    dragRef.current = null
-    event.currentTarget.classList.remove('is-dragging')
-    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
-  }
-
-  return (
-    <div
-      className="session-provider-filter"
-      role="group"
-      aria-label="Filter sessions by provider"
-      data-provider-strip="true"
-      data-scroll-interaction="drag-or-wheel"
-      onPointerDown={event => {
-        if (event.pointerType === 'mouse' && event.button !== 0) return
-        dragRef.current = {
-          pointerId: event.pointerId,
-          startX: event.clientX,
-          startScrollLeft: event.currentTarget.scrollLeft,
-          moved: false,
-        }
-        event.currentTarget.setPointerCapture?.(event.pointerId)
-      }}
-      onPointerMove={event => {
-        const drag = dragRef.current
-        if (!drag || drag.pointerId !== event.pointerId) return
-        const deltaX = event.clientX - drag.startX
-        if (!drag.moved && Math.abs(deltaX) < 4) return
-        if (!drag.moved) {
-          drag.moved = true
-          // Keep a normal click targeted at the provider button. Capture only
-          // after the pointer has crossed the drag threshold, otherwise
-          // Chromium retargets the subsequent click to this strip container.
-          event.currentTarget.setPointerCapture?.(event.pointerId)
-        }
-        event.currentTarget.classList.add('is-dragging')
-        event.currentTarget.scrollLeft = drag.startScrollLeft - deltaX
-        event.preventDefault()
-      }}
-      onPointerUp={endDrag}
-      onPointerCancel={endDrag}
-      onLostPointerCapture={endDrag}
-      onClickCapture={event => {
-        if (!suppressClickRef.current) return
-        suppressClickRef.current = false
-        event.preventDefault()
-        event.stopPropagation()
-      }}
-      onWheel={event => {
-        if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
-          event.currentTarget.scrollLeft += event.deltaY
-          event.preventDefault()
-        }
-      }}
-    >
-      <button type="button" className={provider === 'all' ? 'on' : undefined} aria-pressed={provider === 'all'} onClick={() => onProviderChange('all')}>
-        <span className="session-provider-all-icon" aria-hidden="true">✦</span>
-        All providers
-      </button>
-      {detectedProviders.map(entry => (
-        <button key={entry.id} type="button" className={provider === entry.id ? 'on' : undefined} aria-pressed={provider === entry.id} onClick={() => onProviderChange(entry.id)}>
-          <ProviderLogo provider={entry.id} size={15} />
-          {entry.label}
-        </button>
-      ))}
-    </div>
   )
 }
 
@@ -433,7 +356,7 @@ export function Sessions({
             {unavailableDetail > 0 && query === '' ? <p>{unavailableDetail.toLocaleString('en-US')} older session{unavailableDetail === 1 ? '' : 's'} remain in durable historical totals without source detail on this device.</p> : null}
           </div>
 
-          <ProviderFilterRow provider={provider} detectedProviders={availableProviders} onProviderChange={onProviderChange} />
+          <ProviderFilterStrip provider={provider} providers={availableProviders} onProviderChange={onProviderChange} ariaLabel="Filter sessions by provider" />
 
           <div className="sessions-toolbar" role="group" aria-label="Session filters" data-filter-layout="single-row-when-closed">
             <label className="session-search-field">

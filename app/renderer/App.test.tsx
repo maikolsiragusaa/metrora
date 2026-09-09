@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { App, overviewMemoKey, topCategoryByModel, usageSnapshotProps } from './App'
@@ -255,6 +255,21 @@ describe('App shortcuts', () => {
     const overviewCalls = mocks.getOverview.mock.calls.length
     fireEvent.keyDown(document, { key: 'r', metaKey: true })
     await waitFor(() => expect(mocks.getOverview.mock.calls.length).toBeGreaterThan(overviewCalls))
+  })
+
+  it('keeps Models on the shared scope-only top shell', async () => {
+    render(<App />)
+
+    fireEvent.keyDown(document, { key: '4', metaKey: true })
+    expect(await screen.findByRole('heading', { name: 'Models' })).toBeInTheDocument()
+
+    const bar = document.querySelector('.ct-models .bar')
+    expect(bar).not.toBeNull()
+    expect(within(bar as HTMLElement).queryByText('Models')).not.toBeInTheDocument()
+    expect(within(bar as HTMLElement).getAllByText('Lifetime')).toHaveLength(1)
+    expect(within(bar as HTMLElement).queryByText('Lifetime · All providers')).not.toBeInTheDocument()
+    expect(within(bar as HTMLElement).queryByRole('button', { name: 'Open Code' })).not.toBeInTheDocument()
+    expect(within(bar as HTMLElement).getByRole('button', { name: 'Refresh' })).toBeInTheDocument()
   })
 
   it('uses the visible Refresh control for fresh Overview data and re-fetches section snapshots after publication', async () => {

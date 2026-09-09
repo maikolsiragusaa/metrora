@@ -211,8 +211,8 @@ function AppMain() {
         ) : (
           <>
             <TopBar
-              title={section === 'sessions' ? null : SECTION_TITLES[section]}
-              scope={section === 'sessions' ? undefined : scope}
+              title={section === 'sessions' || section === 'models' ? null : SECTION_TITLES[section]}
+              scope={section === 'sessions' || section === 'models' ? undefined : scope}
               period={period}
               onPeriodChange={onPeriodChange}
               customRange={customRange}
@@ -228,7 +228,7 @@ function AppMain() {
               projectScopeId={metroraProjectId}
               onProjectScopeSelect={onProjectScopeSelect}
               capabilities={sectionCapabilities}
-              onOpenCode={section === 'sessions' ? undefined : openCode}
+              onOpenCode={section === 'sessions' || section === 'models' ? undefined : openCode}
               onRefresh={refreshVisible}
               refreshing={overview.loading}
               compactHome={section === 'overview'}
