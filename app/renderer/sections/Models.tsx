@@ -1,11 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { CliErrorPanel } from '../components/CliErrorPanel'
 import { EmptyNote } from '../components/EmptyState'
 import { seriesColorForModel } from '../components/ListRow'
 import { Panel } from '../components/Panel'
 import { SectionSkeleton } from '../components/Skeleton'
-import { StaleBanner } from '../components/StaleBanner'
+import { IncompleteReconciliationBanner, StaleBanner } from '../components/StaleBanner'
 import type { Section } from '../components/Sidebar'
 import { usePolled, type Polled } from '../hooks/usePolled'
 import { formatCompact, formatUsd } from '../lib/format'
@@ -16,8 +16,9 @@ import type { SettingsPane } from './Settings'
 import { combineModelPricing, modelPricingPresentation } from './modelPricingPresentation'
 import { ModelIdentity, providerTagStyle } from './ModelsDurableTable'
 import { ModelsControlCenter } from './ModelsControlCenter'
+import { ModelsCompareWorkspace, ModelsEvidencePanel, ModelsTaskInsightsRail } from './ModelsSidePanels'
 
-type ModelsLens = 'model' | 'task' | 'audit'
+type ModelsLens = 'model' | 'task' | 'audit' | 'compare'
 type DurableModelAccounting = ModelAccounting
 
 const LENSES = [
@@ -128,7 +129,7 @@ export function Models({
         current={overview.data?.current}
         lens={lens}
         onLensChange={value => setLens(value)}
-        onCompare={() => onNavigate?.('compare')}
+        onCompare={() => setLens('compare')}
       />
       {lens === 'audit' ? (
         <AuditLens period={period} provider={provider} range={range} refreshToken={refreshToken} ready={ready} />
@@ -138,10 +139,11 @@ export function Models({
           provider={provider}
           projectScopeId={projectScopeId}
           range={range}
-          byTask={lens === 'task'}
+          view={lens === 'task' ? 'task' : lens === 'compare' ? 'compare' : 'model'}
           refreshToken={refreshToken}
           onAddAlias={onAddAlias}
           overview={overview}
+          onExitCompare={() => setLens('model')}
           ready={ready}
         />
       )}
@@ -196,7 +198,7 @@ function ModelsHeading({
             {option.label}
           </button>
         ))}
-        <button type="button" className="models-view-tab models-view-tab-route" role="tab" aria-selected="false" onClick={onCompare}>
+        <button type="button" className="models-view-tab models-view-tab-route" role="tab" aria-selected={lens === 'compare'} onClick={onCompare}>
           <span className="models-view-tab-icon" aria-hidden="true">⇄</span>
           Compare
         </button>
@@ -210,20 +212,22 @@ function ModelsUsage({
   provider,
   projectScopeId,
   range,
-  byTask,
+  view,
   refreshToken,
   onAddAlias,
   overview,
+  onExitCompare,
   ready,
 }: {
   period: Period
   provider: string
   projectScopeId?: string
   range: DateRange | null
-  byTask: boolean
+  view: 'model' | 'task' | 'compare'
   refreshToken: number
   onAddAlias: () => void
   overview: Polled<MenubarPayload>
+  onExitCompare: () => void
   ready: boolean
 }) {
   // Task attribution genuinely requires surviving source sessions. The primary
@@ -235,29 +239,32 @@ function ModelsUsage({
       ? scopedProject ? metrora.getModels(period, provider, true, range, scopedProject) : metrora.getModels(period, provider, true, range)
       : scopedProject ? metrora.getModels(period, provider, true, undefined, scopedProject) : metrora.getModels(period, provider, true),
     [period, provider, projectScopeId, range?.from, range?.to, refreshToken],
-    { enabled: ready && byTask, memoKey: `models|${period}|${provider}|${projectScopeId ?? 'all'}|task|${range?.from ?? ''}-${range?.to ?? ''}` },
+    { enabled: ready && view === 'task', memoKey: `models|${period}|${provider}|${projectScopeId ?? 'all'}|task|${range?.from ?? ''}-${range?.to ?? ''}` },
   )
 
-  if (byTask) {
+  if (view === 'task') {
     if (!report.data) {
       if (report.error) return <CliErrorPanel error={report.error} subject="model task detail" />
       return <SectionSkeleton label="Loading available task detail…" rows={5} />
     }
     return (
-      <>
-        {report.error && <StaleBanner error={report.error} />}
-        <Panel className="scroll-x">
-          <div style={{ padding: '12px 14px 4px' }}>
-            <strong>Task breakdown · Available detail</strong>
-            <div style={authorityNoteStyle}>Task attribution needs the original session records. Model totals above remain durable after those records expire.</div>
-          </div>
-          {report.data.length ? (
-            <ModelsByTaskTable rows={report.data} onAddAlias={onAddAlias} />
-          ) : (
-            <EmptyNote>No task-level session detail is available in this range.</EmptyNote>
-          )}
-        </Panel>
-      </>
+      <div className="models-analytics-workspace">
+        <section className="models-list-pane" aria-label="Models grouped by task">
+          {report.error && <StaleBanner error={report.error} />}
+          <Panel className="scroll-x">
+            <div style={{ padding: '12px 14px 4px' }}>
+              <strong>Task breakdown · Available detail</strong>
+              <div style={authorityNoteStyle}>Task attribution needs the original session records. Model totals above remain durable after those records expire.</div>
+            </div>
+            {report.data.length ? (
+              <ModelsByTaskTable rows={report.data} onAddAlias={onAddAlias} />
+            ) : (
+              <EmptyNote>No task-level session detail is available in this range.</EmptyNote>
+            )}
+          </Panel>
+        </section>
+        <ModelsTaskInsightsRail rows={report.data} />
+      </div>
     )
   }
 
@@ -271,12 +278,16 @@ function ModelsUsage({
   return (
     <>
       {overview.error && <StaleBanner error={overview.error} />}
+      {!overview.error && overview.data.freshness?.reconciliation === 'degraded' && <IncompleteReconciliationBanner />}
       {hasAccountingValue(accounting) ? (
         <ModelsControlCenter
+          mode={view}
           accounting={accounting}
           presentation={presentation}
           legacyPresentationRow={legacyPresentationRow}
           unpricedModels={overview.data.current.unpricedModels}
+          history={overview.data.history}
+          onExitCompare={onExitCompare}
         />
       ) : <div className="models-empty-state"><strong>No model usage in this range yet.</strong><EmptyNote>Change the scope or refresh after new activity is collected.</EmptyNote></div>}
     </>
@@ -309,27 +320,43 @@ function AuditLens({
     [period, provider, range?.from, range?.to, refreshToken],
     { enabled: ready, memoKey: `audit|${period}|${provider}|${range?.from ?? ''}-${range?.to ?? ''}` },
   )
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+
+  useEffect(() => {
+    setSelectedId(current => {
+      if (current && report.data?.some((row, index) => auditIdentity(row, index) === current)) return current
+      return report.data?.[0] ? auditIdentity(report.data[0], 0) : null
+    })
+  }, [report.data])
 
   if (!report.data) {
     if (report.error) return <CliErrorPanel error={report.error} subject="model usage evidence" />
     return <SectionSkeleton label="Loading usage evidence…" rows={5} />
   }
 
+  const selected = selectedId ? report.data.find((row, index) => auditIdentity(row, index) === selectedId) ?? null : null
   return (
-    <>
-      {report.error && <StaleBanner error={report.error} />}
-      <Panel className="scroll-x">
-        {report.data.length ? (
-          <AuditTable rows={report.data} />
-        ) : (
-          <EmptyNote>No usage evidence is available for this range yet.</EmptyNote>
-        )}
-      </Panel>
-    </>
+    <div className="models-analytics-workspace">
+      <section className="models-list-pane" aria-label="Model usage evidence list">
+        {report.error && <StaleBanner error={report.error} />}
+        <Panel className="scroll-x">
+          {report.data.length ? (
+            <AuditTable rows={report.data} selectedId={selectedId} onSelect={setSelectedId} />
+          ) : (
+            <EmptyNote>No usage evidence is available for this range yet.</EmptyNote>
+          )}
+        </Panel>
+      </section>
+      {selected ? <ModelsEvidencePanel rows={report.data} selected={selected} onClose={() => setSelectedId(null)} /> : null}
+    </div>
   )
 }
 
-function AuditTable({ rows }: { rows: AuditRow[] }) {
+function auditIdentity(row: AuditRow, index: number): string {
+  return `${row.provider}\u0000${row.model}\u0000${index}`
+}
+
+function AuditTable({ rows, selectedId, onSelect }: { rows: AuditRow[]; selectedId: string | null; onSelect: (id: string) => void }) {
   return (
     <table className="audit-table" aria-label="Model usage evidence">
       <caption className="sr-only">Model usage evidence</caption>
@@ -348,20 +375,22 @@ function AuditTable({ rows }: { rows: AuditRow[] }) {
       </thead>
       <tbody>
         {rows.map((row, i) => (
-          <AuditTableRow key={`${row.provider}-${row.model}-${i}`} row={row} />
+          <AuditTableRow key={`${row.provider}-${row.model}-${i}`} row={row} selected={selectedId === auditIdentity(row, i)} onSelect={() => onSelect(auditIdentity(row, i))} />
         ))}
       </tbody>
     </table>
   )
 }
 
-function AuditTableRow({ row }: { row: AuditRow }) {
+function AuditTableRow({ row, selected, onSelect }: { row: AuditRow; selected: boolean; onSelect: () => void }) {
   const estimated = auditEstimated(row)
   return (
     <tr>
       <td title={row.model}>
-        <span className="mdot" style={{ display: 'inline-block', background: seriesColorForModel(row.modelDisplayName || row.model), marginRight: 8 }} />
-        {row.modelDisplayName}
+        <button type="button" className="models-evidence-row-trigger" aria-label={`Select evidence for ${row.modelDisplayName}`} aria-pressed={selected} onClick={onSelect}>
+          <span className="mdot" style={{ display: 'inline-block', background: seriesColorForModel(row.modelDisplayName || row.model), marginRight: 8 }} />
+          {row.modelDisplayName}
+        </button>
       </td>
       <td>{fmtInt(row.calls)}</td>
       <td>{formatCompact(row.raw.inputTokens)}</td>

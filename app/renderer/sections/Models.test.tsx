@@ -174,11 +174,21 @@ describe('Models', () => {
     ])
     expect(screen.getByText('GPT-5.4')).toBeInTheDocument()
     expect(screen.getByText('Claude Opus 4.8')).toBeInTheDocument()
+    expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
     expect(screen.queryByRole('complementary', { name: 'Model inspector' })).not.toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'Reasoning' })).not.toBeInTheDocument()
     expect(screen.queryByRole('tab', { name: 'Total tokens' })).not.toBeInTheDocument()
     expect(screen.queryByText(/durable accounting values/i)).not.toBeInTheDocument()
     expect(getModels).not.toHaveBeenCalled()
+  })
+
+  it('discloses degraded source reconciliation above durable model totals', () => {
+    const overview = loadedOverview()
+    overview.data.freshness = { readMode: 'fresh', reconciliation: 'degraded', durableThrough: '2026-09-08' }
+
+    render(<Models period="lifetime" provider="all" overview={overview} />)
+
+    expect(screen.getByRole('status')).toHaveTextContent('source reconciliation is incomplete')
   })
 
   it('opens and closes the model inspector with observed detail', () => {
@@ -408,13 +418,20 @@ describe('Models', () => {
     expect(await screen.findByText('3.1M')).toBeInTheDocument()
     expect(screen.getByText('900K')).toBeInTheDocument()
     expect(screen.getByText('$252.00')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Close model evidence detail' }))
+    expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
   })
 
-  it('routes Compare from the model surface without changing accounting state', () => {
+  it('opens the in-page Compare workspace without changing accounting state', () => {
     const onNavigate = vi.fn()
     render(<Models period="30days" provider="all" overview={loadedOverview()} onNavigate={onNavigate} />)
 
     fireEvent.click(screen.getByRole('tab', { name: 'Compare' }))
-    expect(onNavigate).toHaveBeenCalledWith('compare')
+    expect(screen.getByRole('complementary', { name: 'Compare models panel' })).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'Compare GPT-5.4' })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'Compare Claude Opus 4.8' })).toBeChecked()
+    expect(onNavigate).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Clear all' }))
+    expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
   })
 })

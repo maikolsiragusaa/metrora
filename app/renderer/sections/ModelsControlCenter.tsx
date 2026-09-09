@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { EmptyNote } from '../components/EmptyState'
 import { ProviderLogo } from '../components/ProviderLogo'
-import { formatCompact, formatUsd } from '../lib/format'
+import { formatCompact, formatDayShort, formatUsd } from '../lib/format'
 import { additiveReasoningTokenCount, cacheReuseMultiple, costPerMillionTotal, formatReuseMultiple, totalTokenCount } from '../lib/usageMetrics'
-import type { DurableModelAccountingRow, DurableModelPresentationRow, ModelAccounting, ModelPresentation } from '../lib/types'
+import type { DurableModelAccountingRow, DurableModelPresentationRow, MenubarPayload, ModelAccounting, ModelPresentation } from '../lib/types'
 import { ModelIdentity } from './ModelsDurableTable'
+import { ModelsCompareWorkspace } from './ModelsSidePanels'
 
 type DurableModelRow = DurableModelPresentationRow
 type UnpricedModel = { model: string; calls: number; tokens: number }
@@ -306,7 +307,43 @@ function statusLabel(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1)
 }
 
-function ModelInspector({ row, unpricedModels, onClose }: { row: DurableModelRow; unpricedModels: UnpricedModel[]; onClose: () => void }) {
+type ModelInspectorTab = 'overview' | 'providers' | 'metadata'
+
+function ModelActivityChart({ row, history }: { row: DurableModelRow; history?: MenubarPayload['history'] }) {
+  const names = new Set([row.name, ...row.rawModels].map(normalize))
+  const points = (history?.daily ?? []).map(day => {
+    const matches = day.topModels.filter(model => names.has(normalize(model.name)))
+    return {
+      date: day.date,
+      input: matches.reduce((sum, model) => sum + model.inputTokens, 0),
+      output: matches.reduce((sum, model) => sum + model.outputTokens, 0),
+      calls: matches.reduce((sum, model) => sum + model.calls, 0),
+    }
+  }).filter(point => point.input > 0 || point.output > 0 || point.calls > 0)
+  const max = Math.max(0, ...points.map(point => point.input + point.output))
+  const input = points.reduce((sum, point) => sum + point.input, 0)
+  const output = points.reduce((sum, point) => sum + point.output, 0)
+  const calls = points.reduce((sum, point) => sum + point.calls, 0)
+  return (
+    <section className="models-inspector-chart" aria-labelledby="models-token-activity-title">
+      <div className="models-inspector-section-head">
+        <div><h3 id="models-token-activity-title">Token activity</h3><span>{points.length > 0 ? `${calls.toLocaleString('en-US')} calls · daily top-model evidence` : 'Daily model detail unavailable'}</span></div>
+        <div className="models-activity-legend"><span><i className="input" aria-hidden="true" />Input</span><span><i className="output" aria-hidden="true" />Output</span></div>
+      </div>
+      {points.length > 0 ? <>
+        <div className="models-activity-plot" role="img" aria-label={`Daily token activity for ${row.name}: ${formatCompact(input)} input and ${formatCompact(output)} output.`}>
+          <div className="models-activity-grid">{points.map((point, index) => <span className="models-activity-bar" key={`${point.date}-${index}`} title={`${formatDayShort(point.date)} · ${point.calls.toLocaleString('en-US')} calls`} style={{ height: `${max > 0 ? Math.max(8, (point.input + point.output) / max * 100) : 8}%` }}><i className="input" style={{ flexGrow: point.input }} /><i className="output" style={{ flexGrow: point.output }} /></span>)}</div>
+        </div>
+        <div className="models-activity-axis" aria-hidden="true"><span>{formatDayShort(points[0]!.date)}</span><span>{formatDayShort(points[Math.floor(points.length / 2)]!.date)}</span><span>{formatDayShort(points[points.length - 1]!.date)}</span></div>
+        <div className="models-activity-summary"><span>Input {formatCompact(input)} · Output {formatCompact(output)}</span><strong>{formatCompact(input + output)} observed</strong></div>
+      </> : <div className="models-activity-unavailable" role="status">The durable model payload has aggregate token detail, but no daily breakdown for this model.</div>}
+    </section>
+  )
+}
+
+function ModelInspector({ row, unpricedModels, history, onClose }: { row: DurableModelRow; unpricedModels: UnpricedModel[]; history?: MenubarPayload['history']; onClose: () => void }) {
+  const [tab, setTab] = useState<ModelInspectorTab>('overview')
+  useEffect(() => setTab('overview'), [row.presentationIdentity])
   const quality = costQuality(row, unpricedModels)
   const total = modelTotal(row)
   const reuse = modelCacheReuse(row)
@@ -349,33 +386,45 @@ function ModelInspector({ row, unpricedModels, onClose }: { row: DurableModelRow
 
       <TokenComposition row={row} />
 
-      <section className="models-inspector-section models-inspector-provenance" aria-label="Model provenance">
+      <ModelActivityChart row={row} history={history} />
+
+      <div className="models-inspector-tabs" role="tablist" aria-label="Model detail views">
+        <button type="button" role="tab" aria-selected={tab === 'overview'} onClick={() => setTab('overview')}>Overview</button>
+        <button type="button" role="tab" aria-selected={tab === 'providers'} onClick={() => setTab('providers')}>Providers</button>
+        <button type="button" role="tab" aria-selected={tab === 'metadata'} onClick={() => setTab('metadata')}>Metadata</button>
+      </div>
+
+      {tab === 'overview' ? <section className="models-inspector-section models-inspector-provenance" aria-label="Model provenance">
         <div className="models-inspector-section-head"><div><h3>Provenance</h3><span>Recorded route and collector facts</span></div></div>
         <dl>
           <div><dt>Provider</dt><dd>{providers.length > 0 ? providers.map(formatLabel).join(', ') : 'Unavailable'}</dd></div>
           <div><dt>Source</dt><dd>{sources.length > 0 ? sources.map(formatLabel).join(', ') : 'Unavailable'}</dd></div>
           <div><dt>Delivery state</dt><dd>{statusLabel(row.deliveryStatus)}</dd></div>
         </dl>
-      </section>
-
-      {row.deliveryRows.length > 1 ? (
-        <section className="models-inspector-section" aria-label="Recorded model deliveries">
-          <div className="models-inspector-section-head"><div><h3>Recorded deliveries</h3><span>No source split is synthesized</span></div><strong>{row.deliveryRows.length}</strong></div>
-          <div className="models-delivery-list">
-            {row.deliveryRows.map((delivery, index) => {
-              const deliveryCost = deliveryQuality(delivery)
-              const provider = delivery.provider ? formatLabel(delivery.provider) : 'Provider unavailable'
-              const source = delivery.sourceProviders?.length ? delivery.sourceProviders.map(formatLabel).join(', ') : 'Source unavailable'
-              return (
-                <div className="models-delivery-item" key={`${delivery.name}-${delivery.provider ?? 'unknown'}-${index}`}>
-                  <div><strong>{formatLabel(delivery.semanticVariant ?? 'default')}</strong><span>{provider} · {source}</span></div>
-                  <div><strong>{fmtInt(delivery.calls)}</strong><span>{deliveryCost.kind === 'unpriced' ? 'unpriced' : formatUsd(delivery.cost)}</span></div>
-                </div>
-              )
-            })}
-          </div>
-        </section>
-      ) : null}
+      </section> : tab === 'providers' ? <section className="models-inspector-section" aria-label="Recorded model deliveries">
+        <div className="models-inspector-section-head"><div><h3>Recorded deliveries</h3><span>No source split is synthesized</span></div><strong>{row.deliveryRows.length}</strong></div>
+        <div className="models-delivery-list">
+          {row.deliveryRows.map((delivery, index) => {
+            const deliveryCost = deliveryQuality(delivery)
+            const provider = delivery.provider ? formatLabel(delivery.provider) : 'Provider unavailable'
+            const source = delivery.sourceProviders?.length ? delivery.sourceProviders.map(formatLabel).join(', ') : 'Source unavailable'
+            return (
+              <div className="models-delivery-item" key={`${delivery.name}-${delivery.provider ?? 'unknown'}-${index}`}>
+                <div><strong>{formatLabel(delivery.semanticVariant ?? 'default')}</strong><span>{provider} · {source}</span></div>
+                <div><strong>{fmtInt(delivery.calls)}</strong><span>{deliveryCost.kind === 'unpriced' ? 'unpriced' : formatUsd(delivery.cost)}</span></div>
+              </div>
+            )
+          })}
+        </div>
+      </section> : <section className="models-inspector-section models-inspector-provenance" aria-label="Model metadata">
+        <div className="models-inspector-section-head"><div><h3>Metadata</h3><span>Exact identifiers retained by Metrora</span></div></div>
+        <dl>
+          <div><dt>Display name</dt><dd>{row.name}</dd></div>
+          <div><dt>Raw model</dt><dd>{row.rawModels.length > 0 ? row.rawModels.join(', ') : 'Unavailable'}</dd></div>
+          <div><dt>Canonical ID</dt><dd>{row.canonicalIdentities.length > 0 ? row.canonicalIdentities.join(', ') : 'Unavailable'}</dd></div>
+          <div><dt>Variant</dt><dd>{row.economicVariants.length > 0 ? row.economicVariants.join(', ') : 'Unavailable'}</dd></div>
+        </dl>
+      </section>}
 
       <p className="models-inspector-note">Indicators show observed Metrora data only. Unavailable values are not inferred.</p>
     </aside>
@@ -383,15 +432,21 @@ function ModelInspector({ row, unpricedModels, onClose }: { row: DurableModelRow
 }
 
 export function ModelsControlCenter({
+  mode = 'model',
   accounting,
   presentation,
   legacyPresentationRow,
   unpricedModels = [],
+  history,
+  onExitCompare = () => undefined,
 }: {
+  mode?: 'model' | 'task' | 'compare'
   accounting: ModelAccounting
   presentation: ModelPresentation
   legacyPresentationRow: (row: DurableModelAccountingRow, index: number) => DurableModelPresentationRow
   unpricedModels?: UnpricedModel[]
+  history?: MenubarPayload['history']
+  onExitCompare?: () => void
 }) {
   const [query, setQuery] = useState('')
   const [providerFilter, setProviderFilter] = useState('all')
@@ -437,6 +492,8 @@ export function ModelsControlCenter({
   const selectedRow = selectedId ? filteredRows.find(row => row.presentationIdentity === selectedId) ?? null : null
   const hasFilters = query.trim().length > 0 || providerFilter !== 'all' || sourceFilter !== 'all'
 
+  if (mode === 'compare') return <ModelsCompareWorkspace rows={rows} onExit={onExitCompare} />
+
   const clearFilters = () => {
     setQuery('')
     setProviderFilter('all')
@@ -444,7 +501,7 @@ export function ModelsControlCenter({
   }
 
   return (
-    <div className={`models-workspace${selectedRow ? ' has-inspector' : ''}`}>
+    <div className={`models-workspace${selectedRow ? ' has-right-rail' : ''}`}>
       <section className="models-list-pane" aria-label="Models control center">
         <div className="models-filter-row">
           <label className="models-search-field">
@@ -492,7 +549,7 @@ export function ModelsControlCenter({
         <div className="models-bounded-note">{filteredRows.length.toLocaleString('en-US')} rows shown from canonical model accounting · unavailable facts remain explicit</div>
       </section>
 
-      {selectedRow ? <ModelInspector row={selectedRow} unpricedModels={unpricedModels} onClose={() => setSelectedId(null)} /> : null}
+      {selectedRow ? <ModelInspector row={selectedRow} unpricedModels={unpricedModels} history={history} onClose={() => setSelectedId(null)} /> : null}
     </div>
   )
 }

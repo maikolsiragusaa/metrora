@@ -18,7 +18,7 @@ export type DateRange = { from: string; to: string }
 type Handler = (...args: any[]) => Promise<Envelope>
 
 type Deps = {
-  spawnCli: (args: string[], opts?: { timeoutMs?: number; idleTimeoutMs?: number; onStderr?: (chunk: string) => void; onProgress?: (event: TrustedProgressEvent) => void; extraEnv?: NodeJS.ProcessEnv; priority?: SpawnPriority }) => Promise<unknown>
+  spawnCli: (args: string[], opts?: { timeoutMs?: number; idleTimeoutMs?: number; onStderr?: (chunk: string) => void; onProgress?: (event: TrustedProgressEvent) => void; extraEnv?: NodeJS.ProcessEnv; priority?: SpawnPriority; bypassCache?: boolean }) => Promise<unknown>
   spawnCliAction: (args: string[], opts?: { timeoutMs?: number; signal?: AbortSignal }) => Promise<ActionResult>
   resolveMetroraPath: () => string | null
   getQuota?: typeof getQuota
@@ -318,6 +318,10 @@ export function createBridgeHandlers(deps: Deps): Record<string, Handler> {
         timeoutMs: WARMUP_TIMEOUT_MS,
         idleTimeoutMs: PROGRESS_IDLE_TIMEOUT_MS,
         onProgress: () => {},
+        // A manual refresh is an explicit request to reconcile local sources.
+        // Never serve a completed fresh response from the short-lived Electron
+        // read cache; in-flight requests remain coalesced by spawnCli.
+        bypassCache: true,
         // Explicitly clear snapshot mode. The Electron process can inherit
         // METRORA_READ_MODE from a developer shell; a fresh click must never
         // accidentally become a read-only cache projection in that case.

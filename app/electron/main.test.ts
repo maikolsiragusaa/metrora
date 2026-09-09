@@ -590,6 +590,7 @@ describe('createBridgeHandlers (snapshot reads and explicit refresh)', () => {
     await handlers['metrora:getOverview']!('30days', 'all', undefined, undefined, false, true)
     expect(opts[1]?.timeoutMs).toBe(10 * 60_000)
     expect(opts[1]?.idleTimeoutMs).toBe(45_000)
+    expect(opts[1]?.bypassCache).toBe(true)
     expect((opts[1]?.extraEnv as Record<string, string> | undefined)?.METRORA_PROGRESS).toBe('1')
     expect((opts[1]?.extraEnv as Record<string, string> | undefined)?.METRORA_READ_MODE).toBe('')
     expect(typeof opts[1]?.onStderr).toBe('function')

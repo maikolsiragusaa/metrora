@@ -2,7 +2,7 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
-import { StaleBanner } from './StaleBanner'
+import { IncompleteReconciliationBanner, StaleBanner } from './StaleBanner'
 
 describe('StaleBanner', () => {
   it('shows the last-good notice with the error summary', () => {
@@ -10,5 +10,11 @@ describe('StaleBanner', () => {
 
     const banner = screen.getByRole('status')
     expect(banner).toHaveTextContent('Refresh failed, showing last good data · metrora exited 1')
+  })
+
+  it('shows when canonical data is usable but source reconciliation is incomplete', () => {
+    render(<IncompleteReconciliationBanner />)
+
+    expect(screen.getByRole('status')).toHaveTextContent('Showing canonical last-good data · source reconciliation is incomplete')
   })
 })
