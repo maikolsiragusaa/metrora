@@ -3,6 +3,7 @@ import { Fragment, useMemo, useState } from 'react'
 import { ProviderLogo } from '../components/ProviderLogo'
 import { SegTabs } from '../components/SegTabs'
 import { formatCompact, formatUsd } from '../lib/format'
+import { modelHouseIdFromName, modelHouseLogoKey, normalizeModelHouseId } from '../lib/modelPresentation'
 import { cacheReuseMultiple, cacheShare, costPerMillionTotal, formatReuseMultiple, totalTokenCount } from '../lib/usageMetrics'
 import type { DurableModelAccountingRow, DurableModelPresentationRow, ModelAccounting, ModelPresentation } from '../lib/types'
 
@@ -28,20 +29,9 @@ function fmtInt(n: number): string {
   return n.toLocaleString('en-US')
 }
 
-function modelLogoProvider(name: string): string | null {
-  const model = name.toLowerCase()
-  if (/^(gpt|o1|o3|o4|codex)/.test(model) || model.includes('openai')) return 'codex'
-  if (model.includes('claude')) return 'claude'
-  if (model.includes('gemini')) return 'gemini'
-  if (model.includes('qwen')) return 'qwen'
-  if (model.includes('grok')) return 'grok'
-  if (model.includes('kimi')) return 'kimi'
-  if (model.includes('mistral') || model.includes('ministral')) return 'mistral-vibe'
-  return null
-}
-
-export function ModelIdentity({ name }: { name: string }) {
-  const provider = modelLogoProvider(name)
+export function ModelIdentity({ name, brandId }: { name: string; brandId?: string }) {
+  const house = normalizeModelHouseId(brandId) ?? modelHouseIdFromName(name)
+  const provider = house ? modelHouseLogoKey(house) : null
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
       {provider
@@ -328,7 +318,7 @@ export function DurableModelsTable({
               <tr key={`primary-${model.presentationIdentity}-${index}`}>
                 <td title={providerLabel ? `${model.name} · ${providerLabel}` : model.name}>
                   <span className="models-primary-model">
-                    <ModelIdentity name={model.name} />
+                    <ModelIdentity name={model.name} brandId={model.brandId} />
                     {providerLabel ? <span style={providerTagStyle}>{providerLabel}</span> : null}
                   </span>
                 </td>
@@ -399,7 +389,7 @@ export function DurableModelsTable({
                         <tr>
                           <td title={providerLabel ? `${model.name} · ${providerLabel}` : model.name}>
                             <span className="models-evidence-model">
-                              <ModelIdentity name={model.name} />
+                              <ModelIdentity name={model.name} brandId={model.brandId} />
                               {providerLabel ? <span style={providerTagStyle}>{providerLabel}</span> : null}
                               {expandable ? (
                                 <button

@@ -2,7 +2,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { AuditRow, DateRange, DurableModelAccountingRow, ModelPricingSummary, ModelReportRow } from '../lib/types'
+import type { AuditRow, DateRange, DurableModelAccountingRow, DurableModelPresentationRow, ModelPricingSummary, ModelReportRow } from '../lib/types'
 import { Models } from './Models'
 
 const { getModels, getAudit } = vi.hoisted(() => ({
@@ -159,59 +159,52 @@ function loadedOverview(overrides: Record<string, unknown> = {}) {
   } as any
 }
 
-async function openDetails() {
-  const details = screen.getByTestId('models-details')
-  fireEvent.click(within(details).getByText('Details'))
-  await waitFor(() => expect(details).toHaveAttribute('open'))
-  return { details, evidence: within(details).getByRole('table', { name: 'Model usage details' }) }
-}
-
 describe('Models', () => {
   beforeEach(() => {
     getModels.mockReset()
     getAudit.mockReset()
   })
 
-  it('renders only Model, Calls, Cost, and Saved by default', () => {
+  it('renders the detailed model control-center table by default', () => {
     render(<Models period="lifetime" provider="all" overview={loadedOverview()} />)
 
     const primary = screen.getByRole('table', { name: 'Model usage' })
-    expect(within(primary).getAllByRole('columnheader').map(header => header.textContent)).toEqual(['Model', 'Calls', 'Cost', 'Saved'])
+    expect(within(primary).getAllByRole('columnheader').map(header => header.textContent)).toEqual([
+      'Model', 'Provider', 'Source', 'Calls', 'Input', 'Output', 'Cache R', 'Cache W', 'Cache×', 'Total', 'ms/1K', 'Cost', 'Cost/1M',
+    ])
     expect(screen.getByText('GPT-5.4')).toBeInTheDocument()
     expect(screen.getByText('Claude Opus 4.8')).toBeInTheDocument()
-    expect(screen.getByTestId('models-details')).not.toHaveAttribute('open')
+    expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
+    expect(screen.queryByRole('complementary', { name: 'Model inspector' })).not.toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'Reasoning' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('columnheader', { name: 'Cache ×' })).not.toBeInTheDocument()
     expect(screen.queryByRole('tab', { name: 'Total tokens' })).not.toBeInTheDocument()
     expect(screen.queryByText(/durable accounting values/i)).not.toBeInTheDocument()
     expect(getModels).not.toHaveBeenCalled()
   })
 
-  it('opens and closes the native Details disclosure while preserving advanced evidence', async () => {
-    render(<Models period="lifetime" provider="all" overview={loadedOverview()} />)
+  it('discloses degraded source reconciliation above durable model totals', () => {
+    const overview = loadedOverview()
+    overview.data.freshness = { readMode: 'fresh', reconciliation: 'degraded', durableThrough: '2026-09-08' }
 
-    const details = screen.getByTestId('models-details')
-    const summary = within(details).getByText('Details')
-    expect(summary.tagName).toBe('SUMMARY')
-    summary.focus()
-    expect(document.activeElement).toBe(summary)
+    render(<Models period="lifetime" provider="all" overview={overview} />)
 
-    const opened = await openDetails()
-    expect(opened.details.firstElementChild?.tagName).toBe('SUMMARY')
-    expect(within(opened.evidence).getByRole('columnheader', { name: 'Reasoning' })).toBeInTheDocument()
-    expect(within(opened.evidence).getByRole('columnheader', { name: 'Cost / 1M' })).toBeInTheDocument()
-    expect(within(opened.details).getByText('5.1M')).toBeInTheDocument()
-    expect(within(opened.evidence).getByRole('columnheader', { name: 'Generated tok/s' })).toBeInTheDocument()
-    expect(within(opened.evidence).getByRole('columnheader', { name: 'Timing' })).toBeInTheDocument()
-    expect(within(opened.evidence).getAllByText('observed')).toHaveLength(2)
-    expect(within(opened.evidence).getByText('250.0ms')).toBeInTheDocument()
-
-    fireEvent.click(summary)
-    await waitFor(() => expect(opened.details).not.toHaveAttribute('open'))
-    expect(screen.queryByRole('table', { name: 'Model usage details' })).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('source reconciliation is incomplete')
   })
 
-  it('shows unavailable token-derived and timing metrics instead of fake zeros for legacy durable rows', async () => {
+  it('opens and closes the model inspector with observed detail', () => {
+    render(<Models period="lifetime" provider="all" overview={loadedOverview()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select GPT-5.4' }))
+    const inspector = screen.getByRole('complementary', { name: 'Model inspector' })
+    expect(within(inspector).getByText('Token composition')).toBeInTheDocument()
+    expect(within(inspector).getByText('250.0ms')).toBeInTheDocument()
+    expect(within(inspector).getByText('5.1M total')).toBeInTheDocument()
+
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Close model inspector' }))
+    expect(screen.queryByRole('complementary', { name: 'Model inspector' })).not.toBeInTheDocument()
+  })
+
+  it('shows unavailable token-derived and timing metrics instead of fake zeros for legacy durable rows', () => {
     const overview = loadedOverview({
       modelAccounting: {
         rows: [durableRow('Legacy model', 12, 9, 0, { tokenDetail: false })],
@@ -223,19 +216,19 @@ describe('Models', () => {
 
     const { container } = render(<Models period="lifetime" provider="all" overview={overview} />)
     expect(screen.getByText('Legacy model')).toBeInTheDocument()
-    const { details, evidence } = await openDetails()
-    expect(within(details).getByText(/Rows without a durable token split show/i)).toBeInTheDocument()
-    const row = within(evidence).getByRole('row', { name: /Legacy model/ })
-    expect(row.querySelectorAll('.models-unavailable').length).toBeGreaterThanOrEqual(9)
+    fireEvent.click(screen.getByRole('button', { name: 'Select Legacy model' }))
+    const inspector = screen.getByRole('complementary', { name: 'Model inspector' })
+    expect(within(inspector).getByText(/Token composition is unavailable/i)).toBeInTheDocument()
+    const row = within(screen.getByRole('table', { name: 'Model usage' })).getByRole('row', { name: /Legacy model/ })
+    expect(row.querySelectorAll('.models-unavailable').length).toBeGreaterThanOrEqual(7)
     expect(container.querySelector('.provider-mono')).toBeInTheDocument()
   })
 
-  it('sorts the durable evidence table by total observed tokens on demand', async () => {
+  it('sorts the primary model table by total observed tokens on demand', () => {
     render(<Models period="lifetime" provider="all" overview={loadedOverview()} />)
-    const { details, evidence } = await openDetails()
 
-    fireEvent.click(within(details).getByRole('tab', { name: 'Total tokens' }))
-    const modelRows = within(evidence).getAllByRole('row').slice(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Tokens' }))
+    const modelRows = within(screen.getByRole('table', { name: 'Model usage' })).getAllByRole('row').slice(1)
     expect(modelRows[0]).toHaveTextContent('GPT-5.4')
   })
 
@@ -253,16 +246,14 @@ describe('Models', () => {
       },
     })
     render(<Models period="lifetime" provider="all" overview={overview} />)
-    const { details, evidence } = await openDetails()
-
-    fireEvent.click(within(details).getByRole('tab', { name: 'Active ms / 1K' }))
-    const bodyRows = within(evidence).getAllByRole('row').slice(1)
+    fireEvent.click(screen.getByRole('button', { name: 'ms / 1K' }))
+    const bodyRows = within(screen.getByRole('table', { name: 'Model usage' })).getAllByRole('row').slice(1)
     expect(bodyRows[0]).toHaveTextContent('Faster model')
     expect(bodyRows[1]).toHaveTextContent('Slower model')
     expect(bodyRows[2]).toHaveTextContent('Untimed model')
   })
 
-  it('keeps positive, explicit-zero, and unavailable Saved values distinct', () => {
+  it('does not expose unsupported Saved or efficiency claims in the primary table', () => {
     const overview = loadedOverview({
       modelAccounting: {
         rows: [
@@ -277,14 +268,11 @@ describe('Models', () => {
     })
     render(<Models period="lifetime" provider="all" overview={overview} />)
     const primary = screen.getByRole('table', { name: 'Model usage' })
-    const savedRow = within(primary).getByRole('row', { name: /Saved model/ })
-    const freeRow = within(primary).getByRole('row', { name: /Free model/ })
-    const missingRow = within(primary).getByRole('row', { name: /Missing saved model/ })
-
-    expect(within(savedRow).getAllByRole('cell')[3]).toHaveTextContent('$1.25')
-    expect(within(freeRow).getAllByRole('cell')[3]).toHaveTextContent('$0.00')
-    expect(within(within(missingRow).getAllByRole('cell')[3]).getByLabelText(/Saved is unavailable/)).toBeInTheDocument()
-    expect(within(missingRow).getAllByRole('cell')[3]).toHaveTextContent('—')
+    expect(within(primary).queryByRole('columnheader', { name: 'Saved' })).not.toBeInTheDocument()
+    expect(within(primary).queryByRole('columnheader', { name: /Efficiency/i })).not.toBeInTheDocument()
+    expect(within(primary).getByRole('row', { name: /Saved model/ })).toBeInTheDocument()
+    expect(within(primary).getByRole('row', { name: /Free model/ })).toBeInTheDocument()
+    expect(within(primary).getByRole('row', { name: /Missing saved model/ })).toBeInTheDocument()
   })
 
   it('qualifies estimated and unpriced Cost while keeping known zero Cost numeric', () => {
@@ -312,14 +300,14 @@ describe('Models', () => {
     const estimatedRow = within(primary).getByRole('row', { name: /Estimated model/ })
     const unpricedRow = within(primary).getByRole('row', { name: /Unpriced model/ })
     const partialUnpricedRow = within(primary).getByRole('row', { name: /Partially unpriced model/ })
-    expect(within(freeRow).getAllByRole('cell')[2]).toHaveTextContent('$0.00')
-    expect(within(freeRow).getAllByRole('cell')[2]).not.toHaveTextContent(/unpriced|est\.|partial/i)
-    expect(within(estimatedRow).getAllByRole('cell')[2]).toHaveTextContent('$4.00')
-    expect(within(estimatedRow).getAllByRole('cell')[2]).toHaveTextContent('est.')
-    expect(within(unpricedRow).getAllByRole('cell')[2]).toHaveTextContent('unpriced')
-    expect(within(within(unpricedRow).getAllByRole('cell')[2]).getByLabelText(/Cost unavailable/)).toBeInTheDocument()
-    expect(within(partialUnpricedRow).getAllByRole('cell')[2]).toHaveTextContent('$5.00')
-    expect(within(partialUnpricedRow).getAllByRole('cell')[2]).toHaveTextContent('partial')
+    expect(within(freeRow).getAllByRole('cell')[11]).toHaveTextContent('$0.00')
+    expect(within(freeRow).getAllByRole('cell')[11]).not.toHaveTextContent(/unpriced|est\.|partial/i)
+    expect(within(estimatedRow).getAllByRole('cell')[11]).toHaveTextContent('$4.00')
+    expect(within(estimatedRow).getAllByRole('cell')[11]).toHaveTextContent('est.')
+    expect(within(unpricedRow).getAllByRole('cell')[11]).toHaveTextContent('unpriced')
+    expect(within(within(unpricedRow).getAllByRole('cell')[11]).getByLabelText(/Cost unavailable/)).toBeInTheDocument()
+    expect(within(partialUnpricedRow).getAllByRole('cell')[11]).toHaveTextContent('$5.00')
+    expect(within(partialUnpricedRow).getAllByRole('cell')[11]).toHaveTextContent('partial')
   })
 
   it('keeps Other models visible when durable reconciliation has a remainder', () => {
@@ -338,9 +326,65 @@ describe('Models', () => {
     const primary = screen.getByRole('table', { name: 'Model usage' })
     const otherRow = within(primary).getByRole('row', { name: /Other models/ })
     expect(otherRow).toHaveTextContent('Other models')
-    expect(within(otherRow).getAllByRole('cell')[1]).toHaveTextContent('15')
-    expect(within(otherRow).getAllByRole('cell')[2]).toHaveTextContent('$15.00')
-    expect(within(otherRow).getAllByRole('cell')[3]).toHaveTextContent('$0.00')
+    expect(within(otherRow).getAllByRole('cell')[3]).toHaveTextContent('15')
+    expect(within(otherRow).getAllByRole('cell')[11]).toHaveTextContent('$15.00')
+    expect(within(otherRow).getAllByRole('cell')[12]).toHaveTextContent('—')
+  })
+
+  it('filters canonical model rows by search, model house, and source without fetching again', () => {
+    const codexAccounting = durableRow('GPT-5.4', 20, 20, 0, { brandId: 'openai', provider: 'openai', sourceProviders: ['codex'], rawModels: ['gpt-5.4'] })
+    const openAiSibling = durableRow('GPT-5.5', 8, 8, 0, { brandId: 'openai', provider: 'amazon-bedrock', sourceProviders: ['zed'], rawModels: ['openai.gpt-5.5'] })
+    const claudeAccounting = durableRow('Claude Opus 4.8', 10, 10, 0, { brandId: 'anthropic', provider: 'anthropic', sourceProviders: ['claude'], rawModels: ['claude-opus-4-8'] })
+    const present = (row: DurableModelAccountingRow, identity: string): DurableModelPresentationRow => ({
+      ...row,
+      presentationIdentity: identity,
+      provider: row.provider,
+      providers: row.provider ? [row.provider] : [],
+      sourceProviders: row.sourceProviders ?? [],
+      rawModels: row.rawModels ?? [row.name],
+      canonicalIdentities: [],
+      economicVariants: ['default'],
+      reasoningSemantics: 'unavailable',
+      timingCoverage: 'unavailable',
+      deliveryRows: [row],
+      deliveryStatus: 'exact',
+    })
+    const overview = loadedOverview({
+      modelAccounting: {
+        rows: [codexAccounting, openAiSibling, claudeAccounting],
+        gap: { cost: 0, savingsUSD: 0, calls: 0 },
+        coverage: { cost: 1, calls: 1 },
+        tokenCoverage: { cost: 1, calls: 1 },
+      },
+      modelPresentation: {
+        rows: [present(codexAccounting, 'test:codex'), present(openAiSibling, 'test:openai-sibling'), present(claudeAccounting, 'test:claude')],
+        accountingRowCount: 3,
+      },
+    })
+    render(<Models period="lifetime" provider="all" overview={overview} />)
+    const table = () => screen.getByRole('table', { name: 'Model usage' })
+    const search = screen.getByRole('textbox', { name: 'Filter models' })
+    const providerStrip = screen.getByRole('group', { name: 'Filter models by model house' })
+
+    expect(screen.queryByRole('combobox', { name: 'Provider' })).not.toBeInTheDocument()
+
+    fireEvent.change(search, { target: { value: 'codex' } })
+    expect(within(table()).getByRole('row', { name: /GPT-5\.4/ })).toBeInTheDocument()
+    expect(within(table()).queryByRole('row', { name: /Claude Opus/ })).not.toBeInTheDocument()
+
+    fireEvent.change(search, { target: { value: '' } })
+    fireEvent.click(within(providerStrip).getByRole('button', { name: 'Anthropic' }))
+    expect(within(table()).getByRole('row', { name: /Claude Opus/ })).toBeInTheDocument()
+    expect(within(table()).queryByRole('row', { name: /GPT-5\.4/ })).not.toBeInTheDocument()
+    expect(within(table()).queryByRole('row', { name: /GPT-5\.5/ })).not.toBeInTheDocument()
+
+    fireEvent.click(within(providerStrip).getByRole('button', { name: 'All model houses' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Client/source' }))
+    fireEvent.click(screen.getByRole('option', { name: 'Codex' }))
+    expect(within(table()).getByRole('row', { name: /GPT-5\.4/ })).toBeInTheDocument()
+    expect(within(table()).queryByRole('row', { name: /Claude Opus/ })).not.toBeInTheDocument()
+    expect(within(table()).queryByRole('row', { name: /GPT-5\.5/ })).not.toBeInTheDocument()
+    expect(getModels).not.toHaveBeenCalled()
   })
 
   it('loads surviving session detail only when By task is requested', async () => {
@@ -353,8 +397,10 @@ describe('Models', () => {
     await waitFor(() => expect(getModels).toHaveBeenCalledWith('week', 'anthropic', true))
     expect(await screen.findByText('coding')).toBeInTheDocument()
     expect(screen.getByText('delegation')).toBeInTheDocument()
-    expect(screen.getByText('Anthropic')).toBeInTheDocument()
+    expect(within(screen.getByRole('table', { name: 'Models grouped by task' })).getAllByText('Anthropic')).toHaveLength(2)
     expect(screen.getByText(/Task attribution needs the original session records/i)).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Model' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Source' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Cache ×' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Cost / 1M' })).toBeInTheDocument()
   })
@@ -378,16 +424,30 @@ describe('Models', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Evidence' }))
 
     await waitFor(() => expect(getAudit).toHaveBeenCalledWith('30days', 'all'))
-    expect(await screen.findByText('3.1M')).toBeInTheDocument()
-    expect(screen.getByText('900K')).toBeInTheDocument()
-    expect(screen.getByText('$252.00')).toBeInTheDocument()
+    const evidenceTable = screen.getByRole('table', { name: 'Model usage evidence' })
+    expect(within(evidenceTable).getAllByRole('columnheader').map(header => header.textContent)).toEqual([
+      'Model', 'Source', 'Calls', 'Total tokens', 'Cost', 'Cost / 1M', 'Evidence', 'Pricing', 'Recon', 'Reasoning',
+    ])
+    expect(within(evidenceTable).getByText('102M')).toBeInTheDocument()
+    expect(within(evidenceTable).getByText('$252.00')).toBeInTheDocument()
+    const evidenceDetail = await screen.findByRole('complementary', { name: 'Model evidence detail' })
+    expect(within(evidenceDetail).getByText(/3.1M tokens/)).toBeInTheDocument()
+    expect(within(evidenceDetail).getByText(/900K tokens/)).toBeInTheDocument()
+    expect(within(evidenceDetail).getByText('Pricing resolution')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Close model evidence detail' }))
+    expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
   })
 
-  it('routes Compare from the model surface without changing accounting state', () => {
+  it('opens the in-page Compare workspace without changing accounting state', () => {
     const onNavigate = vi.fn()
     render(<Models period="30days" provider="all" overview={loadedOverview()} onNavigate={onNavigate} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Compare…' }))
-    expect(onNavigate).toHaveBeenCalledWith('compare')
+    fireEvent.click(screen.getByRole('tab', { name: 'Compare' }))
+    expect(screen.getByRole('complementary', { name: 'Compare models panel' })).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'Compare GPT-5.4' })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'Compare Claude Opus 4.8' })).toBeChecked()
+    expect(onNavigate).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Clear all' }))
+    expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
   })
 })

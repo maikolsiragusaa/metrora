@@ -66,7 +66,7 @@ describe('Sessions', () => {
     expect(bodyRows[0]).toHaveTextContent('Newest Claude')
     expect(bodyRows[1]).toHaveTextContent('Middle Codex')
     expect(bodyRows[2]).toHaveTextContent('Older Codex')
-    expect(screen.getByRole('button', { name: 'Group by provider' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: 'Group by client' })).toHaveAttribute('aria-pressed', 'false')
   })
 
   it('uses last activity for Recent and keeps the table columns fixed across sorting', async () => {
@@ -173,12 +173,12 @@ describe('Sessions', () => {
     expect(within(detail).getByText('50 observed tokens', { exact: true })).toBeInTheDocument()
   })
 
-  it('keeps provider grouping as an explicit optional lens', async () => {
+  it('keeps client grouping as an explicit optional lens', async () => {
     const user = userEvent.setup()
     render(<Sessions period="lifetime" provider="all" />)
     await screen.findByRole('table', { name: 'Detailed sessions' })
 
-    const toggle = screen.getByRole('button', { name: 'Group by provider' })
+    const toggle = screen.getByRole('button', { name: 'Group by client' })
     await user.click(toggle)
     expect(toggle).toHaveAttribute('aria-pressed', 'true')
     const table = screen.getByRole('table', { name: 'Detailed sessions' })
@@ -208,6 +208,27 @@ describe('Sessions', () => {
     expect(onProviderChange).toHaveBeenLastCalledWith('claude')
   })
 
+  it('keeps a provider click active after the strip pointer lifecycle runs', async () => {
+    const user = userEvent.setup()
+    const onProviderChange = vi.fn()
+    render(
+      <Sessions
+        period="lifetime"
+        provider="all"
+        detectedProviders={[{ id: 'codex', label: 'Codex' }, { id: 'claude', label: 'Claude' }]}
+        onProviderChange={onProviderChange}
+      />,
+    )
+
+    await screen.findByRole('table', { name: 'Detailed sessions' })
+    const strip = screen.getByRole('group', { name: 'Filter sessions by client' })
+    fireEvent.pointerDown(strip, { pointerId: 2, pointerType: 'mouse', button: 0, clientX: 200 })
+    fireEvent.pointerUp(strip, { pointerId: 2, pointerType: 'mouse', button: 0, clientX: 200 })
+    await user.click(screen.getByRole('button', { name: 'Claude' }))
+
+    expect(onProviderChange).toHaveBeenCalledWith('claude')
+  })
+
   it('keeps every detected provider directly reachable in one overflow strip', async () => {
     const providers = Array.from({ length: 11 }, (_, index) => ({ id: `provider-${index}`, label: `Provider ${index}` }))
     render(<Sessions period="lifetime" provider="all" detectedProviders={providers} />)
@@ -215,7 +236,7 @@ describe('Sessions', () => {
     await screen.findByRole('table', { name: 'Detailed sessions' })
     expect(screen.getByRole('button', { name: 'Provider 10' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^More$/ })).not.toBeInTheDocument()
-    expect(screen.getByRole('group', { name: 'Filter sessions by provider' })).toHaveAttribute('data-provider-strip', 'true')
+    expect(screen.getByRole('group', { name: 'Filter sessions by client' })).toHaveAttribute('data-provider-strip', 'true')
   })
 
   it('supports horizontal drag scrolling without activating a provider button', async () => {
@@ -224,7 +245,7 @@ describe('Sessions', () => {
     render(<Sessions period="lifetime" provider="all" detectedProviders={providers} onProviderChange={onProviderChange} />)
 
     await screen.findByRole('table', { name: 'Detailed sessions' })
-    const strip = screen.getByRole('group', { name: 'Filter sessions by provider' })
+    const strip = screen.getByRole('group', { name: 'Filter sessions by client' })
     fireEvent.pointerDown(strip, { pointerId: 1, pointerType: 'mouse', button: 0, clientX: 200 })
     fireEvent.pointerMove(strip, { pointerId: 1, pointerType: 'mouse', buttons: 1, clientX: 120 })
     fireEvent.pointerUp(strip, { pointerId: 1, pointerType: 'mouse', button: 0, clientX: 120 })

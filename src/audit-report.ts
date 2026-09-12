@@ -5,8 +5,10 @@ import { renderTable, type TableColumn } from './text-table.js'
 import { reasoningSemanticsForProviders, reasoningTokenTotals } from './token-semantics.js'
 import type { ProjectSummary } from './types.js'
 
-// One (provider, model) bucket, exposing both the raw token fields as recorded
-// by the provider/transcript and the normalized totals metrora actually
+// One (client/source, model) bucket. The public `provider` field is retained
+// for compatibility, but it is the collector/client source (`call.provider`),
+// not the model delivery route (`call.modelProvider`). The row exposes both
+// the raw token fields as recorded by the source/transcript and the normalized totals metrora actually
 // prices, so a mismatch between the two is visible in one place.
 export type AuditRow = {
   provider: string

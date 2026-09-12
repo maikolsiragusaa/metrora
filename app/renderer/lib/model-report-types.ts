@@ -2,6 +2,7 @@ import type { ModelPricingSummary, TaskCategory } from './types'
 import type { ReasoningTokenSemantics } from './model-projection-types'
 
 export type ModelReportRow = {
+  /** Legacy JSON field name: this is the Metrora collector/client source, not the model delivery route. */
   provider: string
   providerDisplayName: string
   model: string

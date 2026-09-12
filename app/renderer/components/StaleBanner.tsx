@@ -11,3 +11,13 @@ export function StaleBanner({ error }: { error: CliError }) {
     </div>
   )
 }
+
+/** Notice used when the canonical payload is usable but source reconciliation
+ * did not complete, so durable values may still be last-good. */
+export function IncompleteReconciliationBanner() {
+  return (
+    <div role="status" className="stale-banner">
+      Showing canonical last-good data · source reconciliation is incomplete
+    </div>
+  )
+}

@@ -1,23 +1,26 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { CliErrorPanel } from '../components/CliErrorPanel'
 import { EmptyNote } from '../components/EmptyState'
+import { ProviderLogo } from '../components/ProviderLogo'
 import { seriesColorForModel } from '../components/ListRow'
 import { Panel } from '../components/Panel'
 import { SectionSkeleton } from '../components/Skeleton'
-import { SegTabs } from '../components/SegTabs'
-import { StaleBanner } from '../components/StaleBanner'
+import { IncompleteReconciliationBanner, StaleBanner } from '../components/StaleBanner'
 import type { Section } from '../components/Sidebar'
 import { usePolled, type Polled } from '../hooks/usePolled'
 import { formatCompact, formatUsd } from '../lib/format'
 import { metrora } from '../lib/ipc'
-import { additiveReasoningTokenCount, cacheReuseMultiple, costPerMillionTotal, formatReuseMultiple, totalTokenCount } from '../lib/usageMetrics'
+import { formatProviderLabel, providerLogoKey } from '../lib/providerPresentation'
+import { cacheReuseMultiple, costPerMillionTotal, formatReuseMultiple, totalTokenCount } from '../lib/usageMetrics'
 import type { AuditRow, DateRange, DurableModelAccountingRow, DurableModelPresentationRow, MenubarPayload, ModelAccounting, ModelPresentation, ModelReportRow, Period, ReasoningTokenSemantics } from '../lib/types'
 import type { SettingsPane } from './Settings'
-import { combineModelPricing, modelPricingPresentation } from './modelPricingPresentation'
-import { DurableModelsTable, ModelIdentity, providerTagStyle } from './ModelsDurableTable'
+import { modelPricingPresentation } from './modelPricingPresentation'
+import { ModelIdentity } from './ModelsDurableTable'
+import { ModelsControlCenter } from './ModelsControlCenter'
+import { ModelsCompareWorkspace, ModelsEvidencePanel, ModelsTaskInsightsRail } from './ModelsSidePanels'
 
-type ModelsLens = 'model' | 'task' | 'audit'
+type ModelsLens = 'model' | 'task' | 'audit' | 'compare'
 type DurableModelAccounting = ModelAccounting
 
 const LENSES = [
@@ -28,6 +31,10 @@ const LENSES = [
 
 function fmtInt(n: number): string {
   return n.toLocaleString('en-US')
+}
+
+function normalize(value: string): string {
+  return value.trim().toLowerCase()
 }
 
 // Muted secondary tag naming a row's provider, so the same model name coming
@@ -123,15 +130,13 @@ export function Models({
   const onAddAlias = () => onNavigate?.('settings', 'aliases')
 
   return (
-    <>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, alignSelf: 'flex-start' }}>
-        <SegTabs options={LENSES} value={lens} onChange={value => setLens(value as ModelsLens)} />
-        {lens !== 'audit' && (
-          <button type="button" className="btn btn-s" onClick={() => onNavigate?.('compare')}>
-            Compare…
-          </button>
-        )}
-      </div>
+    <div className="models-page">
+      <ModelsHeading
+        current={overview.data?.current}
+        lens={lens}
+        onLensChange={value => setLens(value)}
+        onCompare={() => setLens('compare')}
+      />
       {lens === 'audit' ? (
         <AuditLens period={period} provider={provider} range={range} refreshToken={refreshToken} ready={ready} />
       ) : (
@@ -140,14 +145,71 @@ export function Models({
           provider={provider}
           projectScopeId={projectScopeId}
           range={range}
-          byTask={lens === 'task'}
+          view={lens === 'task' ? 'task' : lens === 'compare' ? 'compare' : 'model'}
           refreshToken={refreshToken}
           onAddAlias={onAddAlias}
           overview={overview}
+          onExitCompare={() => setLens('model')}
           ready={ready}
         />
       )}
-    </>
+    </div>
+  )
+}
+
+function meteredTokenTotal(current: MenubarPayload['current'] | undefined): number | null {
+  if (!current) return null
+  const values = [current.inputTokens, current.outputTokens, current.cacheReadTokens, current.cacheWriteTokens]
+  return values.every(value => typeof value === 'number' && Number.isFinite(value))
+    ? values.reduce((sum, value) => sum + value, 0)
+    : null
+}
+
+function ModelsHeading({
+  current,
+  lens,
+  onLensChange,
+  onCompare,
+}: {
+  current?: MenubarPayload['current']
+  lens: ModelsLens
+  onLensChange: (value: ModelsLens) => void
+  onCompare: () => void
+}) {
+  const modelCount = current?.modelPresentation?.rows.length ?? current?.modelAccounting?.rows.length ?? current?.topModels.length ?? null
+  const tokenTotal = meteredTokenTotal(current)
+  const lensId = (value: ModelsLens) => `models-lens-${value}`
+
+  return (
+    <header className="models-heading">
+      <div className="models-title-line">
+        <h1>Models</h1>
+        <span>
+          {modelCount == null ? 'Loading usage' : `${modelCount.toLocaleString('en-US')} models`}
+          {current ? <><i>·</i>{current.calls.toLocaleString('en-US')} calls<i>·</i>{tokenTotal == null ? 'tokens unavailable' : `${formatCompact(tokenTotal)} metered tokens`}<i>·</i>{formatUsd(current.cost)} total spend</> : null}
+        </span>
+      </div>
+      <p>Compare observed model usage, pricing evidence, and route coverage across the selected scope.</p>
+      <div className="models-view-tabs" role="tablist" aria-label="Model views">
+        {LENSES.map(option => (
+          <button
+            key={option.value}
+            id={lensId(option.value as ModelsLens)}
+            type="button"
+            role="tab"
+            aria-selected={lens === option.value}
+            onClick={() => onLensChange(option.value as ModelsLens)}
+          >
+            <span className="models-view-tab-icon" aria-hidden="true">{option.value === 'model' ? '◈' : option.value === 'task' ? '✣' : '◌'}</span>
+            {option.label}
+          </button>
+        ))}
+        <button type="button" className="models-view-tab models-view-tab-route" role="tab" aria-selected={lens === 'compare'} onClick={onCompare}>
+          <span className="models-view-tab-icon" aria-hidden="true">⇄</span>
+          Compare
+        </button>
+      </div>
+    </header>
   )
 }
 
@@ -156,20 +218,22 @@ function ModelsUsage({
   provider,
   projectScopeId,
   range,
-  byTask,
+  view,
   refreshToken,
   onAddAlias,
   overview,
+  onExitCompare,
   ready,
 }: {
   period: Period
   provider: string
   projectScopeId?: string
   range: DateRange | null
-  byTask: boolean
+  view: 'model' | 'task' | 'compare'
   refreshToken: number
   onAddAlias: () => void
   overview: Polled<MenubarPayload>
+  onExitCompare: () => void
   ready: boolean
 }) {
   // Task attribution genuinely requires surviving source sessions. The primary
@@ -181,29 +245,32 @@ function ModelsUsage({
       ? scopedProject ? metrora.getModels(period, provider, true, range, scopedProject) : metrora.getModels(period, provider, true, range)
       : scopedProject ? metrora.getModels(period, provider, true, undefined, scopedProject) : metrora.getModels(period, provider, true),
     [period, provider, projectScopeId, range?.from, range?.to, refreshToken],
-    { enabled: ready && byTask, memoKey: `models|${period}|${provider}|${projectScopeId ?? 'all'}|task|${range?.from ?? ''}-${range?.to ?? ''}` },
+    { enabled: ready && view === 'task', memoKey: `models|${period}|${provider}|${projectScopeId ?? 'all'}|task|${range?.from ?? ''}-${range?.to ?? ''}` },
   )
 
-  if (byTask) {
+  if (view === 'task') {
     if (!report.data) {
       if (report.error) return <CliErrorPanel error={report.error} subject="model task detail" />
       return <SectionSkeleton label="Loading available task detail…" rows={5} />
     }
     return (
-      <>
-        {report.error && <StaleBanner error={report.error} />}
-        <Panel className="scroll-x">
-          <div style={{ padding: '12px 14px 4px' }}>
-            <strong>Task breakdown · Available detail</strong>
-            <div style={authorityNoteStyle}>Task attribution needs the original session records. Model totals above remain durable after those records expire.</div>
-          </div>
-          {report.data.length ? (
-            <ModelsByTaskTable rows={report.data} onAddAlias={onAddAlias} />
-          ) : (
-            <EmptyNote>No task-level session detail is available in this range.</EmptyNote>
-          )}
-        </Panel>
-      </>
+      <div className="models-analytics-workspace">
+        <section className="models-list-pane" aria-label="Models grouped by task">
+          {report.error && <StaleBanner error={report.error} />}
+          <Panel className="scroll-x">
+            <div style={{ padding: '12px 14px 4px' }}>
+              <strong>Task breakdown · Available detail</strong>
+              <div style={authorityNoteStyle}>Task attribution needs the original session records. Model totals above remain durable after those records expire.</div>
+            </div>
+            {report.data.length ? (
+              <ModelsByTaskTable rows={report.data} onAddAlias={onAddAlias} />
+            ) : (
+              <EmptyNote>No task-level session detail is available in this range.</EmptyNote>
+            )}
+          </Panel>
+        </section>
+        <ModelsTaskInsightsRail rows={report.data} />
+      </div>
     )
   }
 
@@ -217,22 +284,18 @@ function ModelsUsage({
   return (
     <>
       {overview.error && <StaleBanner error={overview.error} />}
-      <Panel className="models-panel">
-        <div style={{ padding: '12px 14px 4px' }}>
-          <strong>Model usage</strong>
-          <div style={authorityNoteStyle}>Calls, cost, and savings by model for the selected scope.</div>
-        </div>
-        {hasAccountingValue(accounting) ? (
-          <DurableModelsTable
-            accounting={accounting}
-            presentation={presentation}
-            legacyPresentationRow={legacyPresentationRow}
-            unpricedModels={overview.data.current.unpricedModels}
-          />
-        ) : (
-          <EmptyNote>No model usage in this range yet.</EmptyNote>
-        )}
-      </Panel>
+      {!overview.error && overview.data.freshness?.reconciliation === 'degraded' && <IncompleteReconciliationBanner />}
+      {hasAccountingValue(accounting) ? (
+        <ModelsControlCenter
+          mode={view}
+          accounting={accounting}
+          presentation={presentation}
+          legacyPresentationRow={legacyPresentationRow}
+          unpricedModels={overview.data.current.unpricedModels}
+          history={overview.data.history}
+          onExitCompare={onExitCompare}
+        />
+      ) : <div className="models-empty-state"><strong>No model usage in this range yet.</strong><EmptyNote>Change the scope or refresh after new activity is collected.</EmptyNote></div>}
     </>
   )
 }
@@ -243,6 +306,35 @@ function ModelsUsage({
 function auditEstimated(row: AuditRow): boolean {
   if (!row.rates) return true
   return Math.abs(row.cost.recomputedTotalUSD - row.attributedCostUSD) > 0.005
+}
+
+function auditPricingState(row: AuditRow): 'Priced' | 'Estimated' | 'Unpriced' {
+  if (!row.rates) return 'Unpriced'
+  return auditEstimated(row) ? 'Estimated' : 'Priced'
+}
+
+function auditDisplayedTotal(row: AuditRow): number {
+  return row.displayed.inputTokens + row.displayed.outputTokens + row.displayed.cacheReadTokens + row.displayed.cacheWriteTokens
+}
+
+function auditReconciliation(row: AuditRow): number | null {
+  if (!row.rates) return null
+  const denominator = Math.abs(row.attributedCostUSD)
+  if (denominator <= 0.000001 && Math.abs(row.cost.recomputedTotalUSD) <= 0.000001) return 100
+  if (denominator <= 0.000001) return 0
+  return Math.max(0, Math.min(100, (1 - Math.abs(row.cost.recomputedTotalUSD - row.attributedCostUSD) / denominator) * 100))
+}
+
+function auditEvidenceComplete(row: AuditRow): boolean {
+  return Object.values(row.raw).every(value => typeof value === 'number' && Number.isFinite(value))
+    && Object.values(row.displayed).every(value => typeof value === 'number' && Number.isFinite(value))
+}
+
+function auditUnitCost(row: AuditRow): number | null {
+  const total = auditDisplayedTotal(row)
+  if (!row.rates || total <= 0) return null
+  const tokenCost = row.cost.input + row.cost.output + row.cost.cacheWrite + row.cost.cacheRead
+  return tokenCost / total * 1_000_000
 }
 
 function AuditLens({
@@ -263,71 +355,101 @@ function AuditLens({
     [period, provider, range?.from, range?.to, refreshToken],
     { enabled: ready, memoKey: `audit|${period}|${provider}|${range?.from ?? ''}-${range?.to ?? ''}` },
   )
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+
+  useEffect(() => {
+    setSelectedId(current => {
+      if (current && report.data?.some((row, index) => auditIdentity(row, index) === current)) return current
+      return report.data?.[0] ? auditIdentity(report.data[0], 0) : null
+    })
+  }, [report.data])
 
   if (!report.data) {
     if (report.error) return <CliErrorPanel error={report.error} subject="model usage evidence" />
     return <SectionSkeleton label="Loading usage evidence…" rows={5} />
   }
 
+  const selected = selectedId ? report.data.find((row, index) => auditIdentity(row, index) === selectedId) ?? null : null
   return (
-    <>
-      {report.error && <StaleBanner error={report.error} />}
-      <Panel className="scroll-x">
-        {report.data.length ? (
-          <AuditTable rows={report.data} />
-        ) : (
-          <EmptyNote>No usage evidence is available for this range yet.</EmptyNote>
-        )}
-      </Panel>
-    </>
+    <div className="models-analytics-workspace">
+      <section className="models-list-pane" aria-label="Model usage evidence list">
+        {report.error && <StaleBanner error={report.error} />}
+        <Panel className="scroll-x">
+          {report.data.length ? (
+            <AuditTable rows={report.data} selectedId={selectedId} onSelect={setSelectedId} />
+          ) : (
+            <EmptyNote>No usage evidence is available for this range yet.</EmptyNote>
+          )}
+        </Panel>
+      </section>
+      {selected ? <ModelsEvidencePanel rows={report.data} selected={selected} onClose={() => setSelectedId(null)} /> : null}
+    </div>
   )
 }
 
-function AuditTable({ rows }: { rows: AuditRow[] }) {
+function auditIdentity(row: AuditRow, index: number): string {
+  return `${row.provider}\u0000${row.model}\u0000${index}`
+}
+
+function AuditTable({ rows, selectedId, onSelect }: { rows: AuditRow[]; selectedId: string | null; onSelect: (id: string) => void }) {
   return (
     <table className="audit-table" aria-label="Model usage evidence">
       <caption className="sr-only">Model usage evidence</caption>
       <thead>
         <tr>
           <th scope="col">Model</th>
+          <th scope="col" title="Metrora client/source that produced the audited row">Source</th>
           <th scope="col">Calls</th>
-          <th scope="col">Input</th>
-          <th scope="col">Output</th>
-          <th scope="col">Reasoning</th>
-          <th scope="col">Norm out</th>
-          <th scope="col">Cache wr</th>
-          <th scope="col">Cache rd</th>
+          <th scope="col">Total tokens</th>
           <th scope="col">Cost</th>
+          <th scope="col">Cost / 1M</th>
+          <th scope="col">Evidence</th>
+          <th scope="col">Pricing</th>
+          <th scope="col">Recon</th>
+          <th scope="col">Reasoning</th>
         </tr>
       </thead>
       <tbody>
         {rows.map((row, i) => (
-          <AuditTableRow key={`${row.provider}-${row.model}-${i}`} row={row} />
+          <AuditTableRow key={`${row.provider}-${row.model}-${i}`} row={row} selected={selectedId === auditIdentity(row, i)} onSelect={() => onSelect(auditIdentity(row, i))} />
         ))}
       </tbody>
     </table>
   )
 }
 
-function AuditTableRow({ row }: { row: AuditRow }) {
+function AuditTableRow({ row, selected, onSelect }: { row: AuditRow; selected: boolean; onSelect: () => void }) {
   const estimated = auditEstimated(row)
+  const total = auditDisplayedTotal(row)
+  const unitCost = auditUnitCost(row)
+  const reconciliation = auditReconciliation(row)
+  const complete = auditEvidenceComplete(row)
+  const pricingState = auditPricingState(row)
   return (
     <tr>
       <td title={row.model}>
-        <span className="mdot" style={{ display: 'inline-block', background: seriesColorForModel(row.modelDisplayName || row.model), marginRight: 8 }} />
-        {row.modelDisplayName}
+        <button type="button" className="models-evidence-row-trigger" aria-label={`Select evidence for ${row.modelDisplayName}`} aria-pressed={selected} onClick={onSelect}>
+          <span className="mdot" style={{ display: 'inline-block', background: seriesColorForModel(row.modelDisplayName || row.model), marginRight: 8 }} />
+          {row.modelDisplayName}
+        </button>
+      </td>
+      <td>
+        <span className="models-provider-value" title={row.providerDisplayName || row.provider}>
+          <ProviderLogo provider={providerLogoKey(row.provider)} size={14} />
+          <span>{row.providerDisplayName || formatProviderLabel(row.provider)}</span>
+        </span>
       </td>
       <td>{fmtInt(row.calls)}</td>
-      <td>{formatCompact(row.raw.inputTokens)}</td>
-      <td>{formatCompact(row.raw.outputTokens)}</td>
-      <td>{formatCompact(row.raw.reasoningTokens)}</td>
-      <td>{formatCompact(row.displayed.outputTokens)}</td>
-      <td>{formatCompact(row.displayed.cacheWriteTokens)}</td>
-      <td>{formatCompact(row.displayed.cacheReadTokens)}</td>
+      <td>{formatCompact(total)}</td>
       <td>
         {formatUsd(row.attributedCostUSD)}
         {estimated ? <span className="est" title="Cost is estimated (no live pricing or derived rate)"> est</span> : null}
       </td>
+      <td>{unitCost == null ? <span className="models-unavailable" aria-label="Cost per 1M is unavailable">—</span> : formatUsd(unitCost)}</td>
+      <td><span className={`models-evidence-state ${complete ? 'is-complete' : 'is-partial'}`} title={complete ? 'Raw and displayed token fields are present.' : 'One or more audited token fields are unavailable.'}>{complete ? 'Complete' : 'Partial'}</span></td>
+      <td><span className={`models-evidence-state ${pricingState === 'Priced' ? 'is-complete' : pricingState === 'Estimated' ? 'is-partial' : 'is-unpriced'}`} title={pricingState === 'Unpriced' ? 'No pricing rate record was resolved for this audit row.' : pricingState === 'Estimated' ? 'A rate record was resolved, but attributed cost does not equal a simple displayed-token recompute.' : 'A pricing rate record was resolved for this audit row.'}>{pricingState}</span></td>
+      <td>{reconciliation == null ? <span className="models-unavailable" aria-label="Reconciliation is unavailable">—</span> : `${reconciliation.toFixed(0)}%`}</td>
+      <td><span className={`models-evidence-state ${row.raw.reasoningTokens > 0 ? 'is-observed' : 'is-none'}`}>{row.raw.reasoningTokens > 0 ? 'Observed' : 'None recorded'}</span></td>
     </tr>
   )
 }
@@ -336,10 +458,12 @@ function ModelsByTaskTable({ rows, onAddAlias }: { rows: ModelReportRow[]; onAdd
   const groups = groupTaskRows(rows)
 
   return (
-    <table className="models-by-task">
+    <table className="models-by-task" aria-label="Models grouped by task">
       <thead>
         <tr>
           <th>Task</th>
+          <th>Model</th>
+          <th title="Metrora client/source that produced the task row">Source</th>
           <th>Calls</th>
           <th>Reasoning</th>
           <th>Input</th>
@@ -353,10 +477,16 @@ function ModelsByTaskTable({ rows, onAddAlias }: { rows: ModelReportRow[]; onAdd
         </tr>
       </thead>
       {groups.map(group => (
-        <tbody className="model-task-group" key={`${group.provider}-${group.model}`}>
-          <ModelGroupRow rows={group.rows} onAddAlias={onAddAlias} />
+        <tbody className="model-task-group" key={group.category}>
+          <tr className="models-task-group-header">
+            <td colSpan={13}>
+              <span className="models-task-group-icon" aria-hidden="true">✣</span>
+              <strong className="models-task-title">{group.category}</strong>
+              <span className="models-task-group-meta">{group.rows.length} models · {fmtInt(group.calls)} calls</span>
+            </td>
+          </tr>
           {group.rows.map((row, i) => (
-            <ModelTaskRow key={`${row.category ?? 'all'}-${i}`} row={row} />
+            <ModelTaskRow key={`${row.provider}-${row.model}-${i}`} row={row} onAddAlias={onAddAlias} />
           ))}
         </tbody>
       ))}
@@ -376,58 +506,7 @@ function reportRowTotal(row: ModelReportRow): number {
   })
 }
 
-function groupReasoningSemantics(rows: ModelReportRow[]): ReasoningTokenSemantics {
-  const semantics = new Set(rows.map(row => row.reasoningSemantics ?? 'unavailable'))
-  if (semantics.has('mixed') || (semantics.has('separate') && semantics.has('aggregate-output'))) return 'mixed'
-  if (semantics.has('separate')) return 'separate'
-  if (semantics.has('aggregate-output')) return 'aggregate-output'
-  return 'unavailable'
-}
-
-function ModelGroupRow({ rows, onAddAlias }: { rows: ModelReportRow[]; onAddAlias: () => void }) {
-  const model = rows[0]!
-  const calls = rows.reduce((sum, row) => sum + row.calls, 0)
-  const costUSD = rows.reduce((sum, row) => sum + row.costUSD, 0)
-  const input = rows.reduce((sum, row) => sum + row.inputTokens, 0)
-  const output = rows.reduce((sum, row) => sum + row.outputTokens, 0)
-  const reasoning = rows.reduce((sum, row) => sum + (row.reasoningTokens ?? 0), 0)
-  const additiveReasoning = rows.reduce((sum, row) => sum + additiveReasoningTokenCount(row), 0)
-  const reasoningSemantics = groupReasoningSemantics(rows)
-  const cacheRead = rows.reduce((sum, row) => sum + row.cacheReadTokens, 0)
-  const cacheWrite = rows.reduce((sum, row) => sum + row.cacheWriteTokens, 0)
-  const total = totalTokenCount({ inputTokens: input, outputTokens: output, reasoningTokens: reasoning, additiveReasoningTokens: additiveReasoning, reasoningSemantics, cacheReadTokens: cacheRead, cacheWriteTokens: cacheWrite })
-  const pricing = modelPricingPresentation(combineModelPricing(rows), calls)
-  const costValue = pricing.costMode === 'unavailable' ? '—' : formatUsd(costUSD)
-  const reuse = cacheReuseMultiple(input, cacheRead)
-  const unitCost = costPerMillionTotal(costUSD, { inputTokens: input, outputTokens: output, reasoningTokens: reasoning, additiveReasoningTokens: additiveReasoning, reasoningSemantics, cacheReadTokens: cacheRead, cacheWriteTokens: cacheWrite })
-
-  return (
-    <tr className="model-group-row">
-      <td title={model.model}>
-        <span className="model-group-lead">
-          <ModelIdentity name={model.modelDisplayName} />
-          <span style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-            <span style={providerTagStyle}>{model.providerDisplayName}</span>
-            <span style={providerTagStyle} title={pricing.title}>{pricing.label}</span>
-          </span>
-          {pricing.showAlias ? <button type="button" className="alias" onClick={onAddAlias}>add alias ›</button> : null}
-        </span>
-      </td>
-      <td>{fmtInt(calls)}</td>
-      <td>{reasoningSemantics !== 'unavailable' ? formatCompact(reasoning) : '—'}</td>
-      <td>{formatCompact(input)}</td>
-      <td>{formatCompact(output)}</td>
-      <td>{formatCompact(cacheRead)}</td>
-      <td>{formatCompact(cacheWrite)}</td>
-      <td>{formatReuseMultiple(reuse)}</td>
-      <td>{formatCompact(total)}</td>
-      <td className={pricing.muteCost ? 'dim' : undefined} title={pricing.title}>{costValue}</td>
-      <td>{pricing.costMode === 'unavailable' || unitCost == null ? '—' : formatUsd(unitCost)}</td>
-    </tr>
-  )
-}
-
-function ModelTaskRow({ row }: { row: ModelReportRow }) {
+function ModelTaskRow({ row, onAddAlias }: { row: ModelReportRow; onAddAlias: () => void }) {
   const pricing = modelPricingPresentation(row.pricing, row.calls)
   const costValue = pricing.costMode === 'unavailable' ? '—' : formatUsd(row.costUSD)
   const total = reportRowTotal(row)
@@ -444,7 +523,19 @@ function ModelTaskRow({ row }: { row: ModelReportRow }) {
 
   return (
     <tr className="model-task-row">
-      <td>{row.category ?? 'general'}</td>
+      <td className="models-task-branch"><span aria-hidden="true">↳</span></td>
+      <td className="models-task-model-cell">
+        <span className="models-task-model-value">
+          <ModelIdentity name={row.modelDisplayName} />
+          {pricing.showAlias ? <button type="button" className="alias" onClick={onAddAlias}>add alias ›</button> : null}
+        </span>
+      </td>
+      <td>
+        <span className="models-provider-value" title={row.providerDisplayName || row.provider}>
+          <ProviderLogo provider={providerLogoKey(row.provider)} size={14} />
+          <span>{row.providerDisplayName || formatProviderLabel(row.provider)}</span>
+        </span>
+      </td>
       <td>{fmtInt(row.calls)}</td>
       <td>{row.reasoningSemantics !== 'unavailable' && row.reasoningTokens !== undefined ? formatCompact(row.reasoningTokens) : '—'}</td>
       <td>{formatCompact(row.inputTokens)}</td>
@@ -459,13 +550,24 @@ function ModelTaskRow({ row }: { row: ModelReportRow }) {
   )
 }
 
-function groupTaskRows(rows: ModelReportRow[]) {
-  const groups = new Map<string, { provider: string; model: string; rows: ModelReportRow[] }>()
+function groupTaskRows(rows: ModelReportRow[]): Array<{ category: string; calls: number; tokens: number; rows: ModelReportRow[] }> {
+  const groups = new Map<string, { category: string; calls: number; tokens: number; rows: ModelReportRow[] }>()
   for (const row of rows) {
-    const key = JSON.stringify([row.provider, row.model])
+    const category = row.category ?? 'uncategorized'
+    const key = normalize(category)
     const group = groups.get(key)
-    if (group) group.rows.push(row)
-    else groups.set(key, { provider: row.provider, model: row.model, rows: [row] })
+    if (group) {
+      group.calls += row.calls
+      group.tokens += reportRowTotal(row)
+      group.rows.push(row)
+    } else {
+      groups.set(key, { category, calls: row.calls, tokens: reportRowTotal(row), rows: [row] })
+    }
   }
   return [...groups.values()]
+    .map(group => ({
+      ...group,
+      rows: [...group.rows].sort((a, b) => b.calls - a.calls || reportRowTotal(b) - reportRowTotal(a)),
+    }))
+    .sort((a, b) => b.calls - a.calls || b.tokens - a.tokens)
 }

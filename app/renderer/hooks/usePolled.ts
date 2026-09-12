@@ -116,7 +116,7 @@ export function hasPolledMemo(key: string): boolean {
 export function usePolled<T>(
   fetcher: () => Promise<T>,
   deps: unknown[],
-  opts: { intervalMs?: number | null; enabled?: boolean; memoKey?: string; manualFetcher?: () => Promise<T>; onManualSuccess?: (result: T) => void } = {},
+  opts: { intervalMs?: number | null; enabled?: boolean; memoKey?: string; manualFetcher?: () => Promise<T>; onManualSuccess?: (result: T) => void; onManualError?: (error: CliError) => void } = {},
 ): Polled<T> {
   const cadence = useContext(RefreshCadenceContext)
   const intervalMs = opts.intervalMs !== undefined ? opts.intervalMs : cadence.intervalMs
@@ -142,9 +142,11 @@ export function usePolled<T>(
   const fetcherRef = useRef(fetcher)
   const manualFetcherRef = useRef(opts.manualFetcher)
   const onManualSuccessRef = useRef(opts.onManualSuccess)
+  const onManualErrorRef = useRef(opts.onManualError)
   fetcherRef.current = fetcher
   manualFetcherRef.current = opts.manualFetcher
   onManualSuccessRef.current = opts.onManualSuccess
+  onManualErrorRef.current = opts.onManualError
 
   const load = useCallback((manual = false) => {
     if (!enabled) return
@@ -182,7 +184,9 @@ export function usePolled<T>(
       })
       .catch(err => {
         if (epochRef.current !== epoch) return
-        setError(normalizeCliError(err))
+        const normalized = normalizeCliError(err)
+        setError(normalized)
+        if (manual) onManualErrorRef.current?.(normalized)
       })
       .finally(() => {
         if (manualEpochRef.current === epoch) manualEpochRef.current = null

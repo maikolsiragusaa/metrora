@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } 
 
 import { setActiveCurrency } from '../lib/format'
 import { metrora } from '../lib/ipc'
+import { showToast } from '../lib/toast'
 import type { DateRange, MenubarPayload, Period } from '../lib/types'
 import { providerName } from './useDesktopScope'
 import { overviewMemoKey } from './useProviderPrefetch'
@@ -32,7 +33,7 @@ export type OverviewRuntime = {
   onConfigMutated: (kind?: ConfigMutationKind) => void
 }
 
-/** Derive stable provider picker entries from the canonical Overview payload. */
+/** Derive stable client/source picker entries for the desktop/header scope. */
 export function detectedProvidersFromOverview(payload: MenubarPayload): DetectedProvider[] {
   const details = payload.current.providerDetails
   if (details) {
@@ -102,6 +103,11 @@ export function useOverviewRuntime({
         // Section-specific snapshot reads run only after the reconciled
         // canonical cache has been atomically published.
         setRefreshToken(token => token + 1)
+      },
+      onManualError: error => {
+        // The overview keeps last-good data by design. Surface a failed manual
+        // reconciliation separately so Refresh never looks like a no-op.
+        showToast(`Refresh failed · ${error.message}`, 'error', 5000)
       },
     },
   )

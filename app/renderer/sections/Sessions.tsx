@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { CliErrorPanel } from '../components/CliErrorPanel'
 import { EmptyNote } from '../components/EmptyState'
+import { ProviderFilterStrip } from '../components/ProviderFilterStrip'
 import { ProviderLogo } from '../components/ProviderLogo'
 import { SectionSkeleton } from '../components/Skeleton'
 import { SegTabs } from '../components/SegTabs'
@@ -37,10 +38,10 @@ export const INITIAL_VISIBLE = SESSION_PAGE_SIZE
 export { reasoningMixLabel }
 
 type SequenceEntry =
-  | { type: 'header'; provider: string; count: number; cost: number }
+  | { type: 'header'; client: string; count: number; cost: number }
   | { type: 'row'; row: SessionRow }
 
-type ProviderFilter = { id: string; label: string }
+type ClientFilter = { id: string; label: string }
 type SessionDateFilter = 'all' | 'today' | '7days' | '30days' | 'month' | '6months'
 
 const SESSION_DATE_FILTERS: Array<{ value: SessionDateFilter; label: string }> = [
@@ -52,19 +53,19 @@ const SESSION_DATE_FILTERS: Array<{ value: SessionDateFilter; label: string }> =
   { value: '6months', label: '6M' },
 ]
 
-function providerFilters(rows: SessionRow[], detectedProviders: ProviderFilter[]): ProviderFilter[] {
-  const entries = new Map<string, ProviderFilter>()
+function clientFilters(rows: SessionRow[], detectedProviders: ClientFilter[]): ClientFilter[] {
+  const entries = new Map<string, ClientFilter>()
   for (const entry of detectedProviders) {
     if (entry.id && !entries.has(entry.id)) entries.set(entry.id, entry)
   }
   for (const row of rows) {
-    if (row.provider && !entries.has(row.provider)) entries.set(row.provider, { id: row.provider, label: providerLabel(row.provider) })
+    if (row.provider && !entries.has(row.provider)) entries.set(row.provider, { id: row.provider, label: clientLabel(row.provider) })
   }
   return [...entries.values()]
 }
 
-function providerLabel(provider: string): string {
-  return provider.replace(/[-\s]+/g, ' ').replace(/\b\w/g, value => value.toUpperCase())
+function clientLabel(client: string): string {
+  return client.replace(/[-\s]+/g, ' ').replace(/\b\w/g, value => value.toUpperCase())
 }
 
 function filterOptions(rows: SessionRow[], getValue: (row: SessionRow) => string): string[] {
@@ -111,97 +112,26 @@ function SessionFilterSelect({
   )
 }
 
-function ProviderFilterRow({ provider, detectedProviders, onProviderChange }: { provider: string; detectedProviders: ProviderFilter[]; onProviderChange: (value: string) => void }) {
-  const dragRef = useRef<{ pointerId: number; startX: number; startScrollLeft: number; moved: boolean } | null>(null)
-  const suppressClickRef = useRef(false)
-
-  if (detectedProviders.length === 0) return null
-
-  const endDrag = (event: PointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current
-    if (!drag || drag.pointerId !== event.pointerId) return
-    if (drag.moved) suppressClickRef.current = true
-    dragRef.current = null
-    event.currentTarget.classList.remove('is-dragging')
-    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
-  }
-
-  return (
-    <div
-      className="session-provider-filter"
-      role="group"
-      aria-label="Filter sessions by provider"
-      data-provider-strip="true"
-      data-scroll-interaction="drag-or-wheel"
-      onPointerDown={event => {
-        if (event.pointerType === 'mouse' && event.button !== 0) return
-        dragRef.current = {
-          pointerId: event.pointerId,
-          startX: event.clientX,
-          startScrollLeft: event.currentTarget.scrollLeft,
-          moved: false,
-        }
-        event.currentTarget.setPointerCapture?.(event.pointerId)
-      }}
-      onPointerMove={event => {
-        const drag = dragRef.current
-        if (!drag || drag.pointerId !== event.pointerId) return
-        const deltaX = event.clientX - drag.startX
-        if (!drag.moved && Math.abs(deltaX) < 4) return
-        drag.moved = true
-        event.currentTarget.classList.add('is-dragging')
-        event.currentTarget.scrollLeft = drag.startScrollLeft - deltaX
-        event.preventDefault()
-      }}
-      onPointerUp={endDrag}
-      onPointerCancel={endDrag}
-      onClickCapture={event => {
-        if (!suppressClickRef.current) return
-        suppressClickRef.current = false
-        event.preventDefault()
-        event.stopPropagation()
-      }}
-      onWheel={event => {
-        if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
-          event.currentTarget.scrollLeft += event.deltaY
-          event.preventDefault()
-        }
-      }}
-    >
-      <button type="button" className={provider === 'all' ? 'on' : undefined} aria-pressed={provider === 'all'} onClick={() => onProviderChange('all')}>
-        <span className="session-provider-all-icon" aria-hidden="true">✦</span>
-        All providers
-      </button>
-      {detectedProviders.map(entry => (
-        <button key={entry.id} type="button" className={provider === entry.id ? 'on' : undefined} aria-pressed={provider === entry.id} onClick={() => onProviderChange(entry.id)}>
-          <ProviderLogo provider={entry.id} size={15} />
-          {entry.label}
-        </button>
-      ))}
-    </div>
-  )
-}
-
 function sequenceForRows(rows: SessionRow[], grouped: boolean, sort: SessionSort): SequenceEntry[] {
   if (!grouped) return [...rows].sort((a, b) => compareRows(sort, a, b)).map(row => ({ type: 'row' as const, row }))
 
-  const byProvider = rows.reduce((map, row) => {
-    const providerRows = map.get(row.provider) ?? []
-    providerRows.push(row)
-    map.set(row.provider, providerRows)
+  const byClient = rows.reduce((map, row) => {
+    const clientRows = map.get(row.provider) ?? []
+    clientRows.push(row)
+    map.set(row.provider, clientRows)
     return map
   }, new Map<string, SessionRow[]>())
 
-  return [...byProvider.entries()]
-    .map(([provider, providerRows]) => ({
-      provider,
-      rows: [...providerRows].sort((a, b) => compareRows(sort, a, b)),
-      cost: providerRows.reduce((sum, row) => sum + row.cost, 0),
-      sortValue: groupSortValue(sort, providerRows),
+  return [...byClient.entries()]
+    .map(([client, clientRows]) => ({
+      client,
+      rows: [...clientRows].sort((a, b) => compareRows(sort, a, b)),
+      cost: clientRows.reduce((sum, row) => sum + row.cost, 0),
+      sortValue: groupSortValue(sort, clientRows),
     }))
-    .sort((a, b) => b.sortValue - a.sortValue || a.provider.localeCompare(b.provider))
+    .sort((a, b) => b.sortValue - a.sortValue || a.client.localeCompare(b.client))
     .flatMap(group => [
-      { type: 'header' as const, provider: group.provider, count: group.rows.length, cost: group.cost },
+      { type: 'header' as const, client: group.client, count: group.rows.length, cost: group.cost },
       ...group.rows.map(row => ({ type: 'row' as const, row })),
     ])
 }
@@ -275,7 +205,7 @@ function SessionTableRow({ row, selected, onSelect }: { row: SessionRow; selecte
         </button>
       </td>
       <td className="session-client-cell">
-        <span className="session-client"><ProviderLogo provider={row.provider} size={15} /><span>{providerLabel(row.provider)}</span></span>
+        <span className="session-client"><ProviderLogo provider={row.provider} size={15} /><span>{clientLabel(row.provider)}</span></span>
       </td>
       <td className="session-model-cell" title={modelLabel}>{modelLabel}</td>
       <td className="session-number">{row.turns.toLocaleString('en-US')}</td>
@@ -365,10 +295,10 @@ export function Sessions({
     .filter(row => modelFilter === 'all' || row.models.includes(modelFilter))
     .filter(row => clientFilter === 'all' || row.provider === clientFilter)
     .filter(row => matchesSessionDate(row.endedAt, dateFilter))
-  const availableProviders = useMemo(() => providerFilters(rows, detectedProviders), [rows, detectedProviders])
+  const availableClients = useMemo(() => clientFilters(rows, detectedProviders), [rows, detectedProviders])
   const projectOptions = useMemo(() => filterOptions(rows, row => row.project).map(value => ({ value, label: shortenProjectPath(value) })), [rows])
   const modelOptions = useMemo(() => [...new Set(rows.flatMap(row => row.models.map(model => model.trim()).filter(Boolean)))].sort((a, b) => a.localeCompare(b)).map(value => ({ value, label: value })), [rows])
-  const clientOptions = useMemo(() => filterOptions(rows, row => row.provider).map(value => ({ value, label: providerLabel(value) })), [rows])
+  const clientOptions = useMemo(() => filterOptions(rows, row => row.provider).map(value => ({ value, label: clientLabel(value) })), [rows])
   const sequence = useMemo(() => sequenceForRows(filtered, grouped, sort), [filtered, grouped, sort])
   const totalPages = Math.max(1, Math.ceil(filtered.length / SESSION_PAGE_SIZE))
   const selectedSession = selectedId ? rows.find(row => sessionIdentity(row) === selectedId) ?? null : null
@@ -426,7 +356,7 @@ export function Sessions({
             {unavailableDetail > 0 && query === '' ? <p>{unavailableDetail.toLocaleString('en-US')} older session{unavailableDetail === 1 ? '' : 's'} remain in durable historical totals without source detail on this device.</p> : null}
           </div>
 
-          <ProviderFilterRow provider={provider} detectedProviders={availableProviders} onProviderChange={onProviderChange} />
+          <ProviderFilterStrip provider={provider} providers={availableClients} onProviderChange={onProviderChange} ariaLabel="Filter sessions by client" />
 
           <div className="sessions-toolbar" role="group" aria-label="Session filters" data-filter-layout="single-row-when-closed">
             <label className="session-search-field">
@@ -446,12 +376,12 @@ export function Sessions({
             </div>
             <button className={grouped ? 'sessions-group-toggle on' : 'sessions-group-toggle'} type="button" aria-pressed={grouped} onClick={() => setGrouped(value => !value)}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h6" /><circle cx="18" cy="12" r="2.5" /></svg>
-              Group by provider
+              Group by client
             </button>
           </div>
 
           <div className="sr-only" role="status" aria-live="polite">
-            {`Sessions sorted by ${SORT_ANNOUNCEMENTS[sort]}, ${grouped ? 'grouped by provider' : 'not grouped by provider'}. ${sessionCountLabel} after filters.`}
+            {`Sessions sorted by ${SORT_ANNOUNCEMENTS[sort]}, ${grouped ? 'grouped by client' : 'not grouped by client'}. ${sessionCountLabel} after filters.`}
           </div>
 
           {report.data.length === 0 ? (
@@ -496,8 +426,8 @@ export function Sessions({
                     </thead>
                     <tbody>
                       {renderedSequence.map(entry => entry.type === 'header' ? (
-                        <tr className="session-provider-group" key={`provider-${entry.provider}`}>
-                          <td colSpan={15}><ProviderLogo provider={entry.provider} size={14} /><strong>{providerLabel(entry.provider)}</strong><span>{entry.count.toLocaleString('en-US')} sessions · {formatUsd(entry.cost)}</span></td>
+                        <tr className="session-provider-group" key={`client-${entry.client}`}>
+                          <td colSpan={15}><ProviderLogo provider={entry.client} size={14} /><strong>{clientLabel(entry.client)}</strong><span>{entry.count.toLocaleString('en-US')} sessions · {formatUsd(entry.cost)}</span></td>
                         </tr>
                       ) : (
                         <SessionTableRow

@@ -7,6 +7,11 @@ import type { DateRange, Period } from '../lib/types'
 
 const STANDARD_PERIODS: Period[] = ['today', 'week', '30days', 'month', 'all', 'lifetime']
 
+/**
+ * The desktop/header provider scope is the collector/client scope (`--provider`)
+ * used by Sessions. It is intentionally not a model delivery provider
+ * (`modelProvider`) or a model-house/brand identity (`brandId`).
+ */
 export type DetectedProvider = {
   id: string
   label: string
