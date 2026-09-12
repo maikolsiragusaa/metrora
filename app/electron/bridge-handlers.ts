@@ -305,7 +305,11 @@ export function createBridgeHandlers(deps: Deps): Record<string, Handler> {
     const priority: SpawnPriority | undefined = background ? 'background' : undefined
     try {
       const args = buildOverviewArgs(period, provider, range, configSource, projectScopeId)
-      const snapshot = !fresh && !configSource
+      // A selected Claude config is a projection of the cached overview data;
+      // it must not turn an ordinary navigation read into a full discovery
+      // and hydration pass. The expensive path is reserved for explicit
+      // Refresh (fresh=true).
+      const snapshot = !fresh
       if (snapshot) {
         // The source probe is metadata-only and never waits for the potentially
         // long provider reconciliation. Keep it off the snapshot response path.
