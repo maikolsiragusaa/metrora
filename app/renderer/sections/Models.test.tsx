@@ -199,9 +199,101 @@ describe('Models', () => {
     expect(within(inspector).getByText('Token composition')).toBeInTheDocument()
     expect(within(inspector).getByText('250.0ms')).toBeInTheDocument()
     expect(within(inspector).getByText('5.1M total')).toBeInTheDocument()
+    expect(within(inspector).getByText('Available daily token activity')).toBeInTheDocument()
+    expect(within(inspector).getByText('Daily activity unavailable for this model.')).toBeInTheDocument()
+    expect(inspector.querySelector('.models-activity-plot')).toBeNull()
+    expect(within(inspector).queryByRole('tab', { name: 'Overview' })).not.toBeInTheDocument()
+    expect(within(inspector).getByRole('tab', { name: 'Providers / Routes' })).toBeInTheDocument()
+    expect(within(inspector).getByRole('tab', { name: 'Metadata' })).toBeInTheDocument()
 
     fireEvent.click(within(inspector).getByRole('button', { name: 'Close model inspector' }))
     expect(screen.queryByRole('complementary', { name: 'Model inspector' })).not.toBeInTheDocument()
+  })
+
+  it('keeps factual model names unchanged and does not add model-name badges', () => {
+    const names = [
+      'Cursor (auto)',
+      'Codex Auto Review',
+      'GPT-5.6 Luna',
+      'GPT-5.6 Sol',
+      'GLM-5.3-Flash',
+      'mimo-v2.5-free',
+      'muse-spark-alpha',
+      'unknown',
+    ]
+    const overview = loadedOverview({
+      modelAccounting: {
+        rows: names.map(name => durableRow(name, 1, 1, 0)),
+        gap: { cost: 0, savingsUSD: 0, calls: 0 },
+        coverage: { cost: 1, calls: 1 },
+        tokenCoverage: { cost: 1, calls: 1 },
+      },
+    })
+
+    render(<Models period="lifetime" provider="all" overview={overview} />)
+
+    const table = screen.getByRole('table', { name: 'Model usage' })
+    for (const name of names) {
+      expect(within(table).getByRole('button', { name: `Select ${name}` })).toBeInTheDocument()
+    }
+    expect(within(table).queryByText(/unresolved model|synthetic|pseudo-model|auto model/i)).not.toBeInTheDocument()
+    expect(within(table).queryByRole('button', { name: /add alias/i })).not.toBeInTheDocument()
+  })
+
+  it('separates model brand, provider, and source in the inspector while keeping provenance reachable', () => {
+    const overview = loadedOverview({
+      modelAccounting: {
+        rows: [durableRow('GPT-5.6 Luna', 2, 4, 0, { brandId: 'openai', provider: 'openai', sourceProviders: ['codex'], rawModels: ['gpt-5.6-luna'] })],
+        gap: { cost: 0, savingsUSD: 0, calls: 0 },
+        coverage: { cost: 1, calls: 1 },
+        tokenCoverage: { cost: 1, calls: 1 },
+      },
+    })
+
+    render(<Models period="lifetime" provider="all" overview={overview} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Select GPT-5.6 Luna' }))
+
+    const inspector = screen.getByRole('complementary', { name: 'Model inspector' })
+    const identity = within(inspector).getByLabelText('Model identity details')
+    expect(within(inspector).getByText('GPT-5.6 Luna')).toBeInTheDocument()
+    expect(identity).toHaveTextContent('Brand')
+    expect(identity).toHaveTextContent('OpenAI')
+    expect(identity).toHaveTextContent('Provider')
+    expect(identity).toHaveTextContent('Source')
+    expect(identity).toHaveTextContent('Codex')
+    expect(within(inspector).queryByText('Model house')).not.toBeInTheDocument()
+    expect(within(inspector).queryByText('GPT-5.6 Luna OpenAI')).not.toBeInTheDocument()
+
+    fireEvent.click(within(inspector).getByRole('tab', { name: 'Metadata' }))
+    expect(within(inspector).getByText('Exact identifiers retained by Metrora')).toBeInTheDocument()
+    expect(within(inspector).getByText('gpt-5.6-luna')).toBeInTheDocument()
+    expect(within(inspector).getByText('Canonical ID')).toBeInTheDocument()
+  })
+
+  it('renders available daily activity from matching history and no fabricated series', () => {
+    const overview = loadedOverview()
+    overview.data.history = {
+      daily: [{
+        date: '2026-09-10',
+        cost: 1,
+        savingsUSD: 0,
+        calls: 3,
+        inputTokens: 1_000,
+        outputTokens: 500,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        topModels: [{ name: 'GPT-5.4', cost: 1, savingsUSD: 0, calls: 3, inputTokens: 1_000, outputTokens: 500 }],
+      }],
+    }
+
+    render(<Models period="lifetime" provider="all" overview={overview} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Select GPT-5.4' }))
+
+    const inspector = screen.getByRole('complementary', { name: 'Model inspector' })
+    expect(within(inspector).getByRole('img', { name: /Daily token activity for GPT-5\.4/ })).toBeInTheDocument()
+    expect(within(inspector).getByText(/3 calls/)).toBeInTheDocument()
+    expect(within(inspector).getByText(/1\.5K observed/)).toBeInTheDocument()
+    expect(within(inspector).queryByText('Daily activity unavailable for this model.')).not.toBeInTheDocument()
   })
 
   it('shows unavailable token-derived and timing metrics instead of fake zeros for legacy durable rows', () => {
@@ -331,7 +423,7 @@ describe('Models', () => {
     expect(within(otherRow).getAllByRole('cell')[12]).toHaveTextContent('—')
   })
 
-  it('filters canonical model rows by search, model house, and source without fetching again', () => {
+  it('filters canonical model rows by search, model brand, and source without fetching again', () => {
     const codexAccounting = durableRow('GPT-5.4', 20, 20, 0, { brandId: 'openai', provider: 'openai', sourceProviders: ['codex'], rawModels: ['gpt-5.4'] })
     const openAiSibling = durableRow('GPT-5.5', 8, 8, 0, { brandId: 'openai', provider: 'amazon-bedrock', sourceProviders: ['zed'], rawModels: ['openai.gpt-5.5'] })
     const claudeAccounting = durableRow('Claude Opus 4.8', 10, 10, 0, { brandId: 'anthropic', provider: 'anthropic', sourceProviders: ['claude'], rawModels: ['claude-opus-4-8'] })
@@ -364,9 +456,15 @@ describe('Models', () => {
     render(<Models period="lifetime" provider="all" overview={overview} />)
     const table = () => screen.getByRole('table', { name: 'Model usage' })
     const search = screen.getByRole('textbox', { name: 'Filter models' })
-    const providerStrip = screen.getByRole('group', { name: 'Filter models by model house' })
+    const providerStrip = screen.getByRole('group', { name: 'Filter models by model brand' })
 
     expect(screen.queryByRole('combobox', { name: 'Provider' })).not.toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Provider' })).toHaveAttribute('title', 'Delivery provider or API route')
+    expect(screen.getByRole('columnheader', { name: 'Source' })).toHaveAttribute('title', 'Metrora client/source that contributed the usage')
+    expect(within(table()).getByRole('row', { name: /GPT-5\.4/ })).toHaveTextContent('OpenAI')
+    expect(within(table()).getByRole('row', { name: /GPT-5\.4/ })).toHaveTextContent('Codex')
+    expect(within(table()).getByRole('row', { name: /GPT-5\.5/ })).toHaveTextContent('Amazon Bedrock')
+    expect(within(table()).getByRole('row', { name: /GPT-5\.5/ })).toHaveTextContent('Zed')
 
     fireEvent.change(search, { target: { value: 'codex' } })
     expect(within(table()).getByRole('row', { name: /GPT-5\.4/ })).toBeInTheDocument()
@@ -378,8 +476,8 @@ describe('Models', () => {
     expect(within(table()).queryByRole('row', { name: /GPT-5\.4/ })).not.toBeInTheDocument()
     expect(within(table()).queryByRole('row', { name: /GPT-5\.5/ })).not.toBeInTheDocument()
 
-    fireEvent.click(within(providerStrip).getByRole('button', { name: 'All model houses' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Client/source' }))
+    fireEvent.click(within(providerStrip).getByRole('button', { name: 'All model brands' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Model source' }))
     fireEvent.click(screen.getByRole('option', { name: 'Codex' }))
     expect(within(table()).getByRole('row', { name: /GPT-5\.4/ })).toBeInTheDocument()
     expect(within(table()).queryByRole('row', { name: /Claude Opus/ })).not.toBeInTheDocument()
@@ -399,6 +497,12 @@ describe('Models', () => {
     expect(screen.getByText('delegation')).toBeInTheDocument()
     expect(within(screen.getByRole('table', { name: 'Models grouped by task' })).getAllByText('Anthropic')).toHaveLength(2)
     expect(screen.getByText(/Task attribution needs the original session records/i)).toBeInTheDocument()
+    const taskTable = screen.getByRole('table', { name: 'Models grouped by task' })
+    expect(within(taskTable).getByRole('columnheader', { name: 'Task' })).toBeInTheDocument()
+    expect(within(taskTable).getByRole('columnheader', { name: 'Model' })).toBeInTheDocument()
+    const taskRail = screen.getByRole('complementary', { name: 'Task insights' })
+    expect(taskRail).toHaveClass('models-task-insights-rail')
+    expect(taskRail).toHaveAttribute('data-sticky-rail', 'true')
     expect(screen.getByRole('columnheader', { name: 'Model' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Source' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Cache ×' })).toBeInTheDocument()
@@ -426,8 +530,13 @@ describe('Models', () => {
     await waitFor(() => expect(getAudit).toHaveBeenCalledWith('30days', 'all'))
     const evidenceTable = screen.getByRole('table', { name: 'Model usage evidence' })
     expect(within(evidenceTable).getAllByRole('columnheader').map(header => header.textContent)).toEqual([
-      'Model', 'Source', 'Calls', 'Total tokens', 'Cost', 'Cost / 1M', 'Evidence', 'Pricing', 'Recon', 'Reasoning',
+      'Model', 'Source', 'Calls', 'Total tokens', 'Cost', 'Cost / 1M', 'Raw fields', 'Pricing', 'Recon', 'Reasoning',
     ])
+    expect(within(evidenceTable).queryByRole('columnheader', { name: 'Evidence' })).not.toBeInTheDocument()
+    expect(within(evidenceTable).getByText('Complete')).toBeInTheDocument()
+    expect(within(evidenceTable).getByText('Resolved')).toBeInTheDocument()
+    expect(within(evidenceTable).getByText('100%')).toBeInTheDocument()
+    expect(within(evidenceTable).getByText('Observed')).toBeInTheDocument()
     expect(within(evidenceTable).getByText('102M')).toBeInTheDocument()
     expect(within(evidenceTable).getByText('$252.00')).toBeInTheDocument()
     const evidenceDetail = await screen.findByRole('complementary', { name: 'Model evidence detail' })
@@ -438,16 +547,85 @@ describe('Models', () => {
     expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
   })
 
+  it('keeps unpriced evidence and reconciliation unknown without fabricated percentages', async () => {
+    const unpricedAudit: AuditRow = {
+      ...auditRows[0]!,
+      rates: null,
+      attributedCostUSD: 0,
+      cost: { ...auditRows[0]!.cost, recomputedTotalUSD: 0 },
+    }
+    getAudit.mockResolvedValue([unpricedAudit])
+    render(<Models period="30days" provider="all" overview={loadedOverview()} />)
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Evidence' }))
+    await waitFor(() => expect(getAudit).toHaveBeenCalledWith('30days', 'all'))
+
+    const evidenceTable = screen.getByRole('table', { name: 'Model usage evidence' })
+    const row = within(evidenceTable).getByRole('row', { name: /Claude Opus 4\.8/ })
+    expect(row).toHaveTextContent('Unpriced')
+    expect(row).toHaveTextContent('Unknown')
+    expect(row).not.toHaveTextContent('0%')
+    const detail = await screen.findByRole('complementary', { name: 'Model evidence detail' })
+    expect(within(detail).getAllByText('Unpriced')).not.toHaveLength(0)
+  })
+
   it('opens the in-page Compare workspace without changing accounting state', () => {
     const onNavigate = vi.fn()
-    render(<Models period="30days" provider="all" overview={loadedOverview()} onNavigate={onNavigate} />)
+    const { container } = render(<Models period="30days" provider="all" overview={loadedOverview()} onNavigate={onNavigate} />)
 
     fireEvent.click(screen.getByRole('tab', { name: 'Compare' }))
     expect(screen.getByRole('complementary', { name: 'Compare models panel' })).toBeInTheDocument()
     expect(screen.getByRole('checkbox', { name: 'Compare GPT-5.4' })).toBeChecked()
     expect(screen.getByRole('checkbox', { name: 'Compare Claude Opus 4.8' })).toBeChecked()
+    expect(container.querySelector('select')).toBeNull()
+    expect(container.querySelector('.models-filter-select')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Delivery provider' })).toHaveTextContent('All delivery providers')
+    fireEvent.click(screen.getByRole('button', { name: 'Delivery provider' }))
+    expect(screen.getByRole('option', { name: 'All delivery providers' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('option', { name: 'All delivery providers' }))
+    expect(screen.getByText('Key takeaways')).toBeInTheDocument()
+    expect(screen.getByText(/Measured signals/)).toBeInTheDocument()
     expect(onNavigate).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Clear all' }))
     expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
+  })
+
+  it('keeps known model brand identity when Compare has no delivery provider', () => {
+    const overview = loadedOverview({
+      modelAccounting: {
+        rows: [durableRow('Gemini 3.8 Flash', 2, 2, 0, { brandId: 'google', sourceProviders: ['antigravity'], rawModels: ['gemini-3.8-flash'] })],
+        gap: { cost: 0, savingsUSD: 0, calls: 0 },
+        coverage: { cost: 1, calls: 1 },
+        tokenCoverage: { cost: 1, calls: 1 },
+      },
+    })
+
+    render(<Models period="lifetime" provider="all" overview={overview} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Compare' }))
+
+    const comparison = screen.getByRole('complementary', { name: 'Compare models panel' })
+    expect(within(comparison).getByText('Google · Provider unavailable')).toBeInTheDocument()
+    const tableRow = within(screen.getByRole('table', { name: 'Models available for comparison' })).getByRole('row', { name: /Gemini 3\.8 Flash/ })
+    const providerCell = within(tableRow).getAllByRole('cell')[2]!
+    expect(within(providerCell).getByText('Provider unavailable')).toBeInTheDocument()
+    expect(providerCell.querySelector('img')).toBeNull()
+  })
+
+  it('preserves the three-model Compare selection bound', () => {
+    const names = ['Model one', 'Model two', 'Model three', 'Model four']
+    const overview = loadedOverview({
+      modelAccounting: {
+        rows: names.map(name => durableRow(name, 1, 1, 0)),
+        gap: { cost: 0, savingsUSD: 0, calls: 0 },
+        coverage: { cost: 1, calls: 1 },
+        tokenCoverage: { cost: 1, calls: 1 },
+      },
+    })
+
+    render(<Models period="lifetime" provider="all" overview={overview} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Compare' }))
+
+    expect(screen.getByText('3/3 selected')).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'Compare Model four' })).toBeDisabled()
   })
 })

@@ -41,6 +41,7 @@ export function TopBar({
   provider,
   providerLabel,
   providerOptions,
+  providerAriaLabel = 'Providers',
   onProviderSelect,
   claudeConfigs,
   configSource,
@@ -64,6 +65,7 @@ export function TopBar({
   provider: string
   providerLabel: string
   providerOptions: ProviderOption[]
+  providerAriaLabel?: string
   onProviderSelect: (value: string) => void
   claudeConfigs?: ClaudeConfigSelector
   configSource: string | null
@@ -104,7 +106,7 @@ export function TopBar({
       )}
       {capabilities.customRange && <CalendarPop value={customRange} onSelect={onRangeSelect} />}
       {capabilities.provider && (
-        <ProviderPop value={provider} label={providerLabel} options={providerOptions} onSelect={onProviderSelect} />
+        <ProviderPop value={provider} label={providerLabel} ariaLabel={providerAriaLabel} options={providerOptions} onSelect={onProviderSelect} />
       )}
       {projectOptions && projectOptions.length > 0 && projectScopeId && onProjectScopeSelect && (
         <Dropdown

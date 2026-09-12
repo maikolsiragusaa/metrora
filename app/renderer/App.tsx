@@ -165,6 +165,9 @@ function AppMain() {
     ? claudeConfigs?.options.find(option => option.id === scopedClaudeConfigSource)?.label ?? null
     : null
   const scope = `${customRange ? rangeLabel(customRange) : PERIOD_LABELS[period]} · ${providerLabel}${activeConfigLabel ? ` · ${activeConfigLabel}` : ''}`
+  const modelsProviderOptions = section === 'models'
+    ? providerOptions.map(option => option.value === 'all' ? { ...option, label: 'All clients' } : option)
+    : providerOptions
   const projectScope = overview.data?.projectScope
   useEffect(() => {
     if (!projectScope || projectScope.options.some(option => option.id === metroraProjectId)) return
@@ -219,7 +222,8 @@ function AppMain() {
               onRangeSelect={onRangeSelect}
               provider={provider}
               providerLabel={providerLabel}
-              providerOptions={providerOptions}
+              providerOptions={modelsProviderOptions}
+              providerAriaLabel={section === 'models' ? 'Clients' : 'Providers'}
               onProviderSelect={onProviderSelect}
               claudeConfigs={claudeConfigs}
               configSource={claudeConfigSource}

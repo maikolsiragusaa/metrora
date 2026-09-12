@@ -52,6 +52,15 @@ function clientSourceValues(row: DurableModelRow): string[] {
   return row.sourceProviders.filter(value => value.trim().length > 0)
 }
 
+function modelBrandValues(row: DurableModelRow): Exclude<ModelHouseId, 'unresolved'>[] {
+  return modelHouseValues(row).filter((value): value is Exclude<ModelHouseId, 'unresolved'> => value !== 'unresolved')
+}
+
+function modelBrandText(row: DurableModelRow): string {
+  const values = modelBrandValues(row)
+  return values.length > 0 ? values.map(modelHouseLabel).join(', ') : 'Unavailable'
+}
+
 function compactIdentity(values: string[], emptyLabel = 'Unavailable'): { label: string; title: string } {
   const labels = values.map(formatProviderLabel)
   if (labels.length === 0) return { label: emptyLabel, title: emptyLabel }
@@ -186,10 +195,10 @@ function SourceFilter({
     <div className="models-source-filter">
       <Dropdown
         id="models-source-filter"
-        ariaLabel="Client/source"
+        ariaLabel="Model source"
         value={value}
         width="100%"
-        options={[{ value: 'all', label: 'All sources' }, ...options.map(option => ({ value: option, label: formatProviderLabel(option) }))]}
+        options={[{ value: 'all', label: 'All model sources' }, ...options.map(option => ({ value: option, label: formatProviderLabel(option) }))]}
         onChange={onChange}
         renderIcon={source => source === 'all'
           ? <span className="models-source-filter-icon" aria-hidden="true">◌</span>
@@ -212,7 +221,7 @@ function ProviderCell({ row }: { row: DurableModelRow }) {
   const values = deliveryProviderValues(row)
   const identity = compactIdentity(values)
   return (
-    <span className="models-provider-value" title={`Delivery provider/API route: ${identity.title}`}>
+    <span className={`models-provider-value${values.length === 0 ? ' is-unavailable' : ''}`} title={`Delivery provider/API route: ${identity.title}`}>
       {values.length > 0 ? <ProviderLogo provider={providerLogoKey(values[0]!)} size={14} /> : null}
       <span>{identity.label}</span>
     </span>
@@ -319,7 +328,7 @@ function statusLabel(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1)
 }
 
-type ModelInspectorTab = 'overview' | 'providers' | 'metadata'
+type ModelInspectorTab = 'providers' | 'metadata'
 
 function ModelActivityChart({ row, history }: { row: DurableModelRow; history?: MenubarPayload['history'] }) {
   const names = new Set([row.name, ...row.rawModels].map(normalize))
@@ -336,26 +345,34 @@ function ModelActivityChart({ row, history }: { row: DurableModelRow; history?: 
   const input = points.reduce((sum, point) => sum + point.input, 0)
   const output = points.reduce((sum, point) => sum + point.output, 0)
   const calls = points.reduce((sum, point) => sum + point.calls, 0)
+  if (points.length === 0) {
+    return (
+      <section className="models-inspector-activity models-inspector-activity-empty" aria-labelledby="models-token-activity-title">
+        <div className="models-inspector-activity-empty-head">
+          <h3 id="models-token-activity-title">Available daily token activity</h3>
+          <span role="status">Daily activity unavailable for this model.</span>
+        </div>
+      </section>
+    )
+  }
   return (
     <section className="models-inspector-chart" aria-labelledby="models-token-activity-title">
       <div className="models-inspector-section-head">
-        <div><h3 id="models-token-activity-title">Available daily token activity</h3><span>{points.length > 0 ? `${calls.toLocaleString('en-US')} calls · derived from available daily top-model evidence` : 'No available daily token activity for this model'}</span></div>
+        <div><h3 id="models-token-activity-title">Available daily token activity</h3><span>{calls.toLocaleString('en-US')} calls · derived from available daily top-model evidence</span></div>
         <div className="models-activity-legend"><span><i className="input" aria-hidden="true" />Input</span><span><i className="output" aria-hidden="true" />Output</span></div>
       </div>
-      {points.length > 0 ? <>
-        <div className="models-activity-plot" role="img" aria-label={`Daily token activity for ${row.name}: ${formatCompact(input)} input and ${formatCompact(output)} output.`}>
-          <div className="models-activity-grid">{points.map((point, index) => <span className="models-activity-bar" key={`${point.date}-${index}`} title={`${formatDayShort(point.date)} · ${point.calls.toLocaleString('en-US')} calls`} style={{ height: `${max > 0 ? Math.max(8, (point.input + point.output) / max * 100) : 8}%` }}><i className="input" style={{ flexGrow: point.input }} /><i className="output" style={{ flexGrow: point.output }} /></span>)}</div>
-        </div>
-        <div className="models-activity-axis" aria-hidden="true"><span>{formatDayShort(points[0]!.date)}</span><span>{formatDayShort(points[Math.floor(points.length / 2)]!.date)}</span><span>{formatDayShort(points[points.length - 1]!.date)}</span></div>
-        <div className="models-activity-summary"><span>Input {formatCompact(input)} · Output {formatCompact(output)}</span><strong>{formatCompact(input + output)} observed</strong></div>
-      </> : <div className="models-activity-unavailable" role="status">The durable model payload has aggregate token detail, but no daily breakdown for this model.</div>}
+      <div className="models-activity-plot" role="img" aria-label={`Daily token activity for ${row.name}: ${formatCompact(input)} input and ${formatCompact(output)} output.`}>
+        <div className="models-activity-grid">{points.map((point, index) => <span className="models-activity-bar" key={`${point.date}-${index}`} title={`${formatDayShort(point.date)} · ${point.calls.toLocaleString('en-US')} calls`} style={{ height: `${max > 0 ? Math.max(8, (point.input + point.output) / max * 100) : 8}%` }}><i className="input" style={{ flexGrow: point.input }} /><i className="output" style={{ flexGrow: point.output }} /></span>)}</div>
+      </div>
+      <div className="models-activity-axis" aria-hidden="true"><span>{formatDayShort(points[0]!.date)}</span><span>{formatDayShort(points[Math.floor(points.length / 2)]!.date)}</span><span>{formatDayShort(points[points.length - 1]!.date)}</span></div>
+      <div className="models-activity-summary"><span>Input {formatCompact(input)} · Output {formatCompact(output)}</span><strong>{formatCompact(input + output)} observed</strong></div>
     </section>
   )
 }
 
 function ModelInspector({ row, unpricedModels, history, onClose }: { row: DurableModelRow; unpricedModels: UnpricedModel[]; history?: MenubarPayload['history']; onClose: () => void }) {
-  const [tab, setTab] = useState<ModelInspectorTab>('overview')
-  useEffect(() => setTab('overview'), [row.presentationIdentity])
+  const [tab, setTab] = useState<ModelInspectorTab>('providers')
+  useEffect(() => setTab('providers'), [row.presentationIdentity])
   const quality = costQuality(row, unpricedModels)
   const total = modelTotal(row)
   const reuse = modelCacheReuse(row)
@@ -363,7 +380,7 @@ function ModelInspector({ row, unpricedModels, history, onClose }: { row: Durabl
   const timing = modelMsPer1K(row)
   const deliveryProviders = deliveryProviderValues(row)
   const clientSources = clientSourceValues(row)
-  const pricingLabel = quality.kind === 'settled' ? 'Priced' : statusLabel(quality.kind)
+  const pricingLabel = quality.kind === 'settled' ? 'Resolved' : quality.kind === 'partial' ? 'Partial' : statusLabel(quality.kind)
   return (
     <aside className="models-inspector" aria-label="Model inspector">
       <div className="models-inspector-header">
@@ -371,30 +388,21 @@ function ModelInspector({ row, unpricedModels, history, onClose }: { row: Durabl
         <button type="button" className="models-inspector-close" aria-label="Close model inspector" onClick={onClose}>×</button>
         <div className="models-inspector-title-row">
           <ModelIdentity name={row.name} brandId={row.brandId} />
-          <span className="models-inspector-provider">{deliveryProviders.length > 0 ? deliveryProviders.map(formatProviderLabel).join(', ') : 'Provider unavailable'}</span>
         </div>
-        <div className="models-inspector-house">Model house · {modelHouseValues(row).map(modelHouseLabel).join(', ')}</div>
-        <div className="models-inspector-source">{clientSources.length > 0 ? clientSources.map(formatProviderLabel).join(', ') : 'Source unavailable'}</div>
-        <div className="models-inspector-tags">
-          <span className={`models-status-chip ${quality.kind}`}>{pricingLabel}</span>
-          <span className={`models-status-chip ${row.tokenDetail ? 'available' : 'unavailable'}`}>{row.tokenDetail ? 'Token detail' : 'Token detail unavailable'}</span>
-          <span className={`models-status-chip ${row.timingCoverage}`}>{statusLabel(row.timingCoverage)} timing</span>
+        <div className="models-inspector-identity" aria-label="Model identity details">
+          <span><small>Brand</small><strong>{modelBrandText(row)}</strong></span>
+          <span><small>Provider</small><strong>{deliveryProviders.length > 0 ? deliveryProviders.map(formatProviderLabel).join(', ') : 'Provider unavailable'}</strong></span>
+          <span><small>Source</small><strong>{clientSources.length > 0 ? clientSources.map(formatProviderLabel).join(', ') : 'Source unavailable'}</strong></span>
         </div>
       </div>
 
       <div className="models-inspector-metrics" aria-label="Model metrics">
         <Metric label="Total cost" value={quality.kind === 'unpriced' ? 'Unavailable' : formatUsd(row.cost)} detail={quality.detail} />
         <Metric label="Total tokens" value={total == null ? 'Unavailable' : formatCompact(total)} detail={row.tokenDetail ? 'Observed metered volume' : 'No durable token split'} />
-        <Metric label="Canonical calls" value={fmtInt(row.calls)} />
-        <Metric label="Cache ×" value={formatReuseMultiple(reuse)} detail="Cache-read per uncached input" />
-        <Metric label="ms / 1K" value={formatMsPer1K(timing)} detail={timing == null ? 'Active-generation timing unavailable' : `${statusLabel(row.timingCoverage)} timing`} />
-        <Metric label="Cost / 1M" value={unitCost == null ? 'Unavailable' : formatUsd(unitCost)} detail="Effective observed value" />
-      </div>
-
-      <div className="models-inspector-evidence" aria-label="Model evidence state">
-        <div><span>Pricing</span><strong>{pricingLabel}</strong></div>
-        <div><span>Delivery</span><strong>{statusLabel(row.deliveryStatus)}</strong></div>
-        <div><span>Timing</span><strong>{statusLabel(row.timingCoverage)}</strong></div>
+        <Metric label="Calls" value={fmtInt(row.calls)} />
+        <Metric label="Cache×" value={formatReuseMultiple(reuse)} detail="Cache-read per uncached input" />
+        <Metric label="ms/1K" value={formatMsPer1K(timing)} detail={timing == null ? 'Active-generation timing unavailable' : `${statusLabel(row.timingCoverage)} timing`} />
+        <Metric label="Cost/1M" value={unitCost == null ? 'Unavailable' : formatUsd(unitCost)} detail="Effective observed value" />
       </div>
 
       <TokenComposition row={row} />
@@ -402,21 +410,17 @@ function ModelInspector({ row, unpricedModels, history, onClose }: { row: Durabl
       <ModelActivityChart row={row} history={history} />
 
       <div className="models-inspector-tabs" role="tablist" aria-label="Model detail views">
-        <button type="button" role="tab" aria-selected={tab === 'overview'} onClick={() => setTab('overview')}>Overview</button>
-        <button type="button" role="tab" aria-selected={tab === 'providers'} onClick={() => setTab('providers')}>Providers</button>
+        <button type="button" role="tab" aria-selected={tab === 'providers'} onClick={() => setTab('providers')}>Providers / Routes</button>
         <button type="button" role="tab" aria-selected={tab === 'metadata'} onClick={() => setTab('metadata')}>Metadata</button>
       </div>
 
-      {tab === 'overview' ? <section className="models-inspector-section models-inspector-provenance" aria-label="Model provenance">
-        <div className="models-inspector-section-head"><div><h3>Provenance</h3><span>Recorded route and collector facts</span></div></div>
-        <dl>
-          <div><dt>Model house</dt><dd>{modelHouseValues(row).map(modelHouseLabel).join(', ')}</dd></div>
-          <div><dt>Delivery provider</dt><dd>{deliveryProviders.length > 0 ? deliveryProviders.map(formatProviderLabel).join(', ') : 'Unavailable'}</dd></div>
-          <div><dt>Client/source</dt><dd>{clientSources.length > 0 ? clientSources.map(formatProviderLabel).join(', ') : 'Unavailable'}</dd></div>
-          <div><dt>Delivery state</dt><dd>{statusLabel(row.deliveryStatus)}</dd></div>
-        </dl>
-      </section> : tab === 'providers' ? <section className="models-inspector-section" aria-label="Recorded model deliveries">
-        <div className="models-inspector-section-head"><div><h3>Recorded deliveries</h3><span>No source split is synthesized</span></div><strong>{row.deliveryRows.length}</strong></div>
+      {tab === 'providers' ? <section className="models-inspector-section" aria-label="Recorded model deliveries">
+        <div className="models-inspector-section-head"><div><h3>Providers / Routes</h3><span>Recorded delivery and collector facts</span></div><strong>{row.deliveryRows.length}</strong></div>
+        <div className="models-inspector-evidence" aria-label="Model evidence state">
+          <div><span>Pricing</span><strong>{pricingLabel}</strong></div>
+          <div><span>Delivery</span><strong>{statusLabel(row.deliveryStatus)}</strong></div>
+          <div><span>Timing</span><strong>{statusLabel(row.timingCoverage)}</strong></div>
+        </div>
         <div className="models-delivery-list">
           {row.deliveryRows.map((delivery, index) => {
             const deliveryCost = deliveryQuality(delivery)
@@ -433,6 +437,11 @@ function ModelInspector({ row, unpricedModels, history, onClose }: { row: Durabl
       </section> : <section className="models-inspector-section models-inspector-provenance" aria-label="Model metadata">
         <div className="models-inspector-section-head"><div><h3>Metadata</h3><span>Exact identifiers retained by Metrora</span></div></div>
         <dl>
+          <div><dt>Brand</dt><dd>{modelBrandText(row)}</dd></div>
+          <div><dt>Provider</dt><dd>{deliveryProviders.length > 0 ? deliveryProviders.map(formatProviderLabel).join(', ') : 'Unavailable'}</dd></div>
+          <div><dt>Source</dt><dd>{clientSources.length > 0 ? clientSources.map(formatProviderLabel).join(', ') : 'Unavailable'}</dd></div>
+          <div><dt>Pricing</dt><dd>{pricingLabel}</dd></div>
+          <div><dt>Timing</dt><dd>{statusLabel(row.timingCoverage)}</dd></div>
           <div><dt>Display name</dt><dd>{row.name}</dd></div>
           <div><dt>Raw model</dt><dd>{row.rawModels.length > 0 ? row.rawModels.join(', ') : 'Unavailable'}</dd></div>
           <div><dt>Canonical ID</dt><dd>{row.canonicalIdentities.length > 0 ? row.canonicalIdentities.join(', ') : 'Unavailable'}</dd></div>
@@ -531,15 +540,15 @@ export function ModelsControlCenter({
           provider={modelHouseFilter}
           providers={modelHouseStripOptions}
           onProviderChange={setModelHouseFilter}
-          ariaLabel="Filter models by model house"
-          allLabel="All model houses"
+          ariaLabel="Filter models by model brand"
+          allLabel="All model brands"
           className="session-provider-filter models-provider-filter"
         />}
         <div className="models-filter-row">
           <label className="models-search-field">
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.3" /><path d="m16 16 4.5 4.5" /></svg>
             <span className="sr-only">Filter models</span>
-            <input aria-label="Filter models" value={query} onChange={event => setQuery(event.target.value)} placeholder="Filter models, houses, providers, or sources…" />
+            <input aria-label="Filter models" value={query} onChange={event => setQuery(event.target.value)} placeholder="Filter models, brands, providers, or sources…" />
           </label>
           <SourceFilter value={sourceFilter} options={sourceOptions} onChange={setSourceFilter} />
           {hasFilters ? <button type="button" className="models-clear-filter" onClick={clearFilters}>Clear filters</button> : null}
@@ -566,7 +575,7 @@ export function ModelsControlCenter({
               </colgroup>
               <thead>
                 <tr>
-                  <th title="Model house identity and display name">Model</th><th title="Delivery provider or API route">Provider</th><th title="Metrora client/source that contributed the usage">Source</th><th className="models-number">Calls</th><th className="models-number">Input</th><th className="models-number">Output</th>
+                  <th title="Model brand identity and display name">Model</th><th title="Delivery provider or API route">Provider</th><th title="Metrora client/source that contributed the usage">Source</th><th className="models-number">Calls</th><th className="models-number">Input</th><th className="models-number">Output</th>
                   <th className="models-number">Cache R</th><th className="models-number">Cache W</th><th className="models-number" title="Cached input read per uncached input token">Cache×</th>
                   <th className="models-number">Total</th><th className="models-number" title="Active generation milliseconds per 1,000 generated tokens">ms/1K</th><th className="models-number">Cost</th><th className="models-number">Cost/1M</th>
                 </tr>

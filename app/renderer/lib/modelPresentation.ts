@@ -37,7 +37,7 @@ const MODEL_HOUSE_LABELS: Record<ModelHouseId, string> = {
   microsoft: 'Microsoft',
   minimax: 'MiniMax',
   ai21: 'AI21',
-  unresolved: 'Other model houses',
+  unresolved: 'Brand unavailable',
 }
 
 const MODEL_HOUSE_ALIASES: Record<string, ModelHouseId> = {

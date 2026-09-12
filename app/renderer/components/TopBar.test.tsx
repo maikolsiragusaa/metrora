@@ -13,7 +13,15 @@ const full: DesktopSectionCapabilities = {
   globalRefresh: true,
 }
 
-function renderTopBar(capabilities: DesktopSectionCapabilities, onOpenCode?: () => void, onRefresh?: () => void, iconOnlyRefresh = false, hideShellLabels = false) {
+function renderTopBar(
+  capabilities: DesktopSectionCapabilities,
+  onOpenCode?: () => void,
+  onRefresh?: () => void,
+  iconOnlyRefresh = false,
+  hideShellLabels = false,
+  providerAriaLabel = 'Providers',
+  providerOptions = [{ value: 'all', label: 'All providers' }],
+) {
   return render(
     <TopBar
       title={hideShellLabels ? null : 'Workspace'}
@@ -24,7 +32,8 @@ function renderTopBar(capabilities: DesktopSectionCapabilities, onOpenCode?: () 
       onRangeSelect={vi.fn()}
       provider="all"
       providerLabel="All providers"
-      providerOptions={[{ value: 'all', label: 'All providers' }]}
+      providerOptions={providerOptions}
+      providerAriaLabel={providerAriaLabel}
       onProviderSelect={vi.fn()}
       claudeConfigs={{
         selectedId: null,
@@ -47,6 +56,13 @@ describe('TopBar scope capabilities', () => {
     expect(screen.getByLabelText('Choose date range')).toBeInTheDocument()
     expect(screen.getByText('All providers')).toBeInTheDocument()
     expect(screen.getByLabelText('Claude config source')).toBeInTheDocument()
+  })
+
+  it('can label the Models global scope as clients without changing provider-route semantics', () => {
+    renderTopBar(full, undefined, undefined, false, false, 'Clients', [{ value: 'all', label: 'All clients' }])
+
+    expect(screen.getByRole('button', { name: 'Clients' })).toHaveTextContent('All clients')
+    expect(screen.queryByRole('button', { name: 'Providers' })).not.toBeInTheDocument()
   })
 
   it('wires the visible Refresh control only when the section exposes it', () => {
