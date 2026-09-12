@@ -442,6 +442,7 @@
 
 .models-provider-value > span:last-child,
 .models-source-value > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.models-provider-value.is-unavailable { color: var(--mut2); }
 .models-source-value { display: inline-flex; min-width: 0; align-items: center; gap: 5px; color: var(--mut); }
 .models-source-value .provider-logo { flex: 0 0 auto; }
 .models-source-value.is-unavailable, .models-unavailable { color: var(--mut2); }
