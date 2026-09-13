@@ -12,7 +12,10 @@ import { enrichModelsWithObservedPerformance } from './model-performance.js'
 import { aggregateModels } from './models-report.js'
 import { scanUserCorrections, medianTimeToFirstEditMs, aggregateFileChurn, computePricingCoverage } from './workflow-insights.js'
 import { buildPrAttribution, aggregateByBranch } from './sessions-report.js'
-import { scanAndDetect } from './optimize.js'
+import { scanAndDetect, type OptimizeResult } from './optimize.js'
+import { loadPersistedOptimizeResult, optimizeScanCacheKey, persistOptimizeResult } from './optimize-scan-cache.js'
+import { getMetroraCacheDir } from './product-paths.js'
+import { sessionCacheFingerprint } from './session-cache.js'
 import { getDaysInRange, loadDailyCache, emptyCache, BACKFILL_DAYS, toDateString, type DailyCache, type DailyEntry } from './daily-cache.js'
 import { getDailyCacheConfigHash } from './daily-cache-config.js'
 export { getDailyCacheConfigHash } from './daily-cache-config.js'
@@ -329,12 +332,33 @@ export async function buildDurablePeriod(periodInfo: PeriodInfo, opts: Aggregate
 }
 
 /**
+ * Optimize findings with a process-spanning cache. The scan re-reads every
+ * in-range Claude transcript, which is proportionate for an explicit fresh
+ * reconcile but not for the desktop's read-only snapshot polls (one CLI process
+ * each, so the in-process result cache never carries over). Snapshots serve the
+ * result persisted by the last scan, validated against the session-cache file
+ * fingerprint: snapshot parses never write that cache, so the fingerprint only
+ * moves when a real reconcile publishes. Fresh reconciles always re-scan and
+ * refresh the persisted entry.
+ */
+async function resolveOptimize(projects: ProjectSummary[], range: DateRange, provider: string, scopeId: string): Promise<OptimizeResult> {
+  const key = optimizeScanCacheKey(provider, range, scopeId)
+  const fingerprint = await sessionCacheFingerprint()
+  if (isSnapshotReadMode() && fingerprint) {
+    const persisted = await loadPersistedOptimizeResult(getMetroraCacheDir(), key, fingerprint)
+    if (persisted) return persisted
+  }
+  const result = await scanAndDetect(projects, range, provider)
+  if (fingerprint) await persistOptimizeResult(getMetroraCacheDir(), key, fingerprint, result)
+  return result
+}
+
+/**
  * Resolved-range aggregation shared by `status --format menubar-json` and the MCP server.
  * Pricing must already be loaded (callers run loadPricing first). When opts.optimize is
  * false, the expensive scanAndDetect pass is skipped (retryTax/routingWaste still computed).
  */
-export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: AggregateOpts = {}): Promise<MenubarPayload> {
-  const pf = opts.provider ?? 'all'
+export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: AggregateOpts = {}): Promise<MenubarPayload> {  const pf = opts.provider ?? 'all'
   const daysSelection = opts.daysSelection ?? null
   const registryResult = await readProjectRegistry()
   const registry = registryResult.registry
@@ -654,7 +678,7 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
 
   const breakdowns = buildUsageBreakdowns(scanProjects)
 
-  const optimize = opts.optimize === false ? null : await scanAndDetect(scanProjects, scanRange, pf)
+  const optimize = opts.optimize === false ? null : await resolveOptimize(scanProjects, scanRange, pf, scopeId)
   const granularRange = opts.daysSelection?.range ?? scanRange
   const granularHistory = opts.timeline === false ? undefined : buildGranularHistory(scanProjects, granularRange)
   const periodDailyHistory = cacheDaysForPeriod ? dailyEntriesToHistory(cacheDaysForPeriod) : undefined
