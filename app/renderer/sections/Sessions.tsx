@@ -493,10 +493,10 @@ export function Sessions({
                         <SessionSortHeader label="Output" sortKey="output" sort={sort} numeric onSort={onSortColumn}/>
                         <SessionSortHeader label="Cache R" sortKey="cacheRead" sort={sort} numeric onSort={onSortColumn}/>
                         <SessionSortHeader label="Cache W" sortKey="cacheWrite" sort={sort} numeric onSort={onSortColumn}/>
-                        <SessionSortHeader label="Cache×" sortKey="cache" sort={sort} numeric title="Cached input read per uncached input token · click to sort, double-click to reverse" onSort={onSortColumn}/>
+                        <SessionSortHeader label="Cache×" sortKey="cache" sort={sort} numeric title="Cached input read per uncached input token · click to sort, click again to reverse" onSort={onSortColumn}/>
                         <SessionSortHeader label="Total" sortKey="tokens" sort={sort} numeric onSort={onSortColumn}/>
                         <SessionSortHeader label="Cost" sortKey="cost" sort={sort} numeric onSort={onSortColumn}/>
-                        <SessionSortHeader label="Cost/1M" sortKey="unitCost" sort={sort} numeric title="Effective cost per one million total tokens · click to sort, double-click to reverse" onSort={onSortColumn}/>
+                        <SessionSortHeader label="Cost/1M" sortKey="unitCost" sort={sort} numeric title="Effective cost per one million total tokens · click to sort, click again to reverse" onSort={onSortColumn}/>
                         <SessionSortHeader label="Duration" sortKey="duration" sort={sort} numeric onSort={onSortColumn}/>
                         <SessionSortHeader label="Last Active" sortKey="recent" sort={sort} onSort={onSortColumn}/>
                       </tr>

@@ -296,11 +296,11 @@ export function ModelsByModelTable({
             <ModelSortHeader label="Output" sortKey="output" sort={sort} onSort={onSort}/>
             <ModelSortHeader label="Cache R" sortKey="cacheRead" sort={sort} onSort={onSort}/>
             <ModelSortHeader label="Cache W" sortKey="cacheWrite" sort={sort} onSort={onSort}/>
-            <ModelSortHeader label="Cache×" sortKey="cache" sort={sort} title="Cached input read per uncached input token · click to sort, double-click to reverse" onSort={onSort}/>
+            <ModelSortHeader label="Cache×" sortKey="cache" sort={sort} title="Cached input read per uncached input token · click to sort, click again to reverse" onSort={onSort}/>
             <ModelSortHeader label="Total" sortKey="tokens" sort={sort} onSort={onSort}/>
-            <ModelSortHeader label="ms/1K" sortKey="activeMs" sort={sort} title="Active generation milliseconds per 1,000 generated tokens · click to sort, double-click to reverse" onSort={onSort}/>
+            <ModelSortHeader label="ms/1K" sortKey="activeMs" sort={sort} title="Active generation milliseconds per 1,000 generated tokens · click to sort, click again to reverse" onSort={onSort}/>
             <ModelSortHeader label="Cost" sortKey="cost" sort={sort} onSort={onSort}/>
-            <ModelSortHeader label="Cost/1M" sortKey="unitCost" sort={sort} title="Effective observed cost per one million total tokens · click to sort, double-click to reverse" onSort={onSort}/>
+            <ModelSortHeader label="Cost/1M" sortKey="unitCost" sort={sort} title="Effective observed cost per one million total tokens · click to sort, click again to reverse" onSort={onSort}/>
           </tr>
         </thead>
         <tbody>
