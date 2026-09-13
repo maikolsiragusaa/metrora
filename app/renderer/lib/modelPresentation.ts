@@ -120,10 +120,23 @@ export function modelHouseIdFromName(value: string): ModelHouseId | undefined {
 
 /** Resolve the model house without ever treating a delivery route as proof of ownership. */
 export function modelHouseValues(row: Pick<DurableModelPresentationRow, 'brandId' | 'name' | 'rawModels'>): ModelHouseId[] {
+  // A model whose own display name names the Cursor product is Cursor's, even
+  // when the recorded brand disagrees (Cursor (auto) can route to Claude).
+  if (normalized(row.name).startsWith('cursor')) return ['cursor']
   const explicit = normalizeModelHouseId(row.brandId)
   if (explicit) return [explicit]
   const inferred = [...new Set([row.name, ...row.rawModels].map(modelHouseIdFromName).filter((value): value is ModelHouseId => value !== undefined))]
   return inferred.length > 0 ? inferred : ['unresolved']
+}
+
+/**
+ * House used for a single model identity line: a name that names the Cursor
+ * product wins over a conflicting recorded brand; otherwise the explicit
+ * brandId leads and the name is the conservative fallback.
+ */
+export function identityModelHouse(name: string, brandId?: string): ModelHouseId | undefined {
+  if (normalized(name).startsWith('cursor')) return 'cursor'
+  return normalizeModelHouseId(brandId) ?? modelHouseIdFromName(name)
 }
 
 export function modelHouseLabel(value: ModelHouseId): string {

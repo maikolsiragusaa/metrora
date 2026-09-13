@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  identityModelHouse,
   modelHouseIdFromName,
   modelHouseLabel,
   modelHouseLogoKey,
@@ -35,5 +36,13 @@ describe('model-house presentation', () => {
     expect(modelHouseLabel('poolside')).toBe('Poolside')
     expect(modelHouseLabel('nvidia')).toBe('NVIDIA')
     expect(modelHouseLabel('xiaomi')).toBe('Xiaomi')
+  })
+
+  it('lets a Cursor-named product win over a conflicting recorded brand', () => {
+    expect(modelHouseValues({ name: 'Cursor (auto)', brandId: 'anthropic', rawModels: ['cursor-auto'] })).toEqual(['cursor'])
+    expect(identityModelHouse('Cursor (auto)', 'anthropic')).toBe('cursor')
+    // Without a Cursor-named product, the recorded brand wins over name inference.
+    expect(identityModelHouse('GPT-5.4', 'anthropic')).toBe('anthropic')
+    expect(identityModelHouse('Claude Opus 4.8', undefined)).toBe('anthropic')
   })
 })

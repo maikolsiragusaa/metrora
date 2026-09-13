@@ -1,3 +1,4 @@
+import amazonBedrock from '../assets/providers/amazon-bedrock.svg'
 import antigravity from '../assets/providers/antigravity.png'
 import claude from '../assets/providers/claude.svg'
 import cline from '../assets/providers/cline.svg'
@@ -50,6 +51,7 @@ import zed from '../assets/providers/zed.jpg'
 import zerostack from '../assets/providers/zerostack.png'
 
 const SINGLE_LOGOS: Record<string, string> = {
+  'amazon-bedrock': amazonBedrock,
   antigravity,
   claude,
   cline,

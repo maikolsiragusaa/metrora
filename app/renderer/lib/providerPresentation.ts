@@ -59,5 +59,6 @@ export function providerLogoKey(value: string): string {
   if (normalizedValue.includes('openrouter') || normalizedValue.includes('open-router')) return 'openrouter'
   if (normalizedValue.includes('orcarouter') || normalizedValue.includes('orca-router')) return 'orcarouter'
   if (normalizedValue.includes('nvidia') || normalizedValue.includes('nemotron')) return 'nvidia'
+  if (normalizedValue.includes('bedrock')) return 'amazon-bedrock'
   return value
 }
