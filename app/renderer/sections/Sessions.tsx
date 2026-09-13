@@ -228,7 +228,17 @@ function SessionTableRow({ row, selected, onSelect }: { row: SessionRow; selecte
       <td className="session-client-cell">
         <span className="session-client"><ProviderLogo provider={row.provider} size={15} /><span>{clientLabel(row.provider)}</span></span>
       </td>
-      <td className="session-model-cell" title={modelLabel}>{modelLabel}</td>
+      <td className="session-model-cell" title={modelLabel}>
+        {row.models.length > 0 ? row.models.map(model => {
+          const house = modelHouseIdFromName(model)
+          return (
+            <span className="session-model-entry" key={model}>
+              {house ? <ProviderLogo provider={modelHouseLogoKey(house)} size={13} /> : null}
+              <span className="session-model-name">{model}</span>
+            </span>
+          )
+        }) : <span>Model not identified</span>}
+      </td>
       <td className="session-number">{row.turns.toLocaleString('en-US')}</td>
       <td className="session-number">{row.calls.toLocaleString('en-US')}</td>
       <td className="session-number token-input">{formatCompact(row.inputTokens)}</td>

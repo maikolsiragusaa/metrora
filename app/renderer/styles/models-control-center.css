@@ -166,6 +166,7 @@
   gap: 8px;
 }
 
+
 .models-provider-filter {
   --session-accent: var(--models-accent);
   --session-accent-strong: var(--models-accent-strong);
@@ -339,7 +340,7 @@
 
 .models-table-panel {
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid var(--line);
   border-radius: 11px;
   background: var(--models-surface);
@@ -366,6 +367,9 @@
 .models-table col.models-col-unit { width: 8%; }
 
 .models-table th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
   height: 34px;
   border-bottom: 1px solid var(--line);
   background: var(--models-surface-raised);

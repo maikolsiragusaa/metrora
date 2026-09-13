@@ -1006,6 +1006,9 @@ td:first-child { font-size: var(--fs-body); font-weight: var(--fw-body); }
 .session-client { display: inline-flex; min-width: 0; align-items: center; gap: 7px; overflow: hidden; }
 .session-client > span:last-child { overflow: hidden; text-overflow: ellipsis; }
 .session-model-cell { color: var(--ink) !important; }
+.session-model-entry { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+.session-model-entry:not(:first-child)::before { content: ','; margin-right: 6px; color: var(--mut2); }
+.session-model-entry .provider-logo { flex: 0 0 auto; }
 .session-last-active { color: var(--mut2) !important; font-variant-numeric: tabular-nums; }
 .sessions-table .token-input { color: #67d493; }
 .sessions-table .token-output { color: #f49a87; }

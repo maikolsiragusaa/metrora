@@ -2,12 +2,14 @@ import antigravity from '../assets/providers/antigravity.png'
 import claude from '../assets/providers/claude.svg'
 import cline from '../assets/providers/cline.svg'
 import codewhale from '../assets/providers/codewhale.svg'
+import cohere from '../assets/providers/cohere.png'
 import copilotDark from '../assets/providers/copilot-dark.svg'
 import copilotLight from '../assets/providers/copilot-light.svg'
 import crush from '../assets/providers/crush.png'
 import cursorDark from '../assets/providers/cursor-dark.svg'
 import cursorLight from '../assets/providers/cursor-light.svg'
 import cursorAgent from '../assets/providers/cursor-agent.jpg'
+import deepseek from '../assets/providers/deepseek.svg'
 import devin from '../assets/providers/devin.png'
 import droid from '../assets/providers/droid.png'
 import forge from '../assets/providers/forge.png'
@@ -20,19 +22,29 @@ import ibmBob from '../assets/providers/ibm-bob.svg'
 import kiloCode from '../assets/providers/kilo-code.png'
 import kimi from '../assets/providers/kimi.svg'
 import kiro from '../assets/providers/kiro.png'
+import meta from '../assets/providers/meta.svg'
+import microsoft from '../assets/providers/microsoft.svg'
+import minimax from '../assets/providers/minimax.png'
 import mistralVibe from '../assets/providers/mistral-vibe.svg'
 import mux from '../assets/providers/mux.png'
+import nvidia from '../assets/providers/nvidia.svg'
 import openclaw from '../assets/providers/openclaw.jpg'
 import opencodeDark from '../assets/providers/opencode-dark.svg'
 import opencodeLight from '../assets/providers/opencode-light.svg'
 import openaiDark from '../assets/providers/openai-dark.svg'
 import openaiLight from '../assets/providers/openai-light.svg'
+import openrouterDark from '../assets/providers/openrouter-dark.svg'
+import openrouterLight from '../assets/providers/openrouter-light.svg'
+import orcarouter from '../assets/providers/orcarouter.png'
 import pi from '../assets/providers/pi.png'
+import poolside from '../assets/providers/poolside.png'
 import qwenDark from '../assets/providers/qwen-dark.svg'
 import qwenLight from '../assets/providers/qwen-light.svg'
 import rooCode from '../assets/providers/roo-code.png'
 import vercelGateway from '../assets/providers/vercel-gateway.png'
 import warp from '../assets/providers/warp.jpg'
+import xiaomi from '../assets/providers/xiaomi.svg'
+import zai from '../assets/providers/zai.svg'
 import zcode from '../assets/providers/zcode.jpg'
 import zed from '../assets/providers/zed.jpg'
 import zerostack from '../assets/providers/zerostack.png'
@@ -42,8 +54,10 @@ const SINGLE_LOGOS: Record<string, string> = {
   claude,
   cline,
   codewhale,
+  cohere,
   crush,
   'cursor-agent': cursorAgent,
+  deepseek,
   devin,
   droid,
   forge,
@@ -54,13 +68,21 @@ const SINGLE_LOGOS: Record<string, string> = {
   'kilo-code': kiloCode,
   kimi,
   kiro,
+  meta,
+  microsoft,
+  minimax,
   'mistral-vibe': mistralVibe,
   mux,
+  nvidia,
   openclaw,
+  orcarouter,
   pi,
+  poolside,
   'roo-code': rooCode,
   'vercel-gateway': vercelGateway,
   warp,
+  xiaomi,
+  zai,
   zcode,
   zed,
   zerostack,
@@ -72,6 +94,7 @@ const THEMED_LOGOS: Record<string, { light: string; dark: string }> = {
   cursor: { light: cursorLight, dark: cursorDark },
   grok: { light: grokLight, dark: grokDark },
   opencode: { light: opencodeLight, dark: opencodeDark },
+  openrouter: { light: openrouterLight, dark: openrouterDark },
   qwen: { light: qwenLight, dark: qwenDark },
 }
 
