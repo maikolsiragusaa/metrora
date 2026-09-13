@@ -17,7 +17,7 @@ import { getDaysInRange, loadDailyCache, emptyCache, BACKFILL_DAYS, toDateString
 import { getDailyCacheConfigHash } from './daily-cache-config.js'
 export { getDailyCacheConfigHash } from './daily-cache-config.js'
 import { buildGranularHistory } from './granular-history.js'
-import { isSnapshotReadMode, withReadFreshness } from './read-lifecycle.js'
+import { consumeFreshReconcileOutcome, isSnapshotReadMode, withReadFreshness } from './read-lifecycle.js'
 import { hydrateCopilotDailyCache } from './copilot-chat-journal-hydration.js'
 import { buildUsageBreakdowns } from './usage-breakdowns.js'
 import { friendlyProject, populateProjectRollups } from './project-report.js'
@@ -673,6 +673,7 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
     ),
     cache,
     effectivelyScoped,
+    consumeFreshReconcileOutcome(),
   )
   payload.projectScope = buildProjectScopePayload(registry, registryResult.status, scanProjects, scopeId, cache.days)
   payload.mobileFoundation = buildMobileFoundationPayload(payload, scanProjects, registry, opts.trendGranularity)

@@ -8,6 +8,7 @@ import { Sankey } from '../components/Sankey'
 import { SectionSkeleton } from '../components/Skeleton'
 import { StackedBars } from '../components/StackedBars'
 import { StaleBanner } from '../components/StaleBanner'
+import { SectionFreshness } from '../components/SectionFreshness'
 import { type Polled, usePolled } from '../hooks/usePolled'
 import { formatUsd } from '../lib/format'
 import { metrora } from '../lib/ipc'
@@ -173,6 +174,7 @@ function SpendPage({
   return (
     <>
       {staleError && <StaleBanner error={staleError} />}
+      <SectionFreshness report={flow} />
 
       <Panel title="Daily spend by model" right="Cost over time" className="spend-chart-panel">
         {chartHasSpend

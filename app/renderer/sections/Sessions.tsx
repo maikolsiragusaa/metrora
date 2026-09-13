@@ -7,6 +7,7 @@ import { ProviderFilterStrip } from '../components/ProviderFilterStrip'
 import { ProviderLogo } from '../components/ProviderLogo'
 import { SectionSkeleton } from '../components/Skeleton'
 import { StaleBanner } from '../components/StaleBanner'
+import { SectionFreshness } from '../components/SectionFreshness'
 import { usePolled } from '../hooks/usePolled'
 import { formatCompact, formatDuration, formatUsd, shortenProjectPath } from '../lib/format'
 import { metrora } from '../lib/ipc'
@@ -425,6 +426,7 @@ export function Sessions({
             <div className="sessions-title-line">
               <h1>Sessions</h1>
               <span>{sessionCountLabel} <i>·</i> {formatUsd(totalCost)} total spend <i>·</i> {formatCompact(totalTokens)} tokens</span>
+              <SectionFreshness report={report} />
             </div>
             {unavailableDetail > 0 && query === '' ? <p>{unavailableDetail.toLocaleString('en-US')} older session{unavailableDetail === 1 ? '' : 's'} remain in durable historical totals without source detail on this device.</p> : null}
           </div>

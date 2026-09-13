@@ -5,6 +5,7 @@ import { Dropdown } from '../components/Dropdown'
 import { EmptyNote } from '../components/EmptyState'
 import { Panel } from '../components/Panel'
 import { SectionSkeleton } from '../components/Skeleton'
+import { SectionFreshness } from '../components/SectionFreshness'
 import { usePolled } from '../hooks/usePolled'
 import { formatCompact, formatUsd } from '../lib/format'
 import { metrora } from '../lib/ipc'
@@ -107,6 +108,7 @@ export function Compare({
   return (
     <>
       {range && <RangeNote />}
+      <SectionFreshness report={models} />
       <div className="cmp-picker" aria-label="Models being compared">
         <Dropdown
           id="compare-first-model"
@@ -182,6 +184,7 @@ function CompareReport({
       <p className="cmp-range-note" role="note">
         Observed on your local workloads. Cost and usage are measured history, not a benchmark score or a claim about general model quality.
       </p>
+      <SectionFreshness report={report} />
       <ObservedUsageCard modelA={report.data.modelA} modelB={report.data.modelB} />
       <div className="cmp-pair">
         <MetricCard title="Observed efficiency" rows={efficiency} modelA={report.data.modelA.model} modelB={report.data.modelB.model} />

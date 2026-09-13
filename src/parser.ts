@@ -59,7 +59,7 @@ import type {
 } from './types.js'
 import { classifyTurn, BASH_TOOLS, EDIT_TOOLS } from './classifier.js'
 import { extractBashCommands } from './bash-utils.js'
-import { isSnapshotReadMode } from './read-lifecycle.js'
+import { isSnapshotReadMode, markFreshReconcileSkipped } from './read-lifecycle.js'
 import { getClaudeNativeIdentity, reconcileClaudeNativeCalls } from './claude-native-reconciliation.js'
 import { resolveParserDiscovery } from './parser-discovery-state.js'
 import { applySessionCacheDiscoveryCompleteness } from './session-cache-completeness.js'
@@ -3679,6 +3679,9 @@ async function parseAllSessionsWithHistoricalContext(dateRange?: DateRange, prov
   const priorSnapshot = diskCache
   const refresh = await acquireCacheRefreshLock()
   if (refresh.outcome === 'timed-out' || refresh.outcome === 'unavailable') {
+    // Serving the prior snapshot exits 0 like a real reconcile; record the
+    // downgrade so the payload's freshness stamp cannot claim a fresh read.
+    markFreshReconcileSkipped('skipped-lock-busy')
     return runParse(key, priorSnapshot, dateRange, providerFilter, { readOnly: true })
   }
   if (refresh.outcome === 'completed-by-other') {
@@ -3692,6 +3695,7 @@ async function parseAllSessionsWithHistoricalContext(dateRange?: DateRange, prov
     return await runParse(key, diskCache, dateRange, providerFilter, { refreshLock: refresh.handle })
   } catch (err) {
     if (!(err instanceof RefreshFenceLostError) && !(err instanceof RefreshPublicationUnavailableError)) throw err
+    markFreshReconcileSkipped('skipped-fence-lost')
     return runParse(key, await loadCache(), dateRange, providerFilter, { readOnly: true })
   } finally {
     await refresh.handle.release()
