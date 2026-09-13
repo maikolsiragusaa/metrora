@@ -15,17 +15,11 @@ import { ModelsCompareWorkspace } from './ModelsSidePanels'
 type DurableModelRow = DurableModelPresentationRow
 type UnpricedModel = { model: string; calls: number; tokens: number }
 type ModelSort = 'cost' | 'tokens' | 'calls' | 'cache' | 'activeMs' | 'unitCost'
+type ModelSortKey = ModelSort | 'input' | 'output' | 'cacheRead' | 'cacheWrite'
+type ModelSortDirection = 'desc' | 'asc'
+type ModelColumnSort = { key: ModelSortKey; direction: ModelSortDirection }
 type CostQualityKind = 'settled' | 'estimated' | 'partial' | 'unpriced' | 'unresolved'
 type CostQuality = { kind: CostQualityKind; label: string; detail: string }
-
-const MODEL_SORTS: Array<{ value: ModelSort; label: string }> = [
-  { value: 'cost', label: 'Cost' },
-  { value: 'tokens', label: 'Tokens' },
-  { value: 'calls', label: 'Calls' },
-  { value: 'cache', label: 'Cache ×' },
-  { value: 'activeMs', label: 'ms / 1K' },
-  { value: 'unitCost', label: 'Cost / 1M' },
-]
 
 function fmtInt(value: number): string {
   return value.toLocaleString('en-US')
@@ -93,33 +87,33 @@ function formatMsPer1K(value: number | null): string {
   return value == null ? '—' : `${value.toFixed(1)}ms`
 }
 
-function compareNullableDescending(left: number | null, right: number | null): number {
-  if (left == null && right == null) return 0
-  if (left == null) return 1
-  if (right == null) return -1
-  return right - left
-}
-
-function compareNullableAscending(left: number | null, right: number | null): number {
-  if (left == null && right == null) return 0
-  if (left == null) return 1
-  if (right == null) return -1
-  return left - right
-}
-
-function sortRows(rows: DurableModelRow[], sort: ModelSort): DurableModelRow[] {
+/**
+ * Direction is always numeric (desc = larger values first) so the header arrow
+ * and aria-sort stay truthful. Unavailable (null) metrics sort last in both
+ * directions; the original row index breaks ties for stability.
+ */
+function sortRows(rows: DurableModelRow[], sort: ModelColumnSort): DurableModelRow[] {
+  const sign = sort.direction === 'asc' ? -1 : 1
   return rows
     .map((row, index) => ({ row, index }))
     .sort((left, right) => {
       const a = left.row
       const b = right.row
-      let comparison = 0
-      if (sort === 'tokens') comparison = compareNullableDescending(modelTotal(a), modelTotal(b))
-      else if (sort === 'calls') comparison = b.calls - a.calls
-      else if (sort === 'cache') comparison = compareNullableDescending(modelCacheReuse(a), modelCacheReuse(b))
-      else if (sort === 'activeMs') comparison = compareNullableAscending(modelMsPer1K(a), modelMsPer1K(b))
-      else if (sort === 'unitCost') comparison = compareNullableAscending(modelUnitCost(a), modelUnitCost(b))
-      else comparison = (b.cost - a.cost) || (b.calls - a.calls)
+      const key = sort.key
+      let comparison: number
+      if (key === 'tokens' || key === 'cache' || key === 'activeMs' || key === 'unitCost') {
+        const leftValue = key === 'tokens' ? modelTotal(a) : key === 'cache' ? modelCacheReuse(a) : key === 'activeMs' ? modelMsPer1K(a) : modelUnitCost(a)
+        const rightValue = key === 'tokens' ? modelTotal(b) : key === 'cache' ? modelCacheReuse(b) : key === 'activeMs' ? modelMsPer1K(b) : modelUnitCost(b)
+        if (leftValue == null && rightValue == null) comparison = 0
+        else if (leftValue == null) comparison = 1
+        else if (rightValue == null) comparison = -1
+        else comparison = sign * (rightValue - leftValue)
+      } else {
+        const leftValue = key === 'input' ? a.inputTokens : key === 'output' ? a.outputTokens : key === 'cacheRead' ? a.cacheReadTokens : key === 'cacheWrite' ? a.cacheWriteTokens : a.cost
+        const rightValue = key === 'input' ? b.inputTokens : key === 'output' ? b.outputTokens : key === 'cacheRead' ? b.cacheReadTokens : key === 'cacheWrite' ? b.cacheWriteTokens : b.cost
+        comparison = sign * (rightValue - leftValue)
+      }
+      if (key === 'cost' && comparison === 0) comparison = sign * (b.calls - a.calls)
       return comparison || left.index - right.index
     })
     .map(item => item.row)
@@ -286,6 +280,43 @@ function ModelTableRow({
         {unitCost == null ? unavailableValue('Cost / 1M is unavailable for this model.') : formatUsd(unitCost)}
       </td>
     </tr>
+  )
+}
+
+/** Sortable table header: click sorts by the column (default direction),
+ * double-click reverses the active column's direction. */
+function ModelSortHeader({
+  label,
+  sortKey,
+  sort,
+  title,
+  onSort,
+  onReverseSort,
+}: {
+  label: string
+  sortKey: ModelSortKey
+  sort: ModelColumnSort
+  title?: string
+  onSort: (key: ModelSortKey) => void
+  onReverseSort: (key: ModelSortKey) => void
+}) {
+  const active = sort.key === sortKey
+  return (
+    <th
+      className="models-number"
+      aria-sort={active ? (sort.direction === 'desc' ? 'descending' : 'ascending') : undefined}
+      title={title ?? 'Click to sort by this column · double-click to reverse the direction'}
+    >
+      <button
+        type="button"
+        className={`models-sort-header${active ? ' on' : ''}`}
+        onClick={() => onSort(sortKey)}
+        onDoubleClick={() => onReverseSort(sortKey)}
+      >
+        <span>{label}</span>
+        {active && <span className="models-sort-arrow" aria-hidden="true">{sort.direction === 'desc' ? '▼' : '▲'}</span>}
+      </button>
+    </th>
   )
 }
 
@@ -474,7 +505,7 @@ export function ModelsControlCenter({
   const [query, setQuery] = useState('')
   const [modelHouseFilter, setModelHouseFilter] = useState('all')
   const [sourceFilter, setSourceFilter] = useState('all')
-  const [sort, setSort] = useState<ModelSort>('cost')
+  const [sort, setSort] = useState<ModelColumnSort>({ key: 'cost', direction: 'desc' })
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
   const rows = useMemo(() => {
@@ -525,6 +556,14 @@ export function ModelsControlCenter({
   const selectedRow = selectedId ? filteredRows.find(row => row.presentationIdentity === selectedId) ?? null : null
   const hasFilters = query.trim().length > 0 || modelHouseFilter !== 'all' || sourceFilter !== 'all'
 
+  const onSortColumn = (key: ModelSortKey) => {
+    setSort(current => ({ key, direction: current.key === key ? current.direction : 'desc' }))
+  }
+
+  const onReverseSortColumn = (key: ModelSortKey) => {
+    setSort(current => current.key === key ? { key, direction: current.direction === 'desc' ? 'asc' : 'desc' } : current)
+  }
+
   if (mode === 'compare') return <ModelsCompareWorkspace rows={rows} onExit={onExitCompare} />
 
   const clearFilters = () => {
@@ -555,10 +594,7 @@ export function ModelsControlCenter({
         </div>
 
         <div className="models-sort-toolbar">
-          <div className="models-sort" role="group" aria-label="Sort models">
-            <span>Sort</span>
-            {MODEL_SORTS.map(option => <button key={option.value} type="button" aria-pressed={sort === option.value} onClick={() => setSort(option.value)}>{option.label}</button>)}
-          </div>
+          <span className="models-sort-hint" role="note">Click a column to sort · double-click to reverse</span>
           <span className="models-result-count">{filteredRows.length.toLocaleString('en-US')} of {rows.length.toLocaleString('en-US')} models</span>
         </div>
 
@@ -575,9 +611,19 @@ export function ModelsControlCenter({
               </colgroup>
               <thead>
                 <tr>
-                  <th title="Model brand identity and display name">Model</th><th title="Delivery provider or API route">Provider</th><th title="Metrora client/source that contributed the usage">Source</th><th className="models-number">Calls</th><th className="models-number">Input</th><th className="models-number">Output</th>
-                  <th className="models-number">Cache R</th><th className="models-number">Cache W</th><th className="models-number" title="Cached input read per uncached input token">Cache×</th>
-                  <th className="models-number">Total</th><th className="models-number" title="Active generation milliseconds per 1,000 generated tokens">ms/1K</th><th className="models-number">Cost</th><th className="models-number">Cost/1M</th>
+                  <th title="Model brand identity and display name">Model</th>
+                  <th title="Delivery provider or API route">Provider</th>
+                  <th title="Metrora client/source that contributed the usage">Source</th>
+                  <ModelSortHeader label="Calls" sortKey="calls" sort={sort} onSort={onSortColumn} onReverseSort={onReverseSortColumn} />
+                  <ModelSortHeader label="Input" sortKey="input" sort={sort} onSort={onSortColumn} onReverseSort={onReverseSortColumn} />
+                  <ModelSortHeader label="Output" sortKey="output" sort={sort} onSort={onSortColumn} onReverseSort={onReverseSortColumn} />
+                  <ModelSortHeader label="Cache R" sortKey="cacheRead" sort={sort} onSort={onSortColumn} onReverseSort={onReverseSortColumn} />
+                  <ModelSortHeader label="Cache W" sortKey="cacheWrite" sort={sort} onSort={onSortColumn} onReverseSort={onReverseSortColumn} />
+                  <ModelSortHeader label="Cache×" sortKey="cache" sort={sort} title="Cached input read per uncached input token · click to sort, double-click to reverse" onSort={onSortColumn} onReverseSort={onReverseSortColumn} />
+                  <ModelSortHeader label="Total" sortKey="tokens" sort={sort} onSort={onSortColumn} onReverseSort={onReverseSortColumn} />
+                  <ModelSortHeader label="ms/1K" sortKey="activeMs" sort={sort} title="Active generation milliseconds per 1,000 generated tokens · click to sort, double-click to reverse" onSort={onSortColumn} onReverseSort={onReverseSortColumn} />
+                  <ModelSortHeader label="Cost" sortKey="cost" sort={sort} onSort={onSortColumn} onReverseSort={onReverseSortColumn} />
+                  <ModelSortHeader label="Cost/1M" sortKey="unitCost" sort={sort} title="Effective observed cost per one million total tokens · click to sort, double-click to reverse" onSort={onSortColumn} onReverseSort={onReverseSortColumn} />
                 </tr>
               </thead>
               <tbody>

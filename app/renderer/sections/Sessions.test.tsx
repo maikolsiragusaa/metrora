@@ -40,6 +40,12 @@ const rows: SessionRow[] = [
   session({ sessionId: 'middle', title: 'Middle Codex', project: 'metrora-site', provider: 'codex', endedAt: '2026-08-07T11:30:00.000Z' }),
 ]
 
+/** Column labels without the direction glyph, stable across active sorts. */
+function headerLabels(table: HTMLElement): string[] {
+  return within(table).getAllByRole('columnheader').map(header =>
+    header.querySelector('.session-sort-header span')?.textContent ?? header.textContent)
+}
+
 describe('Sessions', () => {
   beforeEach(() => {
     getSessions.mockReset()
@@ -77,16 +83,35 @@ describe('Sessions', () => {
     ])
     render(<Sessions period="lifetime" provider="all" />)
     const table = await screen.findByRole('table', { name: 'Detailed sessions' })
-    const headers = within(table).getAllByRole('columnheader').map(header => header.textContent)
+    const headers = headerLabels(table)
     const initialRows = within(table).getAllByRole('row').slice(1)
     expect(initialRows[0]).toHaveTextContent('Active later')
     expect(within(table).getByRole('columnheader', { name: 'Last Active' })).toBeInTheDocument()
     expect(within(table).queryByRole('columnheader', { name: 'Started' })).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('tab', { name: 'Cost' }))
+    await user.click(within(table).getByRole('button', { name: 'Cost' }))
     const sortedTable = screen.getByRole('table', { name: 'Detailed sessions' })
     expect(within(sortedTable).getAllByRole('row').slice(1)[0]).toHaveTextContent('Started later')
-    expect(within(sortedTable).getAllByRole('columnheader').map(header => header.textContent)).toEqual(headers)
+    expect(headerLabels(sortedTable)).toEqual(headers)
+  })
+
+  it('reverses the active column direction on double-click', async () => {
+    const user = userEvent.setup()
+    getSessions.mockResolvedValue([
+      session({ sessionId: 'low-cost', title: 'Low cost', project: 'metrora', provider: 'codex', cost: 1 }),
+      session({ sessionId: 'high-cost', title: 'High cost', project: 'metrora', provider: 'codex', cost: 5 }),
+    ])
+    render(<Sessions period="lifetime" provider="all" />)
+    const table = await screen.findByRole('table', { name: 'Detailed sessions' })
+    const costHeader = within(table).getByRole('button', { name: 'Cost' })
+
+    await user.click(costHeader)
+    expect(within(table).getAllByRole('row').slice(1)[0]).toHaveTextContent('High cost')
+    expect(within(table).getByRole('columnheader', { name: 'Cost' })).toHaveAttribute('aria-sort', 'descending')
+
+    await user.dblClick(costHeader)
+    expect(within(table).getAllByRole('row').slice(1)[0]).toHaveTextContent('Low cost')
+    expect(within(table).getByRole('columnheader', { name: 'Cost' })).toHaveAttribute('aria-sort', 'ascending')
   })
 
   it('sorts by Calls while changing row order only', async () => {
@@ -98,15 +123,14 @@ describe('Sessions', () => {
     render(<Sessions period="lifetime" provider="all" />)
 
     const table = await screen.findByRole('table', { name: 'Detailed sessions' })
-    const headers = within(table).getAllByRole('columnheader').map(header => header.textContent)
-    expect(headers).toEqual(['Session', 'Client', 'Model', 'Turn', 'Calls', 'Input', 'Output', 'Cache R', 'Cache W', 'Cache×', 'Total', 'Cost', 'Cost/1M', 'Duration', 'Last Active'])
+    expect(headerLabels(table)).toEqual(['Session', 'Client', 'Model', 'Turn', 'Calls', 'Input', 'Output', 'Cache R', 'Cache W', 'Cache×', 'Total', 'Cost', 'Cost/1M', 'Duration', 'Last Active'])
     expect(table.closest('[data-scroll-mode="page"]')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('tab', { name: 'Calls' }))
+    await user.click(within(table).getByRole('button', { name: 'Calls' }))
 
     const sortedTable = screen.getByRole('table', { name: 'Detailed sessions' })
     expect(within(sortedTable).getAllByRole('row').slice(1)[0]).toHaveTextContent('Many calls')
-    expect(within(sortedTable).getAllByRole('columnheader').map(header => header.textContent)).toEqual(headers)
+    expect(headerLabels(sortedTable)).toEqual(['Session', 'Client', 'Model', 'Turn', 'Calls', 'Input', 'Output', 'Cache R', 'Cache W', 'Cache×', 'Total', 'Cost', 'Cost/1M', 'Duration', 'Last Active'])
   })
 
   it('sorts by exact Duration while retaining the full table schema', async () => {
@@ -118,7 +142,7 @@ describe('Sessions', () => {
     render(<Sessions period="lifetime" provider="all" />)
 
     const table = await screen.findByRole('table', { name: 'Detailed sessions' })
-    await user.click(screen.getByRole('tab', { name: 'Duration' }))
+    await user.click(within(table).getByRole('button', { name: 'Duration' }))
 
     expect(within(table).getAllByRole('row').slice(1)[0]).toHaveTextContent('Long session')
     expect(within(table).getAllByRole('columnheader')).toHaveLength(15)
@@ -185,75 +209,93 @@ describe('Sessions', () => {
     expect(within(table).getByRole('row', { name: /Claude.*1 sessions/ })).toBeInTheDocument()
     expect(within(table).getByRole('row', { name: /Codex.*2 sessions/ })).toBeInTheDocument()
 
-    await user.click(screen.getByRole('tab', { name: 'Recent' }))
+    await user.click(within(table).getByRole('button', { name: 'Last Active' }))
     expect(toggle).toHaveAttribute('aria-pressed', 'false')
   })
 
-  it('calls the all-provider filter by its actual meaning and lifts internal ids', async () => {
+  it('filters sessions by model brand from the strip without touching the scope authority', async () => {
     const user = userEvent.setup()
-    const onProviderChange = vi.fn()
-    render(
-      <Sessions
-        period="lifetime"
-        provider="codex"
-        detectedProviders={[{ id: 'codex', label: 'Codex' }, { id: 'claude', label: 'Claude' }]}
-        onProviderChange={onProviderChange}
-      />,
-    )
+    render(<Sessions period="lifetime" provider="all" />)
 
     await screen.findByRole('table', { name: 'Detailed sessions' })
-    await user.click(screen.getByRole('button', { name: 'All providers' }))
-    expect(onProviderChange).toHaveBeenCalledWith('all')
-    await user.click(screen.getByRole('button', { name: 'Claude' }))
-    expect(onProviderChange).toHaveBeenLastCalledWith('claude')
+    // 'Default model' resolves to no known brand, so the strip also exposes the
+    // explicit unresolved entry instead of hiding those sessions.
+    expect(screen.getByRole('button', { name: 'Anthropic' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Brand unavailable' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Anthropic' }))
+    const table = screen.getByRole('table', { name: 'Detailed sessions' })
+    expect(within(table).getByText('Newest Claude')).toBeInTheDocument()
+    expect(within(table).queryByText('Older Codex')).not.toBeInTheDocument()
+    expect(within(table).queryByText('Middle Codex')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Brand unavailable' }))
+    expect(within(table).getByText('Older Codex')).toBeInTheDocument()
+    expect(within(table).getByText('Middle Codex')).toBeInTheDocument()
+    expect(within(table).queryByText('Newest Claude')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'All brands' }))
+    expect(within(table).getByText('Older Codex')).toBeInTheDocument()
+    expect(within(table).getByText('Newest Claude')).toBeInTheDocument()
   })
 
-  it('keeps a provider click active after the strip pointer lifecycle runs', async () => {
+  it('keeps a brand click active after the strip pointer lifecycle runs', async () => {
     const user = userEvent.setup()
-    const onProviderChange = vi.fn()
-    render(
-      <Sessions
-        period="lifetime"
-        provider="all"
-        detectedProviders={[{ id: 'codex', label: 'Codex' }, { id: 'claude', label: 'Claude' }]}
-        onProviderChange={onProviderChange}
-      />,
-    )
+    render(<Sessions period="lifetime" provider="all" />)
 
     await screen.findByRole('table', { name: 'Detailed sessions' })
-    const strip = screen.getByRole('group', { name: 'Filter sessions by client' })
+    const strip = screen.getByRole('group', { name: 'Filter sessions by brand' })
     fireEvent.pointerDown(strip, { pointerId: 2, pointerType: 'mouse', button: 0, clientX: 200 })
     fireEvent.pointerUp(strip, { pointerId: 2, pointerType: 'mouse', button: 0, clientX: 200 })
-    await user.click(screen.getByRole('button', { name: 'Claude' }))
+    await user.click(screen.getByRole('button', { name: 'Anthropic' }))
 
-    expect(onProviderChange).toHaveBeenCalledWith('claude')
+    const table = screen.getByRole('table', { name: 'Detailed sessions' })
+    expect(within(table).getByText('Newest Claude')).toBeInTheDocument()
+    expect(within(table).queryByText('Older Codex')).not.toBeInTheDocument()
   })
 
-  it('keeps every detected provider directly reachable in one overflow strip', async () => {
-    const providers = Array.from({ length: 11 }, (_, index) => ({ id: `provider-${index}`, label: `Provider ${index}` }))
-    render(<Sessions period="lifetime" provider="all" detectedProviders={providers} />)
+  it('keeps every observed brand directly reachable in one overflow strip', async () => {
+    const brandModels = ['gpt-5', 'claude-opus-4', 'gemini-2-pro', 'glm-4.6', 'deepseek-v3', 'qwen-max', 'kimi-k2', 'mistral-large', 'grok-3', 'llama-4', 'command-r']
+    getSessions.mockResolvedValue(brandModels.map((model, index) => session({
+      sessionId: `brand-${index}`,
+      title: `Brand session ${index}`,
+      project: 'metrora',
+      provider: 'codex',
+      models: [model],
+    })))
+    render(<Sessions period="lifetime" provider="all" />)
 
     await screen.findByRole('table', { name: 'Detailed sessions' })
-    expect(screen.getByRole('button', { name: 'Provider 10' })).toBeInTheDocument()
+    for (const brand of ['OpenAI', 'Anthropic', 'Google', 'Z.ai', 'DeepSeek', 'Qwen', 'Moonshot', 'Mistral', 'xAI', 'Meta', 'Cohere']) {
+      expect(screen.getByRole('button', { name: brand })).toBeInTheDocument()
+    }
     expect(screen.queryByRole('button', { name: /^More$/ })).not.toBeInTheDocument()
-    expect(screen.getByRole('group', { name: 'Filter sessions by client' })).toHaveAttribute('data-provider-strip', 'true')
+    expect(screen.getByRole('group', { name: 'Filter sessions by brand' })).toHaveAttribute('data-provider-strip', 'true')
   })
 
-  it('supports horizontal drag scrolling without activating a provider button', async () => {
-    const providers = Array.from({ length: 11 }, (_, index) => ({ id: `provider-${index}`, label: `Provider ${index}` }))
-    const onProviderChange = vi.fn()
-    render(<Sessions period="lifetime" provider="all" detectedProviders={providers} onProviderChange={onProviderChange} />)
+  it('supports horizontal drag scrolling without activating a brand button', async () => {
+    const brandModels = ['gpt-5', 'claude-opus-4', 'gemini-2-pro', 'glm-4.6', 'deepseek-v3', 'qwen-max', 'kimi-k2', 'mistral-large', 'grok-3', 'llama-4', 'command-r']
+    getSessions.mockResolvedValue(brandModels.map((model, index) => session({
+      sessionId: `brand-${index}`,
+      title: `Brand session ${index}`,
+      project: 'metrora',
+      provider: 'codex',
+      models: [model],
+    })))
+    render(<Sessions period="lifetime" provider="all" />)
 
     await screen.findByRole('table', { name: 'Detailed sessions' })
-    const strip = screen.getByRole('group', { name: 'Filter sessions by client' })
+    const strip = screen.getByRole('group', { name: 'Filter sessions by brand' })
     fireEvent.pointerDown(strip, { pointerId: 1, pointerType: 'mouse', button: 0, clientX: 200 })
     fireEvent.pointerMove(strip, { pointerId: 1, pointerType: 'mouse', buttons: 1, clientX: 120 })
     fireEvent.pointerUp(strip, { pointerId: 1, pointerType: 'mouse', button: 0, clientX: 120 })
 
     expect(strip).toHaveAttribute('data-scroll-interaction', 'drag-or-wheel')
     expect(strip.scrollLeft).toBe(80)
-    fireEvent.click(screen.getByRole('button', { name: 'Provider 0' }))
-    expect(onProviderChange).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'OpenAI' }))
+    const table = screen.getByRole('table', { name: 'Detailed sessions' })
+    expect(within(table).getByText('Brand session 0')).toBeInTheDocument()
+    expect(within(table).getByText('Brand session 10')).toBeInTheDocument()
   })
 
   it('keeps the visible Project, Model, Client, and Date controls as real row filters', async () => {
@@ -263,18 +305,21 @@ describe('Sessions', () => {
     const filters = screen.getByRole('group', { name: 'Session filters' })
 
     expect(within(filters).getByRole('textbox', { name: 'Search sessions' })).toBeInTheDocument()
-    expect(within(filters).getAllByRole('combobox')).toHaveLength(4)
+    expect(within(filters).getAllByRole('button', { expanded: false })).toHaveLength(4)
     expect(filters).toHaveAttribute('data-filter-layout', 'single-row-when-closed')
 
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Project' }), 'obsign')
+    await user.click(within(filters).getByRole('button', { name: 'Project' }))
+    await user.click(screen.getByRole('option', { name: 'obsign' }))
     expect(within(table).getByText('Newest Claude')).toBeInTheDocument()
     expect(within(table).queryByText('Middle Codex')).not.toBeInTheDocument()
     expect(within(table).queryByText('Older Codex')).not.toBeInTheDocument()
 
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Model' }), 'claude-opus-4-6')
+    await user.click(within(filters).getByRole('button', { name: 'Model' }))
+    await user.click(screen.getByRole('option', { name: 'claude-opus-4-6' }))
     expect(within(table).getByText('Newest Claude')).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: 'Client' })).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: 'Date' })).toBeInTheDocument()
+    expect(within(filters).getByText('obsign')).toBeInTheDocument()
+    expect(within(filters).getByRole('button', { name: 'Client' })).toBeInTheDocument()
+    expect(within(filters).getByRole('button', { name: 'Date' })).toBeInTheDocument()
   })
 
   it('filters searchable session metadata and clears an empty search', async () => {
@@ -430,21 +475,11 @@ describe('Sessions', () => {
     expect(getSessions).toHaveBeenCalledTimes(1)
   })
 
-  it('renders an honest empty state while keeping provider recovery controls', async () => {
-    const user = userEvent.setup()
+  it('renders an honest empty state without inventing a brand strip', async () => {
     getSessions.mockResolvedValue([])
-    const onProviderChange = vi.fn()
-    render(
-      <Sessions
-        period="week"
-        provider="gemini"
-        detectedProviders={[{ id: 'codex', label: 'Codex' }]}
-        onProviderChange={onProviderChange}
-      />,
-    )
+    render(<Sessions period="week" provider="gemini" />)
 
     expect(await screen.findByText('No detailed sessions are available in this range.')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'All providers' }))
-    expect(onProviderChange).toHaveBeenCalledWith('all')
+    expect(screen.queryByRole('group', { name: 'Filter sessions by brand' })).not.toBeInTheDocument()
   })
 })

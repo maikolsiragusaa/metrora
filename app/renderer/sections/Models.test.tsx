@@ -169,7 +169,8 @@ describe('Models', () => {
     render(<Models period="lifetime" provider="all" overview={loadedOverview()} />)
 
     const primary = screen.getByRole('table', { name: 'Model usage' })
-    expect(within(primary).getAllByRole('columnheader').map(header => header.textContent)).toEqual([
+    expect(within(primary).getAllByRole('columnheader').map(header =>
+      header.querySelector('.models-sort-header span')?.textContent ?? header.textContent)).toEqual([
       'Model', 'Provider', 'Source', 'Calls', 'Input', 'Output', 'Cache R', 'Cache W', 'Cache×', 'Total', 'ms/1K', 'Cost', 'Cost/1M',
     ])
     expect(screen.getByText('GPT-5.4')).toBeInTheDocument()
@@ -319,12 +320,13 @@ describe('Models', () => {
   it('sorts the primary model table by total observed tokens on demand', () => {
     render(<Models period="lifetime" provider="all" overview={loadedOverview()} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Tokens' }))
+    const table = screen.getByRole('table', { name: 'Model usage' })
+    fireEvent.click(within(table).getByRole('button', { name: 'Total' }))
     const modelRows = within(screen.getByRole('table', { name: 'Model usage' })).getAllByRole('row').slice(1)
     expect(modelRows[0]).toHaveTextContent('GPT-5.4')
   })
 
-  it('sorts observed ms per 1K fastest-first and leaves untimed rows at the bottom', async () => {
+  it('sorts observed ms per 1K fastest-first on double-click and leaves untimed rows at the bottom', async () => {
     const overview = loadedOverview({
       modelAccounting: {
         rows: [
@@ -338,7 +340,13 @@ describe('Models', () => {
       },
     })
     render(<Models period="lifetime" provider="all" overview={overview} />)
-    fireEvent.click(screen.getByRole('button', { name: 'ms / 1K' }))
+    const table = screen.getByRole('table', { name: 'Model usage' })
+    const timingHeader = within(table).getByRole('button', { name: 'ms/1K' })
+
+    fireEvent.click(timingHeader)
+    fireEvent.click(timingHeader)
+    fireEvent.doubleClick(timingHeader)
+
     const bodyRows = within(screen.getByRole('table', { name: 'Model usage' })).getAllByRole('row').slice(1)
     expect(bodyRows[0]).toHaveTextContent('Faster model')
     expect(bodyRows[1]).toHaveTextContent('Slower model')

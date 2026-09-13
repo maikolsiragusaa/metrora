@@ -239,13 +239,6 @@
     padding: 0;
     font-size: 0;
   }
-
-  .metrora-shell .bar-home .refresh-button::before {
-    color: currentColor;
-    content: '↻';
-    font-size: 17px;
-    line-height: 1;
-  }
 }
 
 .metrora-shell .bar .t {
@@ -1062,13 +1055,6 @@
     padding: 0;
     font-size: 0;
   }
-
-  .metrora-shell .bar-home .refresh-button::before {
-    color: currentColor;
-    content: '↻';
-    font-size: 17px;
-    line-height: 1;
-  }
 }
 
 /* The packaged Windows window is commonly rendered at 1280 x 697 CSS pixels
@@ -1576,13 +1562,6 @@
     min-width: 36px;
     padding: 0;
     font-size: 0;
-  }
-
-  .metrora-shell .bar-home .refresh-button::before {
-    color: currentColor;
-    content: '↻';
-    font-size: 17px;
-    line-height: 1;
   }
 
   .metrora-shell .ct-overview .body {
@@ -2471,13 +2450,6 @@
     padding: 0;
     font-size: 0;
   }
-
-  .metrora-shell .bar-refresh-icon-only .refresh-button::before {
-    color: currentColor;
-    content: '↻';
-    font-size: 17px;
-    line-height: 1;
-  }
 }
 
 @media (max-width: 1120px) {
@@ -2486,13 +2458,6 @@
     min-width: 42px;
     padding: 0;
     font-size: 0;
-  }
-
-  .metrora-shell .bar-refresh-icon-only .refresh-button::before {
-    color: currentColor;
-    content: '↻';
-    font-size: 17px;
-    line-height: 1;
   }
 }
 
@@ -2508,10 +2473,4 @@
   line-height: 1;
   text-align: center;
   text-indent: 0;
-}
-
-.metrora-shell .bar-refresh-icon-only .refresh-button::before {
-  display: block;
-  margin: 0;
-  line-height: 1;
 }

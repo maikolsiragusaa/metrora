@@ -46,7 +46,7 @@ export { topCategoryByModel, usageSnapshotProps } from './hooks/useDesktopTeleme
 // source was freshly reconciled. Source authority is reported separately by
 // the payload freshness metadata (snapshot vs fresh/targeted).
 function refreshedLabel(lastSuccessAt: number | null, loading: boolean, now: number): string {
-  if (loading && lastSuccessAt === null) return 'refreshing…'
+  if (loading) return 'refreshing…'
   if (lastSuccessAt === null) return 'not refreshed yet'
   const seconds = Math.max(0, Math.floor((now - lastSuccessAt) / 1000))
   if (seconds < 1) return 'refreshed just now'
@@ -250,7 +250,6 @@ function AppMain() {
                   projectScopeId={metroraProjectId}
                   range={customRange}
                   refreshToken={refreshToken}
-                  detectedProviders={detectedProviders}
                   onProviderChange={onProviderSelect}
                   historicalSessionCount={overview.data?.current.sessions ?? null}
                   ready={ready}
