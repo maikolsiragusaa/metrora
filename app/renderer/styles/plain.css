@@ -960,9 +960,11 @@ td:first-child { font-size: var(--fs-body); font-weight: var(--fw-body); }
 .session-sort-header { display: inline-flex; width: 100%; align-items: center; gap: 3px; border: 0; background: transparent; padding: 0; color: inherit; font: inherit; letter-spacing: inherit; text-align: inherit; cursor: pointer; }
 .sessions-table th.session-number .session-sort-header { justify-content: flex-end; }
 .session-sort-header:hover { color: var(--ink); }
+.session-sort-header:hover .session-sort-arrow { color: var(--ink); }
 .session-sort-header.on { color: var(--accent); }
 .session-sort-header:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
-.session-sort-arrow { font-size: 7px; line-height: 1; }
+.session-sort-arrow { font-size: 7px; line-height: 1; color: var(--mut2); }
+.session-sort-header.on .session-sort-arrow { color: var(--accent); }
 .sessions-group-toggle { display: inline-flex; min-height: 34px; flex: 0 0 auto; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 8px; background: var(--session-surface); padding: 0 11px; color: var(--mut); font: inherit; font-size: 10.5px; cursor: pointer; white-space: nowrap; }
 .sessions-group-toggle svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.6; }
 .sessions-group-toggle:hover, .sessions-group-toggle:focus-visible { border-color: color-mix(in srgb, var(--session-accent) 50%, var(--line)); color: var(--ink); outline: none; }

@@ -283,38 +283,38 @@ function ModelTableRow({
   )
 }
 
-/** Sortable table header: click sorts by the column (default direction),
- * double-click reverses the active column's direction. */
+/** Sortable table header: every sortable column carries a faint arrow so the
+ * affordance is visible; the active column's arrow is colored and points in
+ * the current direction. One click on the active column reverses it. */
 function ModelSortHeader({
   label,
   sortKey,
   sort,
   title,
   onSort,
-  onReverseSort,
 }: {
   label: string
   sortKey: ModelSortKey
   sort: ModelColumnSort
   title?: string
   onSort: (key: ModelSortKey) => void
-  onReverseSort: (key: ModelSortKey) => void
 }) {
   const active = sort.key === sortKey
   return (
     <th
       className="models-number"
       aria-sort={active ? (sort.direction === 'desc' ? 'descending' : 'ascending') : undefined}
-      title={title ?? 'Click to sort by this column · double-click to reverse the direction'}
+      title={title ?? 'Click to sort by this column · click again to reverse the direction'}
     >
       <button
         type="button"
         className={`models-sort-header${active ? ' on' : ''}`}
         onClick={() => onSort(sortKey)}
-        onDoubleClick={() => onReverseSort(sortKey)}
       >
         <span>{label}</span>
-        {active && <span className="models-sort-arrow" aria-hidden="true">{sort.direction === 'desc' ? '▼' : '▲'}</span>}
+        <span className="models-sort-arrow" aria-hidden="true">
+          {active ? (sort.direction === 'desc' ? '▼' : '▲') : '↕'}
+        </span>
       </button>
     </th>
   )
@@ -557,11 +557,9 @@ export function ModelsControlCenter({
   const hasFilters = query.trim().length > 0 || modelHouseFilter !== 'all' || sourceFilter !== 'all'
 
   const onSortColumn = (key: ModelSortKey) => {
-    setSort(current => ({ key, direction: current.key === key ? current.direction : 'desc' }))
-  }
-
-  const onReverseSortColumn = (key: ModelSortKey) => {
-    setSort(current => current.key === key ? { key, direction: current.direction === 'desc' ? 'asc' : 'desc' } : current)
+    setSort(current => current.key === key
+      ? { key, direction: current.direction === 'desc' ? 'asc' : 'desc' }
+      : { key, direction: 'desc' })
   }
 
   if (mode === 'compare') return <ModelsCompareWorkspace rows={rows} onExit={onExitCompare} />
@@ -594,7 +592,7 @@ export function ModelsControlCenter({
         </div>
 
         <div className="models-sort-toolbar">
-          <span className="models-sort-hint" role="note">Click a column to sort · double-click to reverse</span>
+          <span className="models-sort-hint" role="note">Click a column to sort · click again to reverse</span>
           <span className="models-result-count">{filteredRows.length.toLocaleString('en-US')} of {rows.length.toLocaleString('en-US')} models</span>
         </div>
 
@@ -614,16 +612,16 @@ export function ModelsControlCenter({
                   <th title="Model brand identity and display name">Model</th>
                   <th title="Delivery provider or API route">Provider</th>
                   <th title="Metrora client/source that contributed the usage">Source</th>
-                  <ModelSortHeader label="Calls" sortKey="calls" sort={sort} onSort={onSortColumn} onReverseSort={onReverseSortColumn} />
-                  <ModelSortHeader label="Input" sortKey="input" sort={sort} onSort={onSortColumn} onReverseSort={onReverseSortColumn} />
-                  <ModelSortHeader label="Output" sortKey="output" sort={sort} onSort={onSortColumn} onReverseSort={onReverseSortColumn} />
-                  <ModelSortHeader label="Cache R" sortKey="cacheRead" sort={sort} onSort={onSortColumn} onReverseSort={onReverseSortColumn} />
-                  <ModelSortHeader label="Cache W" sortKey="cacheWrite" sort={sort} onSort={onSortColumn} onReverseSort={onReverseSortColumn} />
-                  <ModelSortHeader label="Cache×" sortKey="cache" sort={sort} title="Cached input read per uncached input token · click to sort, double-click to reverse" onSort={onSortColumn} onReverseSort={onReverseSortColumn} />
-                  <ModelSortHeader label="Total" sortKey="tokens" sort={sort} onSort={onSortColumn} onReverseSort={onReverseSortColumn} />
-                  <ModelSortHeader label="ms/1K" sortKey="activeMs" sort={sort} title="Active generation milliseconds per 1,000 generated tokens · click to sort, double-click to reverse" onSort={onSortColumn} onReverseSort={onReverseSortColumn} />
-                  <ModelSortHeader label="Cost" sortKey="cost" sort={sort} onSort={onSortColumn} onReverseSort={onReverseSortColumn} />
-                  <ModelSortHeader label="Cost/1M" sortKey="unitCost" sort={sort} title="Effective observed cost per one million total tokens · click to sort, double-click to reverse" onSort={onSortColumn} onReverseSort={onReverseSortColumn} />
+                  <ModelSortHeader label="Calls" sortKey="calls" sort={sort} onSort={onSortColumn}/>
+                  <ModelSortHeader label="Input" sortKey="input" sort={sort} onSort={onSortColumn}/>
+                  <ModelSortHeader label="Output" sortKey="output" sort={sort} onSort={onSortColumn}/>
+                  <ModelSortHeader label="Cache R" sortKey="cacheRead" sort={sort} onSort={onSortColumn}/>
+                  <ModelSortHeader label="Cache W" sortKey="cacheWrite" sort={sort} onSort={onSortColumn}/>
+                  <ModelSortHeader label="Cache×" sortKey="cache" sort={sort} title="Cached input read per uncached input token · click to sort, double-click to reverse" onSort={onSortColumn}/>
+                  <ModelSortHeader label="Total" sortKey="tokens" sort={sort} onSort={onSortColumn}/>
+                  <ModelSortHeader label="ms/1K" sortKey="activeMs" sort={sort} title="Active generation milliseconds per 1,000 generated tokens · click to sort, double-click to reverse" onSort={onSortColumn}/>
+                  <ModelSortHeader label="Cost" sortKey="cost" sort={sort} onSort={onSortColumn}/>
+                  <ModelSortHeader label="Cost/1M" sortKey="unitCost" sort={sort} title="Effective observed cost per one million total tokens · click to sort, double-click to reverse" onSort={onSortColumn}/>
                 </tr>
               </thead>
               <tbody>

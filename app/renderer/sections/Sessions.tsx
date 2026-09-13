@@ -245,8 +245,9 @@ function SessionTableRow({ row, selected, onSelect }: { row: SessionRow; selecte
   )
 }
 
-/** Sortable table header: click sorts by the column (default direction),
- * double-click reverses the active column's direction. */
+/** Sortable table header: every sortable column carries a faint arrow so the
+ * affordance is visible; the active column's arrow is colored and points in
+ * the current direction. One click on the active column reverses it. */
 function SessionSortHeader({
   label,
   sortKey,
@@ -254,7 +255,6 @@ function SessionSortHeader({
   numeric = false,
   title,
   onSort,
-  onReverseSort,
 }: {
   label: string
   sortKey: SessionSortKey
@@ -262,23 +262,23 @@ function SessionSortHeader({
   numeric?: boolean
   title?: string
   onSort: (key: SessionSortKey) => void
-  onReverseSort: (key: SessionSortKey) => void
 }) {
   const active = sort.key === sortKey
   return (
     <th
       className={numeric ? 'session-number' : undefined}
       aria-sort={active ? (sort.direction === 'desc' ? 'descending' : 'ascending') : undefined}
-      title={title ?? 'Click to sort by this column · double-click to reverse the direction'}
+      title={title ?? 'Click to sort by this column · click again to reverse the direction'}
     >
       <button
         type="button"
         className={`session-sort-header${active ? ' on' : ''}`}
         onClick={() => onSort(sortKey)}
-        onDoubleClick={() => onReverseSort(sortKey)}
       >
         <span>{label}</span>
-        {active && <span className="session-sort-arrow" aria-hidden="true">{sort.direction === 'desc' ? '▼' : '▲'}</span>}
+        <span className="session-sort-arrow" aria-hidden="true">
+          {active ? (sort.direction === 'desc' ? '▼' : '▲') : '↕'}
+        </span>
       </button>
     </th>
   )
@@ -391,12 +391,10 @@ export function Sessions({
   const renderedRows = Math.min(SESSION_PAGE_SIZE, Math.max(0, filtered.length - page * SESSION_PAGE_SIZE))
 
   const onSortColumn = (key: SessionSortKey) => {
-    setSort(current => ({ key, direction: current.key === key ? current.direction : 'desc' }))
+    setSort(current => current.key === key
+      ? { key, direction: current.direction === 'desc' ? 'asc' : 'desc' }
+      : { key, direction: 'desc' })
     if (key === 'recent') setGrouped(false)
-  }
-
-  const onReverseSortColumn = (key: SessionSortKey) => {
-    setSort(current => current.key === key ? { key, direction: current.direction === 'desc' ? 'asc' : 'desc' } : current)
   }
 
   const clearFilters = () => {
@@ -442,7 +440,7 @@ export function Sessions({
           </div>
 
           <div className="sessions-sort-toolbar">
-            <span className="sessions-sort-hint" role="note">Click a column to sort · double-click to reverse</span>
+            <span className="sessions-sort-hint" role="note">Click a column to sort · click again to reverse</span>
             <button className={grouped ? 'sessions-group-toggle on' : 'sessions-group-toggle'} type="button" aria-pressed={grouped} onClick={() => setGrouped(value => !value)}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h6" /><circle cx="18" cy="12" r="2.5" /></svg>
               Group by client
@@ -479,18 +477,18 @@ export function Sessions({
                         <th>Session</th>
                         <th>Client</th>
                         <th>Model</th>
-                        <SessionSortHeader label="Turn" sortKey="turns" sort={sort} numeric onSort={onSortColumn} onReverseSort={onReverseSortColumn} />
-                        <SessionSortHeader label="Calls" sortKey="calls" sort={sort} numeric onSort={onSortColumn} onReverseSort={onReverseSortColumn} />
-                        <SessionSortHeader label="Input" sortKey="input" sort={sort} numeric onSort={onSortColumn} onReverseSort={onReverseSortColumn} />
-                        <SessionSortHeader label="Output" sortKey="output" sort={sort} numeric onSort={onSortColumn} onReverseSort={onReverseSortColumn} />
-                        <SessionSortHeader label="Cache R" sortKey="cacheRead" sort={sort} numeric onSort={onSortColumn} onReverseSort={onReverseSortColumn} />
-                        <SessionSortHeader label="Cache W" sortKey="cacheWrite" sort={sort} numeric onSort={onSortColumn} onReverseSort={onReverseSortColumn} />
-                        <SessionSortHeader label="Cache×" sortKey="cache" sort={sort} numeric title="Cached input read per uncached input token · click to sort, double-click to reverse" onSort={onSortColumn} onReverseSort={onReverseSortColumn} />
-                        <SessionSortHeader label="Total" sortKey="tokens" sort={sort} numeric onSort={onSortColumn} onReverseSort={onReverseSortColumn} />
-                        <SessionSortHeader label="Cost" sortKey="cost" sort={sort} numeric onSort={onSortColumn} onReverseSort={onReverseSortColumn} />
-                        <SessionSortHeader label="Cost/1M" sortKey="unitCost" sort={sort} numeric title="Effective cost per one million total tokens · click to sort, double-click to reverse" onSort={onSortColumn} onReverseSort={onReverseSortColumn} />
-                        <SessionSortHeader label="Duration" sortKey="duration" sort={sort} numeric onSort={onSortColumn} onReverseSort={onReverseSortColumn} />
-                        <SessionSortHeader label="Last Active" sortKey="recent" sort={sort} onSort={onSortColumn} onReverseSort={onReverseSortColumn} />
+                        <SessionSortHeader label="Turn" sortKey="turns" sort={sort} numeric onSort={onSortColumn}/>
+                        <SessionSortHeader label="Calls" sortKey="calls" sort={sort} numeric onSort={onSortColumn}/>
+                        <SessionSortHeader label="Input" sortKey="input" sort={sort} numeric onSort={onSortColumn}/>
+                        <SessionSortHeader label="Output" sortKey="output" sort={sort} numeric onSort={onSortColumn}/>
+                        <SessionSortHeader label="Cache R" sortKey="cacheRead" sort={sort} numeric onSort={onSortColumn}/>
+                        <SessionSortHeader label="Cache W" sortKey="cacheWrite" sort={sort} numeric onSort={onSortColumn}/>
+                        <SessionSortHeader label="Cache×" sortKey="cache" sort={sort} numeric title="Cached input read per uncached input token · click to sort, double-click to reverse" onSort={onSortColumn}/>
+                        <SessionSortHeader label="Total" sortKey="tokens" sort={sort} numeric onSort={onSortColumn}/>
+                        <SessionSortHeader label="Cost" sortKey="cost" sort={sort} numeric onSort={onSortColumn}/>
+                        <SessionSortHeader label="Cost/1M" sortKey="unitCost" sort={sort} numeric title="Effective cost per one million total tokens · click to sort, double-click to reverse" onSort={onSortColumn}/>
+                        <SessionSortHeader label="Duration" sortKey="duration" sort={sort} numeric onSort={onSortColumn}/>
+                        <SessionSortHeader label="Last Active" sortKey="recent" sort={sort} onSort={onSortColumn}/>
                       </tr>
                     </thead>
                     <tbody>

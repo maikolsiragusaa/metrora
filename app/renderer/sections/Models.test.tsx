@@ -326,7 +326,7 @@ describe('Models', () => {
     expect(modelRows[0]).toHaveTextContent('GPT-5.4')
   })
 
-  it('sorts observed ms per 1K fastest-first on double-click and leaves untimed rows at the bottom', async () => {
+  it('sorts observed ms per 1K fastest-first on a second click and leaves untimed rows at the bottom', async () => {
     const overview = loadedOverview({
       modelAccounting: {
         rows: [
@@ -344,8 +344,10 @@ describe('Models', () => {
     const timingHeader = within(table).getByRole('button', { name: 'ms/1K' })
 
     fireEvent.click(timingHeader)
+    const descendingRows = within(screen.getByRole('table', { name: 'Model usage' })).getAllByRole('row').slice(1)
+    expect(descendingRows[0]).toHaveTextContent('Slower model')
+
     fireEvent.click(timingHeader)
-    fireEvent.doubleClick(timingHeader)
 
     const bodyRows = within(screen.getByRole('table', { name: 'Model usage' })).getAllByRole('row').slice(1)
     expect(bodyRows[0]).toHaveTextContent('Faster model')

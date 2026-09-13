@@ -95,7 +95,7 @@ describe('Sessions', () => {
     expect(headerLabels(sortedTable)).toEqual(headers)
   })
 
-  it('reverses the active column direction on double-click', async () => {
+  it('reverses the active column direction with a second click', async () => {
     const user = userEvent.setup()
     getSessions.mockResolvedValue([
       session({ sessionId: 'low-cost', title: 'Low cost', project: 'metrora', provider: 'codex', cost: 1 }),
@@ -109,7 +109,7 @@ describe('Sessions', () => {
     expect(within(table).getAllByRole('row').slice(1)[0]).toHaveTextContent('High cost')
     expect(within(table).getByRole('columnheader', { name: 'Cost' })).toHaveAttribute('aria-sort', 'descending')
 
-    await user.dblClick(costHeader)
+    await user.click(costHeader)
     expect(within(table).getAllByRole('row').slice(1)[0]).toHaveTextContent('Low cost')
     expect(within(table).getByRole('columnheader', { name: 'Cost' })).toHaveAttribute('aria-sort', 'ascending')
   })

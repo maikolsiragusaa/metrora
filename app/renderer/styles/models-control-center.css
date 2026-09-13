@@ -322,9 +322,11 @@
 
 .models-table th.models-number .models-sort-header { justify-content: flex-end; }
 .models-sort-header:hover { color: var(--ink); }
+.models-sort-header:hover .models-sort-arrow { color: var(--ink); }
 .models-sort-header.on { color: var(--models-accent-strong); }
 .models-sort-header:focus-visible { outline: 1px solid var(--models-accent); outline-offset: 1px; }
-.models-sort-arrow { font-size: 7px; line-height: 1; }
+.models-sort-arrow { font-size: 7px; line-height: 1; color: var(--mut2); }
+.models-sort-header.on .models-sort-arrow { color: var(--models-accent-strong); }
 
 .models-result-count,
 .models-bounded-note {
