@@ -6,6 +6,16 @@ export const SESSION_PAGE_SIZE = 30
 
 export type SessionSort = 'recent' | 'cost' | 'tokens' | 'calls' | 'cache' | 'unitCost' | 'duration'
 
+/** Every table column that can drive row order, including per-token columns. */
+export type SessionSortKey = SessionSort | 'turns' | 'input' | 'output' | 'cacheRead' | 'cacheWrite'
+
+export type SessionSortDirection = 'desc' | 'asc'
+
+export type SessionColumnSort = { key: SessionSortKey; direction: SessionSortDirection }
+
+/** The column each legacy sort lens lands on when sorting from the headers. */
+export const DEFAULT_SORT_DIRECTION: SessionSortDirection = 'desc'
+
 export const SORT_OPTIONS = [
   { value: 'recent', label: 'Recent' },
   { value: 'cost', label: 'Cost' },
@@ -16,14 +26,23 @@ export const SORT_OPTIONS = [
   { value: 'duration', label: 'Duration' },
 ]
 
-export const SORT_ANNOUNCEMENTS: Record<SessionSort, string> = {
-  recent: 'most recent',
-  cost: 'highest cost',
-  tokens: 'total tokens',
-  calls: 'highest call count',
-  cache: 'cache reuse',
-  unitCost: 'effective cost per one million total tokens',
-  duration: 'longest duration',
+export const SORT_ANNOUNCEMENTS: Record<SessionSortKey, { desc: string; asc: string }> = {
+  recent: { desc: 'most recent', asc: 'least recent' },
+  cost: { desc: 'highest cost', asc: 'lowest cost' },
+  tokens: { desc: 'most total tokens', asc: 'least total tokens' },
+  calls: { desc: 'highest call count', asc: 'lowest call count' },
+  cache: { desc: 'highest cache reuse', asc: 'lowest cache reuse' },
+  unitCost: { desc: 'highest cost per million total tokens', asc: 'lowest cost per million total tokens' },
+  duration: { desc: 'longest duration', asc: 'shortest duration' },
+  turns: { desc: 'most turns', asc: 'least turns' },
+  input: { desc: 'most input tokens', asc: 'least input tokens' },
+  output: { desc: 'most output tokens', asc: 'least output tokens' },
+  cacheRead: { desc: 'most cache-read tokens', asc: 'least cache-read tokens' },
+  cacheWrite: { desc: 'most cache-write tokens', asc: 'least cache-write tokens' },
+}
+
+export function sessionSortAnnouncement(sort: SessionColumnSort): string {
+  return SORT_ANNOUNCEMENTS[sort.key][sort.direction]
 }
 
 export const REASONING_LABELS: Record<ReasoningLevelOrUnknown, string> = {
@@ -100,34 +119,57 @@ function durationValue(row: SessionRow): number {
   return Number.isFinite(row.durationMs) && row.durationMs > 0 ? row.durationMs : 0
 }
 
-function compareNullableDescending(a: number | null, b: number | null): number {
-  if (a == null && b == null) return 0
-  if (a == null) return 1
-  if (b == null) return -1
-  return b - a
+export function compareRows(sort: SessionSort, a: SessionRow, b: SessionRow): number {
+  return compareRowsBy(sort, 'desc', a, b)
 }
 
-export function compareRows(sort: SessionSort, a: SessionRow, b: SessionRow): number {
-  const result = sort === 'cost'
-    ? b.cost - a.cost
-    : sort === 'tokens'
-      ? sessionTotalTokens(b) - sessionTotalTokens(a)
-      : sort === 'calls'
-        ? b.calls - a.calls
-        : sort === 'cache'
-          ? compareNullableDescending(sessionCacheReuse(a), sessionCacheReuse(b))
-          : sort === 'unitCost'
-            ? compareNullableDescending(sessionUnitCost(a), sessionUnitCost(b))
-            : sort === 'duration'
-              ? durationValue(b) - durationValue(a)
-            : endedAtTime(b) - endedAtTime(a)
+/**
+ * Direction is always numeric (desc = larger values first) so the header arrow
+ * and aria-sort stay truthful. Unavailable (null) metrics sort last in both
+ * directions; the identity tiebreaker is direction-independent for stability.
+ */
+export function compareRowsBy(key: SessionSortKey, direction: SessionSortDirection, a: SessionRow, b: SessionRow): number {
+  const sign = direction === 'asc' ? -1 : 1
+  let result: number
+  if (key === 'cache' || key === 'unitCost') {
+    const left = key === 'cache' ? sessionCacheReuse(a) : sessionUnitCost(a)
+    const right = key === 'cache' ? sessionCacheReuse(b) : sessionUnitCost(b)
+    if (left == null && right == null) result = 0
+    else if (left == null) result = 1
+    else if (right == null) result = -1
+    else result = sign * (right - left)
+  } else {
+    const left = sortMetric(key, a)
+    const right = sortMetric(key, b)
+    result = sign * (right - left)
+  }
   return result || sessionIdentity(a).localeCompare(sessionIdentity(b))
 }
 
-export function groupSortValue(sort: SessionSort, rows: SessionRow[]): number {
+function sortMetric(key: Exclude<SessionSortKey, 'cache' | 'unitCost'>, row: SessionRow): number {
+  switch (key) {
+    case 'cost': return row.cost
+    case 'tokens': return sessionTotalTokens(row)
+    case 'calls': return row.calls
+    case 'duration': return durationValue(row)
+    case 'turns': return row.turns
+    case 'input': return row.inputTokens
+    case 'output': return row.outputTokens
+    case 'cacheRead': return row.cacheReadTokens
+    case 'cacheWrite': return row.cacheWriteTokens
+    default: return endedAtTime(row)
+  }
+}
+
+export function groupSortValue(sort: SessionSortKey, rows: SessionRow[]): number {
   if (sort === 'cost') return rows.reduce((sum, row) => sum + row.cost, 0)
   if (sort === 'tokens') return rows.reduce((sum, row) => sum + sessionTotalTokens(row), 0)
   if (sort === 'calls') return rows.reduce((sum, row) => sum + row.calls, 0)
+  if (sort === 'turns') return rows.reduce((sum, row) => sum + row.turns, 0)
+  if (sort === 'input') return rows.reduce((sum, row) => sum + row.inputTokens, 0)
+  if (sort === 'output') return rows.reduce((sum, row) => sum + row.outputTokens, 0)
+  if (sort === 'cacheRead') return rows.reduce((sum, row) => sum + row.cacheReadTokens, 0)
+  if (sort === 'cacheWrite') return rows.reduce((sum, row) => sum + row.cacheWriteTokens, 0)
   if (sort === 'cache') {
     const values = rows.map(sessionCacheReuse).filter((value): value is number => value != null)
     return values.length > 0 ? Math.max(...values) : 0

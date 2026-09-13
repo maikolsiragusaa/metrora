@@ -137,4 +137,22 @@ describe('model presentation projection', () => {
     expect(gemini.deliveryRows).toHaveLength(2)
     expect(projection.rows.filter(value => value.name.startsWith('Mistral Medium')).length).toBe(2)
   })
+
+  it('carries the canonical model house while keeping delivery route and source separate', () => {
+    const model = row({
+      name: 'GPT-5.5',
+      provider: 'amazon-bedrock',
+      brandId: 'openai',
+      sourceProviders: ['zed'],
+      rawModels: ['openai.gpt-5.5'],
+    })
+    const [presentation] = buildModelPresentation(accounting([model])).rows
+
+    expect(presentation).toMatchObject({
+      brandId: 'openai',
+      provider: 'amazon-bedrock',
+      providers: ['amazon-bedrock'],
+      sourceProviders: ['zed'],
+    })
+  })
 })

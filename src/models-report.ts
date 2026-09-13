@@ -38,14 +38,14 @@ function bucketKey(provider: string, model: string, category: TaskCategory | nul
 }
 
 /// Walks every parsed turn, attributes each assistant call to a
-/// (provider, model, category, agent) bucket, and returns rows keyed by
-/// (provider, model) by default, (provider, model, category) under `byTask`, or
-/// (provider, model, agent) under `byAgent`.
+/// (client/source, model, category, agent) bucket, returning rows keyed by
+/// (client/source, model), (client/source, model, category) under `byTask`, or
+/// (client/source, model, agent) under `byAgent`; public `provider` remains the
+/// collector/client `call.provider`, not `call.modelProvider` delivery route.
 ///
-/// Default view: rows sorted by cost descending.
-/// byTask / byAgent view: rows grouped by (provider, model) so the renderer can
-/// blank repeated provider/model cells. Group order follows total cost across
-/// that model; within each group, rows go by cost descending. The agent label
+/// Default view: rows sorted by cost descending. byTask / byAgent rows are grouped
+/// by (client/source, model); group order follows total cost across that model;
+/// within each group, rows go by cost descending. The agent label
 /// comes from the subagent transcript's own `session.agentType`; ordinary
 /// sessions and every non-Claude provider bucket under `'(main)'`.
 export async function aggregateModels(projects: ProjectSummary[], opts: AggregateOptions = {}): Promise<ModelReportRow[]> {

@@ -590,11 +590,32 @@ describe('createBridgeHandlers (snapshot reads and explicit refresh)', () => {
     await handlers['metrora:getOverview']!('30days', 'all', undefined, undefined, false, true)
     expect(opts[1]?.timeoutMs).toBe(10 * 60_000)
     expect(opts[1]?.idleTimeoutMs).toBe(45_000)
+    expect(opts[1]?.bypassCache).toBe(true)
     expect((opts[1]?.extraEnv as Record<string, string> | undefined)?.METRORA_PROGRESS).toBe('1')
     expect((opts[1]?.extraEnv as Record<string, string> | undefined)?.METRORA_READ_MODE).toBe('')
     expect(typeof opts[1]?.onStderr).toBe('function')
     expect(typeof opts[1]?.onProgress).toBe('function')
     expect(emitProgress).toHaveBeenCalledWith({ kind: 'done' })
+  })
+
+  it('keeps config-scoped navigation reads on the snapshot path', async () => {
+    const opts: Array<Record<string, unknown> | undefined> = []
+    const spawnCli = vi.fn(async (_args: string[], o?: Record<string, unknown>) => {
+      opts.push(o)
+      return { current: { cost: 1 } }
+    })
+    const handlers = createBridgeHandlers(base({ spawnCli }))
+
+    await handlers['metrora:getOverview']!(
+      '30days',
+      'all',
+      undefined,
+      'claude-config:cached-source',
+    )
+
+    expect(opts[0]?.timeoutMs).toBeUndefined()
+    expect(opts[0]?.bypassCache).toBeUndefined()
+    expect((opts[0]?.extraEnv as Record<string, string> | undefined)?.METRORA_READ_MODE).toBe('snapshot')
   })
 
   it('forwards the owned OpenCode accounting root to snapshot and fresh reads', async () => {

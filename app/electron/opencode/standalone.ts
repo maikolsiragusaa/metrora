@@ -147,10 +147,21 @@ async function defaultProbe(executablePath: string, args: string[], environment:
 
 async function defaultFileExists(filePath: string): Promise<boolean> {
   try {
-    return (await stat(filePath)).isFile()
+    if (!(await stat(filePath)).isFile()) return false
   } catch {
     return false
   }
+  if (process.platform === 'win32') {
+    // NTFS resolves stat case-insensitively, so opencode.exe would otherwise
+    // match the OpenCode desktop shell (OpenCode.exe) and probe a GUI binary.
+    try {
+      const names = await readdir(path.dirname(filePath))
+      if (!names.some(name => name === path.basename(filePath))) return false
+    } catch {
+      return false
+    }
+  }
+  return true
 }
 
 async function defaultReadDirectory(directory: string): Promise<string[]> {
@@ -286,6 +297,44 @@ async function buildDatabaseCandidates(options: StandaloneOpenCodeResolverOption
   return values
 }
 
+/** First existing, non-excluded standalone OpenCode database, if any. */
+export async function resolveStandaloneOpenCodeDatabase(options: StandaloneOpenCodeResolverOptions = {}): Promise<string | null> {
+  const platform = options.platform ?? process.platform
+  const excludedRoots = (options.excludedRoots ?? []).filter(value => isAbsolute(value, platform))
+  const databaseCandidates = await buildDatabaseCandidates(options, platform)
+  const fileExists = options.fileExists ?? defaultFileExists
+  const found = (await Promise.all(databaseCandidates.map(async candidate => ({
+    candidate,
+    exists: !isExcluded(candidate, excludedRoots, platform) && await fileExists(candidate),
+  })))).find(item => item.exists)
+  return found?.candidate ?? null
+}
+
+/**
+ * Export runtime resolution with one deliberate fallback: when no user-owned
+ * OpenCode CLI exists (desktop-only installs embed the server without a
+ * binary), the staged Metrora OpenCode binary can still perform the export.
+ * It reads a disposable snapshot of the standalone database, so the producer
+ * store is never written by Metrora.
+ */
+export async function resolveStandaloneOpenCodeExportRuntime(
+  options: StandaloneOpenCodeResolverOptions & { stagedExecutablePath?: string | null } = {},
+): Promise<StandaloneOpenCodeRuntime | null> {
+  const standalone = await resolveStandaloneOpenCodeRuntime(options)
+  if (standalone) return standalone
+  const stagedExecutablePath = options.stagedExecutablePath
+  if (!stagedExecutablePath) return null
+  const databasePath = await resolveStandaloneOpenCodeDatabase(options)
+  if (!databasePath) return null
+  const platform = options.platform ?? process.platform
+  return {
+    executablePath: stagedExecutablePath,
+    version: OPENCODE_VERSION,
+    databasePath,
+    environment: standaloneEnvironment(options.environment ?? process.env, databasePath, options.excludedRoots ?? [], platform),
+  }
+}
+
 export async function resolveStandaloneOpenCodeRuntime(options: StandaloneOpenCodeResolverOptions = {}): Promise<StandaloneOpenCodeRuntime | null> {
   const platform = options.platform ?? process.platform
   const baseEnvironment = options.environment ?? process.env
@@ -294,7 +343,6 @@ export async function resolveStandaloneOpenCodeRuntime(options: StandaloneOpenCo
     ...buildExecutableCandidates(options, platform),
     ...(await buildDesktopCliCandidates(options, platform)),
   ]
-  const databaseCandidates = await buildDatabaseCandidates(options, platform)
   const fileExists = options.fileExists ?? defaultFileExists
   const probe = options.probe ?? defaultProbe
 
@@ -311,10 +359,7 @@ export async function resolveStandaloneOpenCodeRuntime(options: StandaloneOpenCo
     if (helpResult.code !== undefined && helpResult.code !== 0) continue
     if (!/^\s*opencode\s+export(?:\s|\[)/mu.test(`${helpResult.stdout}\n${helpResult.stderr}`)) continue
 
-    const databasePath = (await Promise.all(databaseCandidates.map(async candidate => ({
-      candidate,
-      exists: !isExcluded(candidate, excludedRoots, platform) && await fileExists(candidate),
-    })))).find(item => item.exists)?.candidate ?? null
+    const databasePath = await resolveStandaloneOpenCodeDatabase(options)
     return {
       executablePath,
       version,

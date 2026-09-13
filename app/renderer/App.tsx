@@ -46,7 +46,7 @@ export { topCategoryByModel, usageSnapshotProps } from './hooks/useDesktopTeleme
 // source was freshly reconciled. Source authority is reported separately by
 // the payload freshness metadata (snapshot vs fresh/targeted).
 function refreshedLabel(lastSuccessAt: number | null, loading: boolean, now: number): string {
-  if (loading && lastSuccessAt === null) return 'refreshing…'
+  if (loading) return 'refreshing…'
   if (lastSuccessAt === null) return 'not refreshed yet'
   const seconds = Math.max(0, Math.floor((now - lastSuccessAt) / 1000))
   if (seconds < 1) return 'refreshed just now'
@@ -165,6 +165,9 @@ function AppMain() {
     ? claudeConfigs?.options.find(option => option.id === scopedClaudeConfigSource)?.label ?? null
     : null
   const scope = `${customRange ? rangeLabel(customRange) : PERIOD_LABELS[period]} · ${providerLabel}${activeConfigLabel ? ` · ${activeConfigLabel}` : ''}`
+  const modelsProviderOptions = section === 'models'
+    ? providerOptions.map(option => option.value === 'all' ? { ...option, label: 'All clients' } : option)
+    : providerOptions
   const projectScope = overview.data?.projectScope
   useEffect(() => {
     if (!projectScope || projectScope.options.some(option => option.id === metroraProjectId)) return
@@ -211,15 +214,16 @@ function AppMain() {
         ) : (
           <>
             <TopBar
-              title={section === 'sessions' ? null : SECTION_TITLES[section]}
-              scope={section === 'sessions' ? undefined : scope}
+              title={section === 'sessions' || section === 'models' ? null : SECTION_TITLES[section]}
+              scope={section === 'sessions' || section === 'models' ? undefined : scope}
               period={period}
               onPeriodChange={onPeriodChange}
               customRange={customRange}
               onRangeSelect={onRangeSelect}
               provider={provider}
               providerLabel={providerLabel}
-              providerOptions={providerOptions}
+              providerOptions={modelsProviderOptions}
+              providerAriaLabel={section === 'models' ? 'Clients' : 'Providers'}
               onProviderSelect={onProviderSelect}
               claudeConfigs={claudeConfigs}
               configSource={claudeConfigSource}
@@ -228,11 +232,11 @@ function AppMain() {
               projectScopeId={metroraProjectId}
               onProjectScopeSelect={onProjectScopeSelect}
               capabilities={sectionCapabilities}
-              onOpenCode={section === 'sessions' ? undefined : openCode}
+              onOpenCode={section === 'sessions' || section === 'models' ? undefined : openCode}
               onRefresh={refreshVisible}
               refreshing={overview.loading}
               compactHome={section === 'overview'}
-              iconOnlyRefresh={section === 'sessions'}
+              iconOnlyRefresh={section === 'sessions' || section === 'models'}
             />
             <div className={motionClass('body', 'section-fade')}>
               {section === 'overview' ? (
@@ -246,7 +250,6 @@ function AppMain() {
                   projectScopeId={metroraProjectId}
                   range={customRange}
                   refreshToken={refreshToken}
-                  detectedProviders={detectedProviders}
                   onProviderChange={onProviderSelect}
                   historicalSessionCount={overview.data?.current.sessions ?? null}
                   ready={ready}

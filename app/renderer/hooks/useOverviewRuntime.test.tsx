@@ -13,12 +13,17 @@ const mocks = vi.hoisted(() => ({
   refresh: vi.fn(),
   refreshFresh: vi.fn(),
   setActiveCurrency: vi.fn(),
+  showToast: vi.fn(),
   usePolled: vi.fn(),
   useProviderPrefetch: vi.fn(),
 }))
 
 vi.mock('../lib/format', () => ({
   setActiveCurrency: mocks.setActiveCurrency,
+}))
+
+vi.mock('../lib/toast', () => ({
+  showToast: mocks.showToast,
 }))
 
 vi.mock('../lib/ipc', () => ({
@@ -51,7 +56,7 @@ const emptyPayload = {
 
 let polled: Polled<MenubarPayload>
 let capturedFetcher: (() => Promise<MenubarPayload>) | undefined
-let capturedOptions: { memoKey?: string; manualFetcher?: () => Promise<MenubarPayload>; onManualSuccess?: (result: MenubarPayload) => void } | undefined
+let capturedOptions: { memoKey?: string; manualFetcher?: () => Promise<MenubarPayload>; onManualSuccess?: (result: MenubarPayload) => void; onManualError?: (error: { kind: string; message: string }) => void } | undefined
 
 function runtimeOptions(overrides: Partial<Parameters<typeof useOverviewRuntime>[0]> = {}) {
   return {
@@ -72,6 +77,7 @@ describe('useOverviewRuntime', () => {
     mocks.refresh.mockReset()
     mocks.refreshFresh.mockReset()
     mocks.setActiveCurrency.mockReset()
+    mocks.showToast.mockReset()
     mocks.useProviderPrefetch.mockReset()
     capturedFetcher = undefined
     capturedOptions = undefined
@@ -199,6 +205,14 @@ describe('useOverviewRuntime', () => {
     act(() => result.current.refreshVisible())
     await capturedOptions?.manualFetcher?.()
     expect(mocks.getOverview).toHaveBeenLastCalledWith('30days', 'all', undefined, undefined, false, true)
+  })
+
+  it('surfaces a failed manual Refresh without replacing the last-good payload', () => {
+    renderHook(() => useOverviewRuntime(runtimeOptions()))
+
+    act(() => capturedOptions?.onManualError?.({ kind: 'timeout', message: 'scan timed out' }))
+
+    expect(mocks.showToast).toHaveBeenCalledWith('Refresh failed · scan timed out', 'error', 5000)
   })
 
 })

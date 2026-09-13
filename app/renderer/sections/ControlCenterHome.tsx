@@ -1,12 +1,17 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 
 import { EmptyNote } from '../components/EmptyState'
 import { ProviderLogo } from '../components/ProviderLogo'
 import { formatCompact, formatDayShort, formatUsd, shortenProjectPath } from '../lib/format'
 import type { Section } from '../lib/desktopNavigation'
 import { metrora } from '../lib/ipc'
+import { identityModelHouse, modelHouseLogoKey } from '../lib/modelPresentation'
 import { quotaProviderName } from '../lib/quota-providers'
-import type { MenubarPayload, QuotaProvider } from '../lib/types'
+import { formatProviderLabel, providerLogoKey } from '../lib/providerPresentation'
+import { totalTokenCount } from '../lib/usageMetrics'
+import { usePolled } from '../hooks/usePolled'
+import type { MenubarPayload, Period, QuotaProvider } from '../lib/types'
+import type { SessionRow } from '../lib/types'
 import { displayNameFromWorkspaceStatus, greetingForHour } from '../lib/home-greeting'
 import heroMountains from '../assets/home/hero-mountains.png'
 import opencodeCard from '../assets/home/card-opencode.png'
@@ -15,20 +20,27 @@ import workflowsCard from '../assets/home/card-ai-workflows.png'
 
 type HomeCurrent = MenubarPayload['current']
 
-const MODEL_LOGO_KEYS: Record<string, string> = {
-  openai: 'codex',
-  anthropic: 'claude',
-  google: 'gemini',
-  moonshot: 'kimi',
-  qwen: 'qwen',
-}
-
+// Bar gradients keyed by the brand logo key, using each brand's own colors.
 const MODEL_BAR_PALETTES: Record<string, [string, string]> = {
-  codex: ['#b48cff', '#704dff'],
-  claude: ['#ffad7c', '#ff7a58'],
-  kimi: ['#67b5ff', '#2c7ff0'],
-  gemini: ['#59e0dd', '#20b9c7'],
-  qwen: ['#ffd27a', '#e49a3f'],
+  codex: ['#f5f6f8', '#c9cdd6'],          // OpenAI white
+  claude: ['#f2bd9b', '#d97757'],         // Anthropic clay orange
+  gemini: ['#8ab4f8', '#4285f4'],         // Google blue
+  zai: ['#e8edf5', '#8b95a1'],            // Z.ai monochrome steel
+  deepseek: ['#8ba1ff', '#4d6bfe'],       // DeepSeek blue
+  qwen: ['#a396ff', '#615ced'],           // Qwen violet
+  kimi: ['#d9f67e', '#7ee787'],           // Moonshot/Kimi lime
+  'mistral-vibe': ['#ffb35c', '#fa500f'], // Mistral orange
+  grok: ['#d6d6d6', '#555555'],           // xAI black/white
+  meta: ['#57a4ff', '#0064e0'],           // Meta blue
+  microsoft: ['#50b8f0', '#00a4ef'],      // Microsoft blue
+  cohere: ['#8fc0a9', '#39594d'],         // Cohere forest green
+  minimax: ['#ff86a5', '#ec4176'],        // MiniMax pink-red
+  ai21: ['#ff7d7d', '#c42b44'],           // AI21 crimson
+  cursor: ['#d8d5cc', '#8f8c80'],         // Cursor monochrome warm ink
+  nvidia: ['#aede57', '#76b900'],         // NVIDIA green
+  xiaomi: ['#ff9a5c', '#ff6900'],         // Xiaomi orange
+  poolside: ['#a48fff', '#6e56cf'],       // Poolside indigo
+  'amazon-bedrock': ['#3ec3aa', '#01a88d'], // AWS Bedrock teal
 }
 
 const FALLBACK_MODEL_BAR_PALETTES: Array<[string, string]> = [
@@ -39,14 +51,14 @@ const FALLBACK_MODEL_BAR_PALETTES: Array<[string, string]> = [
   ['#a5b4cf', '#687895'],
 ]
 
-function modelLogoKey(model: HomeCurrent['topModels'][number]): string | null {
-  const identity = model.brandId ?? model.providerId
-  if (!identity) return null
-  const normalized = identity.trim().toLowerCase()
-  return MODEL_LOGO_KEYS[normalized] ?? normalized
+type ModelIdentitySource = { name: string; brandId?: string; providerId?: string }
+
+function modelLogoKey(model: ModelIdentitySource): string | null {
+  const house = identityModelHouse(model.name, model.brandId ?? model.providerId)
+  return house ? modelHouseLogoKey(house) : null
 }
 
-function modelBarPalette(model: HomeCurrent['topModels'][number], index: number): [string, string] {
+function modelBarPalette(model: ModelIdentitySource, index: number): [string, string] {
   const key = modelLogoKey(model)
   return MODEL_BAR_PALETTES[key ?? ''] ?? FALLBACK_MODEL_BAR_PALETTES[index % FALLBACK_MODEL_BAR_PALETTES.length]
 }
@@ -55,10 +67,229 @@ function percent(value: number): string {
   return `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`
 }
 
-export function ControlCenterHome({ current, scope, providerLabel, quota, onNavigate, onShare }: { current: HomeCurrent; scope: string; providerLabel: string; quota: QuotaProvider[] | null; onNavigate?: (section: Section) => void; onShare?: () => void }) {
-  const models = current.topModels.slice(0, 5)
+type UsageMixClient = { id: string; label: string; logo: string; tokens: number; calls: number; share: number; palette: [string, string] }
+
+type UsageMixBar = {
+  name: string
+  logo: string | null
+  palette: [string, string]
+  value: string
+  height: number
+  title: string
+  /** Light gradients take dark ink for the in-bar value. */
+  light: boolean
+}
+
+type UsageMixSlide =
+  | { kind: 'models'; id: string; caption: string; bars: UsageMixBar[] }
+  | { kind: 'clients'; id: string; caption: string; entries: UsageMixClient[] }
+
+const USAGE_MIX_TOP_LIMIT = 10
+
+function paletteLuminance([start]: [string, string]): number {
+  const hex = start.replace('#', '')
+  const channels = [0, 2, 4].map(offset => parseInt(hex.slice(offset, offset + 2), 16) / 255)
+  const [r, g, b] = channels.map(channel => channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4)
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+function compactUsd(value: number): string {
+  if (value >= 1_000) return `${formatUsd(Math.round(value / 100) / 10)}K`.replace('.0K', 'K')
+  return formatUsd(value)
+}
+
+/** Slides for the Home Usage mix carousel: the top model by total tokens, the
+ * top model by cost, and the most-used clients ranked by total tokens. */
+export function buildUsageMixSlides(current: HomeCurrent, sessions: SessionRow[] | null | undefined): UsageMixSlide[] {
+  const slides: UsageMixSlide[] = []
+  const presentationRows = current.modelPresentation?.rows ?? []
+
+  if (presentationRows.length > 0) {
+    const totals = presentationRows.map(row => ({ row, tokens: row.tokenDetail ? totalTokenCount(row) : 0 }))
+    const tokenSum = totals.reduce((sum, entry) => sum + entry.tokens, 0)
+    const ranked = [...totals].sort((a, b) => b.tokens - a.tokens).slice(0, USAGE_MIX_TOP_LIMIT)
+    const maxTokens = ranked[0]?.tokens ?? 0
+    if (tokenSum > 0 && maxTokens > 0) {
+      slides.push({
+        kind: 'models',
+        id: 'tokens',
+        caption: 'Top models by total tokens',
+        bars: ranked.map(entry => {
+          const share = entry.tokens / tokenSum
+          const palette = modelBarPalette(entry.row, 0)
+          return {
+            name: entry.row.name,
+            logo: modelLogoKey(entry.row),
+            palette,
+            value: formatCompact(entry.tokens),
+            height: entry.tokens / maxTokens,
+            title: `${entry.row.name}: ${formatCompact(entry.tokens)} total tokens (${percent(share)} of metered tokens), ${formatCompact(entry.row.calls)} calls`,
+            light: paletteLuminance(palette) > 0.62,
+          }
+        }),
+      })
+    }
+  }
+
+  const rankedByCost = [...current.topModels].sort((a, b) => b.cost - a.cost).slice(0, USAGE_MIX_TOP_LIMIT)
+  const maxCost = rankedByCost[0]?.cost ?? 0
+  if (current.cost > 0 && maxCost > 0) {
+    slides.push({
+      kind: 'models',
+      id: 'cost',
+      caption: 'Top models by cost',
+      bars: rankedByCost.map(model => {
+        const share = model.cost / current.cost
+        const palette = modelBarPalette(model, 0)
+        return {
+          name: model.name,
+          logo: modelLogoKey(model),
+          palette,
+          value: compactUsd(model.cost),
+          height: model.cost / maxCost,
+          title: `${model.name}: ${formatUsd(model.cost)} (${percent(share)} of cost), ${formatCompact(model.calls)} calls`,
+          light: paletteLuminance(palette) > 0.62,
+        }
+      }),
+    })
+  }
+
+  if (sessions && sessions.length > 0) {
+    const byClient = new Map<string, { tokens: number; calls: number }>()
+    for (const row of sessions) {
+      const entry = byClient.get(row.provider) ?? { tokens: 0, calls: 0 }
+      entry.tokens += totalTokenCount(row)
+      entry.calls += row.calls
+      byClient.set(row.provider, entry)
+    }
+    const entries = [...byClient.entries()]
+      .map(([id, totals]) => ({ id, ...totals }))
+      .filter(entry => entry.tokens > 0)
+      .sort((a, b) => b.tokens - a.tokens)
+      .slice(0, 5)
+    const max = entries[0]?.tokens ?? 0
+    if (entries.length > 0) {
+      slides.push({
+        kind: 'clients',
+        id: 'clients',
+        caption: 'Most used clients',
+        entries: entries.map((entry, index) => ({
+          id: entry.id,
+          label: formatProviderLabel(entry.id),
+          logo: providerLogoKey(entry.id),
+          tokens: entry.tokens,
+          calls: entry.calls,
+          share: max > 0 ? entry.tokens / max : 0,
+          palette: FALLBACK_MODEL_BAR_PALETTES[index % FALLBACK_MODEL_BAR_PALETTES.length],
+        })),
+      })
+    }
+  }
+  return slides
+}
+
+const USAGE_MIX_SLIDE_INTERVAL_MS = 5_000
+const USAGE_MIX_BAR_AREA_PX = 110
+
+/** Auto-sliding carousel with a modern eased transition; hovering pauses it,
+ * dots jump directly, and reduced-motion users get an instant swap. */
+export function UsageMixCarousel({ slides }: { slides: UsageMixSlide[] }) {
+  const [index, setIndex] = useState(0)
+  const [paused, setPaused] = useState(false)
+  const count = slides.length
+
+  useEffect(() => {
+    setIndex(current => (current >= count ? 0 : current))
+  }, [count])
+
+  useEffect(() => {
+    if (paused || count <= 1) return
+    const timer = window.setInterval(() => setIndex(current => (current + 1) % count), USAGE_MIX_SLIDE_INTERVAL_MS)
+    return () => window.clearInterval(timer)
+  }, [count, paused])
+
+  return (
+    <div
+      className="control-center-mix"
+      role="group"
+      aria-roledescription="carousel"
+      aria-label="Usage highlights"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+    >
+      <div className="control-center-mix__viewport">
+        <div className="control-center-mix__track" style={{ transform: `translateX(-${index * 100}%)` }}>
+          {slides.map((slide, slideIndex) => (
+            <div className="control-center-mix__slide" key={slide.id} aria-hidden={slideIndex !== index}>
+              <div className="control-center-mix__head">
+                <span className="control-center-mix__caption">{slide.caption}</span>
+              </div>
+              {slide.kind === 'models' ? (
+                <div className="control-center-mix__chart">
+                  <i className="control-center-mix__gridline" style={{ bottom: '33%' }} aria-hidden="true" />
+                  <i className="control-center-mix__gridline" style={{ bottom: '66%' }} aria-hidden="true" />
+                  {slide.bars.map((bar, barIndex) => {
+                    const inside = bar.height * USAGE_MIX_BAR_AREA_PX >= 42
+                    return (
+                      <div className="control-center-mix__col" key={`${bar.name}-${barIndex}`} title={bar.title}>
+                        <div className="control-center-mix__barbox" style={{ '--bar-h': `${Math.max(4, bar.height * 100)}%`, '--bar-start': bar.palette[0], '--bar-end': bar.palette[1] } as CSSProperties}>
+                          <span className="control-center-mix__bar" aria-hidden="true" />
+                          {inside
+                            ? <span className={`control-center-mix__bar-value${bar.light ? ' control-center-mix__bar-value--ink' : ''}`}>{bar.value}</span>
+                            : <span className="control-center-mix__bar-value-above">{bar.value}</span>}
+                        </div>
+                        <span className="control-center-mix__bar-logo">
+                          {bar.logo ? <ProviderLogo provider={bar.logo} size={14} /> : <span className="control-center-model__fallback" aria-hidden="true">{bar.name.slice(0, 1).toUpperCase()}</span>}
+                        </span>
+                        <span className="control-center-mix__bar-label"><span>{bar.name}</span></span>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="control-center-mix__clients">
+                  {slide.entries.map(entry => (
+                    <div className="control-center-mix__client" key={entry.id} title={`${entry.label}: ${formatCompact(entry.tokens)} total tokens, ${formatCompact(entry.calls)} calls`}>
+                      <ProviderLogo provider={entry.logo} size={15} />
+                      <strong>{entry.label}</strong>
+                      <span className="control-center-mix__client-track">
+                        <span style={{ width: `${Math.max(4, entry.share * 100)}%`, '--control-center-track-start': entry.palette[0], '--control-center-track-end': entry.palette[1] } as CSSProperties} />
+                      </span>
+                      <small>{formatCompact(entry.tokens)}</small>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+      {count > 1 ? (
+        <div className="control-center-mix__dots">
+          {slides.map((slide, dotIndex) => (
+            <button
+              key={slide.id}
+              type="button"
+              className={dotIndex === index ? 'control-center-mix__dot on' : 'control-center-mix__dot'}
+              aria-label={`Show ${slide.caption}`}
+              aria-pressed={dotIndex === index}
+              onClick={() => setIndex(dotIndex)}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+export function ControlCenterHome({ current, scope, providerLabel, period, provider, ready = true, quota, onNavigate, onShare }: { current: HomeCurrent; scope: string; providerLabel: string; period: Period; provider: string; ready?: boolean; quota: QuotaProvider[] | null; onNavigate?: (section: Section) => void; onShare?: () => void }) {
+  const sessionsReport = usePolled<SessionRow[]>(
+    () => metrora.getSessions(period, provider),
+    [period, provider],
+    { enabled: ready, memoKey: `sessions|${period}|${provider}|all|-` },
+  )
+  const usageMixSlides = useMemo(() => buildUsageMixSlides(current, sessionsReport.data), [current, sessionsReport.data])
   const sessions = current.topSessions.slice(0, 4)
-  const maxModelCost = Math.max(...models.map(model => model.cost), 0)
   const capacityGroups = (quota ?? [])
     .map(provider => ({ provider, windows: provider.windows.slice(0, 2) }))
     .filter(group => group.windows.length > 0)
@@ -140,22 +371,8 @@ export function ControlCenterHome({ current, scope, providerLabel, quota, onNavi
 
         <div className="control-center-panel control-center-panel--models">
           <div className="control-center-panel__head"><div><span className="eyebrow">Models</span><h2>Usage mix</h2></div><button className="control-center-link" type="button" onClick={() => onNavigate?.('models')}>Open Models →</button></div>
-          {models.length ? (
-            <div className="control-center-model-chart">
-              {models.map((model, index) => {
-                const share = current.cost > 0 ? model.cost / current.cost : 0
-                const logo = modelLogoKey(model)
-                const [barStart, barEnd] = modelBarPalette(model, index)
-                return (
-                  <div className="control-center-model" key={model.name} data-model-color={logo ?? 'fallback'} title={`${model.name}: ${formatUsd(model.cost)}, ${formatCompact(model.calls)} calls`}>
-                    <span className="control-center-model__value">{share > 0 ? percent(share) : '—'}</span>
-                    <div className="control-center-model__bar"><span style={{ height: `${maxModelCost > 0 ? Math.max(8, model.cost / maxModelCost * 100) : 0}%`, '--control-center-model-start': barStart, '--control-center-model-end': barEnd } as CSSProperties} /></div>
-                    <span className="control-center-model__identity">{logo ? <ProviderLogo provider={logo} size={18} /> : <span className="control-center-model__fallback" aria-hidden="true">{model.name.slice(0, 1).toUpperCase()}</span>}<strong>{model.name}</strong></span>
-                    <small>{formatCompact(model.calls)} calls</small>
-                  </div>
-                )
-              })}
-            </div>
+          {usageMixSlides.length ? (
+            <UsageMixCarousel slides={usageMixSlides} />
           ) : <EmptyNote>No model usage in this range yet.</EmptyNote>}
         </div>
 

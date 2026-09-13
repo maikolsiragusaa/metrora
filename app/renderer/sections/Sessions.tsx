@@ -1,18 +1,20 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { CliErrorPanel } from '../components/CliErrorPanel'
+import { Dropdown } from '../components/Dropdown'
 import { EmptyNote } from '../components/EmptyState'
+import { ProviderFilterStrip } from '../components/ProviderFilterStrip'
 import { ProviderLogo } from '../components/ProviderLogo'
 import { SectionSkeleton } from '../components/Skeleton'
-import { SegTabs } from '../components/SegTabs'
 import { StaleBanner } from '../components/StaleBanner'
 import { usePolled } from '../hooks/usePolled'
 import { formatCompact, formatDuration, formatUsd, shortenProjectPath } from '../lib/format'
 import { metrora } from '../lib/ipc'
+import { modelHouseIdFromName, modelHouseLabel, modelHouseLogoKey, type ModelHouseId } from '../lib/modelPresentation'
 import type { DateRange, Period, SessionRow } from '../lib/types'
 import { SessionsInspector } from './SessionsInspector'
 import {
-  compareRows,
+  compareRowsBy,
   formatSessionTime,
   formatReuseMultiple,
   formatUnitCost,
@@ -25,11 +27,11 @@ import {
   sessionHeadline,
   sessionIdentity,
   sessionRowLabel,
+  sessionSortAnnouncement,
   sessionTotalTokens,
   sessionUnitCost,
-  SORT_ANNOUNCEMENTS,
-  SORT_OPTIONS,
-  type SessionSort,
+  type SessionColumnSort,
+  type SessionSortKey,
 } from './sessions-presentation'
 
 export const INITIAL_VISIBLE = SESSION_PAGE_SIZE
@@ -37,10 +39,9 @@ export const INITIAL_VISIBLE = SESSION_PAGE_SIZE
 export { reasoningMixLabel }
 
 type SequenceEntry =
-  | { type: 'header'; provider: string; count: number; cost: number }
+  | { type: 'header'; client: string; count: number; cost: number }
   | { type: 'row'; row: SessionRow }
 
-type ProviderFilter = { id: string; label: string }
 type SessionDateFilter = 'all' | 'today' | '7days' | '30days' | 'month' | '6months'
 
 const SESSION_DATE_FILTERS: Array<{ value: SessionDateFilter; label: string }> = [
@@ -52,19 +53,36 @@ const SESSION_DATE_FILTERS: Array<{ value: SessionDateFilter; label: string }> =
   { value: '6months', label: '6M' },
 ]
 
-function providerFilters(rows: SessionRow[], detectedProviders: ProviderFilter[]): ProviderFilter[] {
-  const entries = new Map<string, ProviderFilter>()
-  for (const entry of detectedProviders) {
-    if (entry.id && !entries.has(entry.id)) entries.set(entry.id, entry)
-  }
+/** Model brand (OpenAI, Anthropic, …) strip options observed in the session rows.
+ * Rows with no brand-resolvable model count as 'unresolved' so the strip stays
+ * visible and those sessions remain reachable. */
+function sessionBrandOptions(rows: SessionRow[]): ModelHouseId[] {
+  const brands = new Set<ModelHouseId>()
   for (const row of rows) {
-    if (row.provider && !entries.has(row.provider)) entries.set(row.provider, { id: row.provider, label: providerLabel(row.provider) })
+    if (sessionBrandUnresolved(row)) brands.add('unresolved')
+    for (const model of row.models) {
+      const brand = modelHouseIdFromName(model)
+      if (brand) brands.add(brand)
+    }
   }
-  return [...entries.values()]
+  return [...brands].sort((a, b) => {
+    if (a === 'unresolved') return 1
+    if (b === 'unresolved') return -1
+    return modelHouseLabel(a).localeCompare(modelHouseLabel(b))
+  })
 }
 
-function providerLabel(provider: string): string {
-  return provider.replace(/[-\s]+/g, ' ').replace(/\b\w/g, value => value.toUpperCase())
+function sessionBrandUnresolved(row: SessionRow): boolean {
+  return row.models.length === 0 || row.models.some(model => modelHouseIdFromName(model) === undefined)
+}
+
+function sessionMatchesBrand(row: SessionRow, brand: ModelHouseId): boolean {
+  if (brand === 'unresolved') return sessionBrandUnresolved(row)
+  return row.models.some(model => modelHouseIdFromName(model) === brand)
+}
+
+function clientLabel(client: string): string {
+  return client.replace(/[-\s]+/g, ' ').replace(/\b\w/g, value => value.toUpperCase())
 }
 
 function filterOptions(rows: SessionRow[], getValue: (row: SessionRow) => string): string[] {
@@ -88,120 +106,53 @@ function matchesSessionDate(iso: string, filter: SessionDateFilter): boolean {
   return start === null || (Number.isFinite(timestamp) && timestamp >= start)
 }
 
+/** Shared-theme filter dropdown; the custom listbox keeps option text legible
+ * in both themes (native selects inherit unreadable OS colors). */
 function SessionFilterSelect({
+  id,
   label,
   value,
   options,
   onChange,
 }: {
+  id: string
   label: string
   value: string
   options: Array<{ value: string; label: string }>
   onChange: (value: string) => void
 }) {
   return (
-    <label className="sessions-filter-select">
-      <span className="sr-only">{label}</span>
-      <select aria-label={label} value={value} onChange={event => onChange(event.target.value)}>
-        <option value="all">{label}</option>
-        {options.filter(option => option.value !== 'all').map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-      </select>
-      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>
-    </label>
+    <Dropdown
+      id={id}
+      ariaLabel={label}
+      value={value}
+      options={[{ value: 'all', label }, ...options.filter(option => option.value !== 'all')]}
+      onChange={onChange}
+    />
   )
 }
 
-function ProviderFilterRow({ provider, detectedProviders, onProviderChange }: { provider: string; detectedProviders: ProviderFilter[]; onProviderChange: (value: string) => void }) {
-  const dragRef = useRef<{ pointerId: number; startX: number; startScrollLeft: number; moved: boolean } | null>(null)
-  const suppressClickRef = useRef(false)
+function sequenceForRows(rows: SessionRow[], grouped: boolean, sort: SessionColumnSort): SequenceEntry[] {
+  if (!grouped) return [...rows].sort((a, b) => compareRowsBy(sort.key, sort.direction, a, b)).map(row => ({ type: 'row' as const, row }))
 
-  if (detectedProviders.length === 0) return null
-
-  const endDrag = (event: PointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current
-    if (!drag || drag.pointerId !== event.pointerId) return
-    if (drag.moved) suppressClickRef.current = true
-    dragRef.current = null
-    event.currentTarget.classList.remove('is-dragging')
-    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
-  }
-
-  return (
-    <div
-      className="session-provider-filter"
-      role="group"
-      aria-label="Filter sessions by provider"
-      data-provider-strip="true"
-      data-scroll-interaction="drag-or-wheel"
-      onPointerDown={event => {
-        if (event.pointerType === 'mouse' && event.button !== 0) return
-        dragRef.current = {
-          pointerId: event.pointerId,
-          startX: event.clientX,
-          startScrollLeft: event.currentTarget.scrollLeft,
-          moved: false,
-        }
-        event.currentTarget.setPointerCapture?.(event.pointerId)
-      }}
-      onPointerMove={event => {
-        const drag = dragRef.current
-        if (!drag || drag.pointerId !== event.pointerId) return
-        const deltaX = event.clientX - drag.startX
-        if (!drag.moved && Math.abs(deltaX) < 4) return
-        drag.moved = true
-        event.currentTarget.classList.add('is-dragging')
-        event.currentTarget.scrollLeft = drag.startScrollLeft - deltaX
-        event.preventDefault()
-      }}
-      onPointerUp={endDrag}
-      onPointerCancel={endDrag}
-      onClickCapture={event => {
-        if (!suppressClickRef.current) return
-        suppressClickRef.current = false
-        event.preventDefault()
-        event.stopPropagation()
-      }}
-      onWheel={event => {
-        if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
-          event.currentTarget.scrollLeft += event.deltaY
-          event.preventDefault()
-        }
-      }}
-    >
-      <button type="button" className={provider === 'all' ? 'on' : undefined} aria-pressed={provider === 'all'} onClick={() => onProviderChange('all')}>
-        <span className="session-provider-all-icon" aria-hidden="true">✦</span>
-        All providers
-      </button>
-      {detectedProviders.map(entry => (
-        <button key={entry.id} type="button" className={provider === entry.id ? 'on' : undefined} aria-pressed={provider === entry.id} onClick={() => onProviderChange(entry.id)}>
-          <ProviderLogo provider={entry.id} size={15} />
-          {entry.label}
-        </button>
-      ))}
-    </div>
-  )
-}
-
-function sequenceForRows(rows: SessionRow[], grouped: boolean, sort: SessionSort): SequenceEntry[] {
-  if (!grouped) return [...rows].sort((a, b) => compareRows(sort, a, b)).map(row => ({ type: 'row' as const, row }))
-
-  const byProvider = rows.reduce((map, row) => {
-    const providerRows = map.get(row.provider) ?? []
-    providerRows.push(row)
-    map.set(row.provider, providerRows)
+  const groupSign = sort.direction === 'asc' ? -1 : 1
+  const byClient = rows.reduce((map, row) => {
+    const clientRows = map.get(row.provider) ?? []
+    clientRows.push(row)
+    map.set(row.provider, clientRows)
     return map
   }, new Map<string, SessionRow[]>())
 
-  return [...byProvider.entries()]
-    .map(([provider, providerRows]) => ({
-      provider,
-      rows: [...providerRows].sort((a, b) => compareRows(sort, a, b)),
-      cost: providerRows.reduce((sum, row) => sum + row.cost, 0),
-      sortValue: groupSortValue(sort, providerRows),
+  return [...byClient.entries()]
+    .map(([client, clientRows]) => ({
+      client,
+      rows: [...clientRows].sort((a, b) => compareRowsBy(sort.key, sort.direction, a, b)),
+      cost: clientRows.reduce((sum, row) => sum + row.cost, 0),
+      sortValue: groupSortValue(sort.key, clientRows),
     }))
-    .sort((a, b) => b.sortValue - a.sortValue || a.provider.localeCompare(b.provider))
+    .sort((a, b) => groupSign * (b.sortValue - a.sortValue) || a.client.localeCompare(b.client))
     .flatMap(group => [
-      { type: 'header' as const, provider: group.provider, count: group.rows.length, cost: group.cost },
+      { type: 'header' as const, client: group.client, count: group.rows.length, cost: group.cost },
       ...group.rows.map(row => ({ type: 'row' as const, row })),
     ])
 }
@@ -275,9 +226,19 @@ function SessionTableRow({ row, selected, onSelect }: { row: SessionRow; selecte
         </button>
       </td>
       <td className="session-client-cell">
-        <span className="session-client"><ProviderLogo provider={row.provider} size={15} /><span>{providerLabel(row.provider)}</span></span>
+        <span className="session-client"><ProviderLogo provider={row.provider} size={15} /><span>{clientLabel(row.provider)}</span></span>
       </td>
-      <td className="session-model-cell" title={modelLabel}>{modelLabel}</td>
+      <td className="session-model-cell" title={modelLabel}>
+        {row.models.length > 0 ? row.models.map(model => {
+          const house = modelHouseIdFromName(model)
+          return (
+            <span className="session-model-entry" key={model}>
+              {house ? <ProviderLogo provider={modelHouseLogoKey(house)} size={13} /> : null}
+              <span className="session-model-name">{model}</span>
+            </span>
+          )
+        }) : <span>Model not identified</span>}
+      </td>
       <td className="session-number">{row.turns.toLocaleString('en-US')}</td>
       <td className="session-number">{row.calls.toLocaleString('en-US')}</td>
       <td className="session-number token-input">{formatCompact(row.inputTokens)}</td>
@@ -291,6 +252,45 @@ function SessionTableRow({ row, selected, onSelect }: { row: SessionRow; selecte
       <td className="session-number session-duration">{formatDuration(row.durationMs)}</td>
       <td className="session-last-active"><time dateTime={row.endedAt}>{formatSessionTime(row.endedAt)}</time></td>
     </tr>
+  )
+}
+
+/** Sortable table header: every sortable column carries a faint arrow so the
+ * affordance is visible; the active column's arrow is colored and points in
+ * the current direction. One click on the active column reverses it. */
+function SessionSortHeader({
+  label,
+  sortKey,
+  sort,
+  numeric = false,
+  title,
+  onSort,
+}: {
+  label: string
+  sortKey: SessionSortKey
+  sort: SessionColumnSort
+  numeric?: boolean
+  title?: string
+  onSort: (key: SessionSortKey) => void
+}) {
+  const active = sort.key === sortKey
+  return (
+    <th
+      className={numeric ? 'session-number' : undefined}
+      aria-sort={active ? (sort.direction === 'desc' ? 'descending' : 'ascending') : undefined}
+      title={title ?? 'Click to sort by this column · click again to reverse the direction'}
+    >
+      <button
+        type="button"
+        className={`session-sort-header${active ? ' on' : ''}`}
+        onClick={() => onSort(sortKey)}
+      >
+        <span>{label}</span>
+        <span className="session-sort-arrow" aria-hidden="true">
+          {active ? (sort.direction === 'desc' ? '▼' : '▲') : '↕'}
+        </span>
+      </button>
+    </th>
   )
 }
 
@@ -318,7 +318,6 @@ export function Sessions({
   projectScopeId,
   range = null,
   refreshToken = 0,
-  detectedProviders = [],
   onProviderChange = () => {},
   historicalSessionCount,
   ready = true,
@@ -328,7 +327,6 @@ export function Sessions({
   projectScopeId?: string
   range?: DateRange | null
   refreshToken?: number
-  detectedProviders?: Array<{ id: string; label: string }>
   onProviderChange?: (value: string) => void
   historicalSessionCount?: number | null
   ready?: boolean
@@ -338,8 +336,9 @@ export function Sessions({
   const [projectFilter, setProjectFilter] = useState('all')
   const [modelFilter, setModelFilter] = useState('all')
   const [clientFilter, setClientFilter] = useState('all')
+  const [brandFilter, setBrandFilter] = useState<'all' | ModelHouseId>('all')
   const [dateFilter, setDateFilter] = useState<SessionDateFilter>('all')
-  const [sort, setSort] = useState<SessionSort>('recent')
+  const [sort, setSort] = useState<SessionColumnSort>({ key: 'recent', direction: 'desc' })
   const [grouped, setGrouped] = useState(false)
   const [page, setPage] = useState(0)
   const scopedProject = projectScopeId && projectScopeId !== 'all' ? projectScopeId : undefined
@@ -364,11 +363,13 @@ export function Sessions({
     .filter(row => projectFilter === 'all' || row.project === projectFilter)
     .filter(row => modelFilter === 'all' || row.models.includes(modelFilter))
     .filter(row => clientFilter === 'all' || row.provider === clientFilter)
+    .filter(row => brandFilter === 'all' || sessionMatchesBrand(row, brandFilter))
     .filter(row => matchesSessionDate(row.endedAt, dateFilter))
-  const availableProviders = useMemo(() => providerFilters(rows, detectedProviders), [rows, detectedProviders])
+  const brandOptions = useMemo(() => sessionBrandOptions(rows), [rows])
+  const brandStripOptions = useMemo(() => brandOptions.map(brand => ({ id: brand, label: modelHouseLabel(brand), logoProvider: modelHouseLogoKey(brand) })), [brandOptions])
   const projectOptions = useMemo(() => filterOptions(rows, row => row.project).map(value => ({ value, label: shortenProjectPath(value) })), [rows])
   const modelOptions = useMemo(() => [...new Set(rows.flatMap(row => row.models.map(model => model.trim()).filter(Boolean)))].sort((a, b) => a.localeCompare(b)).map(value => ({ value, label: value })), [rows])
-  const clientOptions = useMemo(() => filterOptions(rows, row => row.provider).map(value => ({ value, label: providerLabel(value) })), [rows])
+  const clientOptions = useMemo(() => filterOptions(rows, row => row.provider).map(value => ({ value, label: clientLabel(value) })), [rows])
   const sequence = useMemo(() => sequenceForRows(filtered, grouped, sort), [filtered, grouped, sort])
   const totalPages = Math.max(1, Math.ceil(filtered.length / SESSION_PAGE_SIZE))
   const selectedSession = selectedId ? rows.find(row => sessionIdentity(row) === selectedId) ?? null : null
@@ -376,7 +377,7 @@ export function Sessions({
 
   useEffect(() => {
     setPage(0)
-  }, [query, sort, grouped, period, provider, projectScopeId, range?.from, range?.to, projectFilter, modelFilter, clientFilter, dateFilter])
+  }, [query, sort, grouped, period, provider, projectScopeId, range?.from, range?.to, projectFilter, modelFilter, clientFilter, brandFilter, dateFilter])
 
   useEffect(() => {
     setPage(current => Math.min(current, totalPages - 1))
@@ -399,10 +400,11 @@ export function Sessions({
   const renderedSequence = pageSequence(sequence, page)
   const renderedRows = Math.min(SESSION_PAGE_SIZE, Math.max(0, filtered.length - page * SESSION_PAGE_SIZE))
 
-  const onSortChange = (value: string) => {
-    const next = value as SessionSort
-    setSort(next)
-    if (next === 'recent') setGrouped(false)
+  const onSortColumn = (key: SessionSortKey) => {
+    setSort(current => current.key === key
+      ? { key, direction: current.direction === 'desc' ? 'asc' : 'desc' }
+      : { key, direction: 'desc' })
+    if (key === 'recent') setGrouped(false)
   }
 
   const clearFilters = () => {
@@ -410,6 +412,7 @@ export function Sessions({
     setProjectFilter('all')
     setModelFilter('all')
     setClientFilter('all')
+    setBrandFilter('all')
     setDateFilter('all')
   }
 
@@ -426,7 +429,13 @@ export function Sessions({
             {unavailableDetail > 0 && query === '' ? <p>{unavailableDetail.toLocaleString('en-US')} older session{unavailableDetail === 1 ? '' : 's'} remain in durable historical totals without source detail on this device.</p> : null}
           </div>
 
-          <ProviderFilterRow provider={provider} detectedProviders={availableProviders} onProviderChange={onProviderChange} />
+          <ProviderFilterStrip
+            provider={brandFilter}
+            providers={brandStripOptions}
+            onProviderChange={value => setBrandFilter(value as 'all' | ModelHouseId)}
+            ariaLabel="Filter sessions by brand"
+            allLabel="All brands"
+          />
 
           <div className="sessions-toolbar" role="group" aria-label="Session filters" data-filter-layout="single-row-when-closed">
             <label className="session-search-field">
@@ -434,24 +443,22 @@ export function Sessions({
               <span className="sr-only">Search sessions</span>
               <input aria-label="Search sessions" placeholder="Filter sessions…" value={query} onChange={event => setQuery(event.target.value)} />
             </label>
-            <SessionFilterSelect label="Project" value={projectFilter} options={projectOptions} onChange={setProjectFilter} />
-            <SessionFilterSelect label="Model" value={modelFilter} options={modelOptions} onChange={setModelFilter} />
-            <SessionFilterSelect label="Client" value={clientFilter} options={clientOptions} onChange={setClientFilter} />
-            <SessionFilterSelect label="Date" value={dateFilter} options={SESSION_DATE_FILTERS} onChange={value => setDateFilter(value as SessionDateFilter)} />
+            <SessionFilterSelect id="sessions-project-filter" label="Project" value={projectFilter} options={projectOptions} onChange={setProjectFilter} />
+            <SessionFilterSelect id="sessions-model-filter" label="Model" value={modelFilter} options={modelOptions} onChange={setModelFilter} />
+            <SessionFilterSelect id="sessions-client-filter" label="Client" value={clientFilter} options={clientOptions} onChange={setClientFilter} />
+            <SessionFilterSelect id="sessions-date-filter" label="Date" value={dateFilter} options={SESSION_DATE_FILTERS} onChange={value => setDateFilter(value as SessionDateFilter)} />
           </div>
 
           <div className="sessions-sort-toolbar">
-            <div className="sessions-sort" aria-label="Sort sessions">
-              <SegTabs options={SORT_OPTIONS} value={sort} onChange={onSortChange} />
-            </div>
+            <span className="sessions-sort-hint" role="note">Click a column to sort · click again to reverse</span>
             <button className={grouped ? 'sessions-group-toggle on' : 'sessions-group-toggle'} type="button" aria-pressed={grouped} onClick={() => setGrouped(value => !value)}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h6" /><circle cx="18" cy="12" r="2.5" /></svg>
-              Group by provider
+              Group by client
             </button>
           </div>
 
           <div className="sr-only" role="status" aria-live="polite">
-            {`Sessions sorted by ${SORT_ANNOUNCEMENTS[sort]}, ${grouped ? 'grouped by provider' : 'not grouped by provider'}. ${sessionCountLabel} after filters.`}
+            {`Sessions sorted by ${sessionSortAnnouncement(sort)}, ${grouped ? 'grouped by client' : 'not grouped by client'}. ${sessionCountLabel} after filters.`}
           </div>
 
           {report.data.length === 0 ? (
@@ -480,24 +487,24 @@ export function Sessions({
                         <th>Session</th>
                         <th>Client</th>
                         <th>Model</th>
-                        <th className="session-number">Turn</th>
-                        <th className="session-number" title="Canonical API call count; an exact message count is not part of the session projection">Calls</th>
-                        <th className="session-number">Input</th>
-                        <th className="session-number">Output</th>
-                        <th className="session-number">Cache R</th>
-                        <th className="session-number">Cache W</th>
-                        <th className="session-number" title="Cached input read per uncached input token">Cache×</th>
-                        <th className="session-number">Total</th>
-                        <th className="session-number">Cost</th>
-                        <th className="session-number" title="Effective cost per one million total tokens">Cost/1M</th>
-                        <th className="session-number">Duration</th>
-                        <th>Last Active</th>
+                        <SessionSortHeader label="Turn" sortKey="turns" sort={sort} numeric onSort={onSortColumn}/>
+                        <SessionSortHeader label="Calls" sortKey="calls" sort={sort} numeric onSort={onSortColumn}/>
+                        <SessionSortHeader label="Input" sortKey="input" sort={sort} numeric onSort={onSortColumn}/>
+                        <SessionSortHeader label="Output" sortKey="output" sort={sort} numeric onSort={onSortColumn}/>
+                        <SessionSortHeader label="Cache R" sortKey="cacheRead" sort={sort} numeric onSort={onSortColumn}/>
+                        <SessionSortHeader label="Cache W" sortKey="cacheWrite" sort={sort} numeric onSort={onSortColumn}/>
+                        <SessionSortHeader label="Cache×" sortKey="cache" sort={sort} numeric title="Cached input read per uncached input token · click to sort, click again to reverse" onSort={onSortColumn}/>
+                        <SessionSortHeader label="Total" sortKey="tokens" sort={sort} numeric onSort={onSortColumn}/>
+                        <SessionSortHeader label="Cost" sortKey="cost" sort={sort} numeric onSort={onSortColumn}/>
+                        <SessionSortHeader label="Cost/1M" sortKey="unitCost" sort={sort} numeric title="Effective cost per one million total tokens · click to sort, click again to reverse" onSort={onSortColumn}/>
+                        <SessionSortHeader label="Duration" sortKey="duration" sort={sort} numeric onSort={onSortColumn}/>
+                        <SessionSortHeader label="Last Active" sortKey="recent" sort={sort} onSort={onSortColumn}/>
                       </tr>
                     </thead>
                     <tbody>
                       {renderedSequence.map(entry => entry.type === 'header' ? (
-                        <tr className="session-provider-group" key={`provider-${entry.provider}`}>
-                          <td colSpan={15}><ProviderLogo provider={entry.provider} size={14} /><strong>{providerLabel(entry.provider)}</strong><span>{entry.count.toLocaleString('en-US')} sessions · {formatUsd(entry.cost)}</span></td>
+                        <tr className="session-provider-group" key={`client-${entry.client}`}>
+                          <td colSpan={15}><ProviderLogo provider={entry.client} size={14} /><strong>{clientLabel(entry.client)}</strong><span>{entry.count.toLocaleString('en-US')} sessions · {formatUsd(entry.cost)}</span></td>
                         </tr>
                       ) : (
                         <SessionTableRow

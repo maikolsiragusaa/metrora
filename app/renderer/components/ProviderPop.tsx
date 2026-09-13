@@ -12,17 +12,19 @@ export type ProviderOption = { value: string; label: string }
 export function ProviderPop({
   value,
   options,
+  ariaLabel = 'Providers',
   onSelect,
 }: {
   value: string
   label: string
   options: ProviderOption[]
+  ariaLabel?: string
   onSelect: (value: string) => void
 }) {
   return (
     <Dropdown
       id="provider-select"
-      ariaLabel="Providers"
+      ariaLabel={ariaLabel}
       value={value}
       options={options}
       onChange={onSelect}

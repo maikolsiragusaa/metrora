@@ -285,8 +285,8 @@ export type MenubarPayload = {
     /// `metrora model-savings`.
     localModelSavings: LocalModelSavings
     providers: Record<string, number>
-    /// Provider identity alongside the `providers` map: `id` is the internal
-    /// provider name (round-trips as --provider), `label` the display name.
+    /// Client/source identity alongside the `providers` map: `id` is the
+    /// internal client name (round-trips as --provider), `label` the display name.
     /// The `providers` map keys stay lowercased display names for compatibility.
     providerDetails: Array<{ id: string; label: string; cost: number }>
     topProjects: Array<{

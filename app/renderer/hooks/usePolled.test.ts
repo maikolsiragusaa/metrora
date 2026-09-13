@@ -95,6 +95,25 @@ describe('usePolled', () => {
     expect(result.current.error).toMatchObject({ kind: 'nonzero', message: 'boom' })
   })
 
+  it('notifies the caller when an explicit refresh fails', async () => {
+    const calls: Array<{ resolve: (v: string) => void; reject: (e: unknown) => void }> = []
+    const fetcher = vi.fn(() => new Promise<string>((resolve, reject) => { calls.push({ resolve, reject }) }))
+    const onManualError = vi.fn()
+    const { result } = renderHook(() => usePolled(fetcher, [], {
+      manualFetcher: fetcher,
+      onManualError,
+    }))
+
+    await act(async () => { calls[0]!.resolve('good') })
+    act(() => { result.current.refreshFresh() })
+    await act(async () => { calls[1]!.reject({ kind: 'timeout', message: 'scan timed out' }) })
+
+    expect(result.current.data).toBe('good')
+    expect(result.current.error).toMatchObject({ kind: 'timeout', message: 'scan timed out' })
+    expect(onManualError).toHaveBeenCalledOnce()
+    expect(onManualError).toHaveBeenCalledWith({ kind: 'timeout', message: 'scan timed out' })
+  })
+
   it('serves last-good data instantly on switch-back and flags `switching` while it refreshes', async () => {
     const resolvers: Array<(v: string) => void> = []
     const fetcher = vi.fn(() => new Promise<string>(resolve => { resolvers.push(resolve) }))

@@ -703,7 +703,40 @@
   color: var(--metrora-accent-text);
 }
 
+/* The bar owns the section's popover layer: without a stacking context above
+   the body, Home's backdrop-filtered panels later in DOM order would paint
+   over the calendar/provider dropdowns. */
+.metrora-shell .bar {
+  position: relative;
+  z-index: 30;
+}
+
 .metrora-shell .bar .refresh-button:disabled { opacity: .65; }
+
+.metrora-shell .bar .refresh-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.metrora-shell .bar .refresh-button-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+}
+
+.metrora-shell .bar .refresh-button.is-refreshing .refresh-button-icon {
+  animation: metrora-refresh-spin .9s linear infinite;
+}
+
+@keyframes metrora-refresh-spin {
+  to { transform: rotate(360deg); }
+}
 
 .metrora-shell .body {
   align-items: stretch;

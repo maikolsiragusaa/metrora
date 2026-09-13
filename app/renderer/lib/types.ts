@@ -158,8 +158,9 @@ export type MenubarPayload = {
     unpricedModels?: Array<{ model: string; calls: number; tokens: number }>
     localModelSavings: LocalModelSavings
     providers: Record<string, number>
-    // Optional: older CLIs omit it. `id` is the internal provider name (round-trips
-    // as --provider), `label` the display name. Fall back to `providers` when absent.
+    // Optional: older CLIs omit it. `id` is the internal client/source name
+    // (round-trips as --provider), `label` the display name. Fall back to
+    // `providers` when absent.
     providerDetails?: Array<{ id: string; label: string; cost: number }>
     topProjects: Array<{
       name: string

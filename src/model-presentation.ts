@@ -1,5 +1,6 @@
 import { getHistoricalPricingModelKey, getShortModelName } from './models.js'
 import type { ModelAccounting, ModelAccountingRow } from './menubar-json.js'
+import type { ModelBrandId } from './model-brand.js'
 import {
   combineReasoningSemantics,
   reasoningSemanticsForProviders,
@@ -25,6 +26,8 @@ export type ModelPresentationRow = {
   cacheWriteTokens: number
   tokenDetail: boolean
   reasoningSemantics: ReasoningTokenSemantics
+  /** Canonical model-house identity, not the delivery route or collector. */
+  brandId?: ModelBrandId
   provider?: string
   providers: string[]
   sourceProviders: string[]
@@ -169,6 +172,7 @@ function deliveryStatus(rows: readonly ModelAccountingRow[]): DeliveryStatus {
 }
 
 function buildRow(identity: PresentationIdentity, rows: ModelAccountingRow[]): ModelPresentationRow {
+  const brandIds = [...new Set(rows.flatMap(row => row.brandId ? [row.brandId] : []))]
   const providers = [...new Set(rows.flatMap(row => row.provider ? [row.provider] : []))].sort()
   const sourceProviders = [...new Set(rows.flatMap(row => row.sourceProviders ?? []))].sort()
   const rawModels = [...new Set(rows.flatMap(row => row.rawModels ?? [row.name]))].sort()
@@ -211,6 +215,7 @@ function buildRow(identity: PresentationIdentity, rows: ModelAccountingRow[]): M
     cacheWriteTokens: rows.reduce((sum, row) => sum + row.cacheWriteTokens, 0),
     tokenDetail,
     reasoningSemantics,
+    ...(brandIds.length === 1 ? { brandId: brandIds[0] } : {}),
     ...(providers.length === 1 ? { provider: providers[0] } : {}),
     providers,
     sourceProviders,

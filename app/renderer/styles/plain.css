@@ -934,7 +934,7 @@ td:first-child { font-size: var(--fs-body); font-weight: var(--fw-body); }
 .sessions-title-line > span { color: var(--mut); font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums; }
 .sessions-title-line i { color: var(--mut2); font-style: normal; }
 .sessions-heading p { max-width: 760px; margin: 0; color: var(--mut2); font-size: 10.5px; line-height: 1.35; }
-.session-provider-filter { display: flex; min-width: 0; align-items: center; flex-wrap: nowrap; gap: 6px; overflow-x: auto; padding: 1px 0 2px; overscroll-behavior-x: contain; scrollbar-width: none; cursor: grab; touch-action: pan-y; user-select: none; }
+.session-provider-filter { display: flex; width: 100%; max-width: 100%; min-width: 0; align-self: stretch; align-items: center; flex-wrap: nowrap; gap: 6px; overflow-x: auto; padding: 1px 0 2px; overscroll-behavior-x: contain; scrollbar-width: none; cursor: grab; touch-action: pan-y; user-select: none; }
 .session-provider-filter::-webkit-scrollbar { display: none; }
 .session-provider-filter.is-dragging { cursor: grabbing; }
 .session-provider-filter.is-dragging button { cursor: grabbing; }
@@ -949,18 +949,22 @@ td:first-child { font-size: var(--fs-body); font-weight: var(--fw-body); }
 .session-search-field svg { width: 15px; height: 15px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; }
 .session-search-field input { min-width: 0; flex: 1 1 auto; border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; font-size: 11.5px; }
 .session-search-field input::placeholder { color: var(--mut2); }
-.sessions-filter-select { position: relative; display: inline-flex; min-width: 86px; height: 34px; flex: 0 0 auto; align-items: center; border: 1px solid var(--line); border-radius: 8px; background: var(--session-surface); color: var(--mut); }
-.sessions-filter-select select { width: 100%; height: 100%; appearance: none; border: 0; outline: 0; background: transparent; padding: 0 26px 0 10px; color: inherit; font: inherit; font-size: 10.5px; cursor: pointer; }
-.sessions-filter-select select:focus-visible { box-shadow: 0 0 0 1px var(--session-accent); border-radius: 8px; }
-.sessions-filter-select svg { position: absolute; right: 8px; width: 13px; height: 13px; pointer-events: none; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.6; }
-.sessions-filter-select:focus-within { border-color: color-mix(in srgb, var(--session-accent) 62%, var(--line)); color: var(--ink); }
+.sessions-filter-select { min-width: 86px; height: 34px; flex: 0 0 auto; }
+.sessions-filter-select .dropdown, .sessions-filter-select .dropdown-trigger { height: 100%; }
+.sessions-filter-select .dropdown-trigger { min-height: 34px; border: 1px solid var(--line); border-radius: 8px; background: var(--session-surface); color: var(--mut); font-size: 10.5px; padding: 0 9px; gap: 5px; }
+.sessions-filter-select .dropdown-trigger:hover { color: var(--ink); border-color: color-mix(in srgb, var(--session-accent) 50%, var(--line)); }
+.sessions-filter-select .dropdown-trigger:focus-visible { border-color: color-mix(in srgb, var(--session-accent) 62%, var(--line)); outline: 1px solid var(--session-accent); outline-offset: 1px; }
+.sessions-filter-select .dropdown-menu { z-index: 40; }
 .sessions-sort-toolbar { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 8px; }
-.sessions-sort { min-width: 0; overflow-x: auto; scrollbar-width: none; }
-.sessions-sort::-webkit-scrollbar { display: none; }
-.sessions-sort .seg { min-width: max-content; background: var(--session-surface); border-color: var(--line); }
-.sessions-sort .seg span { padding-inline: 9px; font-size: 10.5px; }
-.sessions-sort .seg .on { background: var(--session-accent-soft); color: var(--ink); box-shadow: inset 0 -2px 0 var(--session-accent); }
-.sessions-sort .seg span:focus-visible { outline-color: var(--session-accent); }
+.sessions-sort-hint { color: var(--mut2); font-size: 10px; white-space: nowrap; }
+.session-sort-header { display: inline-flex; width: 100%; align-items: center; gap: 3px; border: 0; background: transparent; padding: 0; color: inherit; font: inherit; letter-spacing: inherit; text-align: inherit; cursor: pointer; }
+.sessions-table th.session-number .session-sort-header { justify-content: flex-end; }
+.session-sort-header:hover { color: var(--ink); }
+.session-sort-header:hover .session-sort-arrow { color: var(--ink); }
+.session-sort-header.on { color: var(--accent); }
+.session-sort-header:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+.session-sort-arrow { font-size: 7px; line-height: 1; color: var(--mut2); }
+.session-sort-header.on .session-sort-arrow { color: var(--accent); }
 .sessions-group-toggle { display: inline-flex; min-height: 34px; flex: 0 0 auto; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 8px; background: var(--session-surface); padding: 0 11px; color: var(--mut); font: inherit; font-size: 10.5px; cursor: pointer; white-space: nowrap; }
 .sessions-group-toggle svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.6; }
 .sessions-group-toggle:hover, .sessions-group-toggle:focus-visible { border-color: color-mix(in srgb, var(--session-accent) 50%, var(--line)); color: var(--ink); outline: none; }
@@ -1002,6 +1006,9 @@ td:first-child { font-size: var(--fs-body); font-weight: var(--fw-body); }
 .session-client { display: inline-flex; min-width: 0; align-items: center; gap: 7px; overflow: hidden; }
 .session-client > span:last-child { overflow: hidden; text-overflow: ellipsis; }
 .session-model-cell { color: var(--ink) !important; }
+.session-model-entry { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+.session-model-entry:not(:first-child)::before { content: ','; margin-right: 6px; color: var(--mut2); }
+.session-model-entry .provider-logo { flex: 0 0 auto; }
 .session-last-active { color: var(--mut2) !important; font-variant-numeric: tabular-nums; }
 .sessions-table .token-input { color: #67d493; }
 .sessions-table .token-output { color: #f49a87; }

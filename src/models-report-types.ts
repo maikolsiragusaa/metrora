@@ -3,6 +3,7 @@ import type { TaskCategory } from './types.js'
 import type { ReasoningTokenSemantics } from './token-semantics.js'
 
 export type ModelReportRow = {
+  /** Legacy JSON field name: this value is the collector/client source (`call.provider`), not `modelProvider`. */
   provider: string
   providerDisplayName: string
   model: string

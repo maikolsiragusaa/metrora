@@ -6,7 +6,7 @@ import { EmptyNote } from '../components/EmptyState'
 import { ListRow } from '../components/ListRow'
 import { SectionSkeleton } from '../components/Skeleton'
 import { ShareCardModal } from '../components/ShareCardModal'
-import { StaleBanner } from '../components/StaleBanner'
+import { IncompleteReconciliationBanner, StaleBanner } from '../components/StaleBanner'
 import { useBarGrowIn } from '../lib/motion'
 import { type Polled, usePolled } from '../hooks/usePolled'
 import { formatCompact, formatUsd } from '../lib/format'
@@ -382,16 +382,15 @@ export function OverviewContent({
     return (
       <div className="ov-dashboard ov-dashboard--control-center">
         {error && <StaleBanner error={error} />}
-        {!error && data.freshness?.reconciliation === 'degraded' && (
-          <div role="status" className="stale-banner">
-            Showing canonical last-good data · source reconciliation is incomplete
-          </div>
-        )}
+        {!error && data.freshness?.reconciliation === 'degraded' && <IncompleteReconciliationBanner />}
 
         <ControlCenterHome
           current={data.current}
           scope={data.current.label}
           providerLabel={providerLabel}
+          period={period}
+          provider={provider}
+          ready={ready}
           quota={quota.data}
           onNavigate={onNavigate}
           onShare={() => setShareOpen(true)}
@@ -416,11 +415,7 @@ export function OverviewContent({
   return (
     <div className="ov-dashboard">
       {error && <StaleBanner error={error} />}
-      {!error && data.freshness?.reconciliation === 'degraded' && (
-        <div role="status" className="stale-banner">
-          Showing canonical last-good data · source reconciliation is incomplete
-        </div>
-      )}
+      {!error && data.freshness?.reconciliation === 'degraded' && <IncompleteReconciliationBanner />}
 
       <div className="share-card-trigger-row">
         <div className="share-card-trigger-copy">

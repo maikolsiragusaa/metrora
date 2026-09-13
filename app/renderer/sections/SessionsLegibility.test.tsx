@@ -74,7 +74,7 @@ describe('Sessions dense-report legibility', () => {
       name: /Select session: Investigate cache\. Project projects\/metrora\. Session ID claude\/abc:123\./i,
     })
     const status = screen.getByRole('status')
-    expect(status).toHaveTextContent('Sessions sorted by most recent, not grouped by provider. 1 session after filters.')
+    expect(status).toHaveTextContent('Sessions sorted by most recent, not grouped by client. 1 session after filters.')
 
     const row = sessionRow
     expect(row).toHaveAttribute('aria-controls', 'session-details-claude-projects-metrora-claude-abc-123')
@@ -92,10 +92,10 @@ describe('Sessions dense-report legibility', () => {
     expect(within(detail).getByText('0 of 1 calls known · 0% coverage')).toBeInTheDocument()
     expect(within(detail).getAllByText('Not identified').length).toBeGreaterThan(0)
 
-    await user.click(screen.getByRole('tab', { name: 'Cost' }))
+    await user.click(within(screen.getByRole('table', { name: 'Detailed sessions' })).getByRole('button', { name: 'Cost' }))
     await waitFor(() => expect(status).toHaveTextContent('Sessions sorted by highest cost'))
 
-    await user.click(screen.getByRole('button', { name: 'Group by provider' }))
-    await waitFor(() => expect(status).toHaveTextContent('grouped by provider'))
+    await user.click(screen.getByRole('button', { name: 'Group by client' }))
+    await waitFor(() => expect(status).toHaveTextContent('grouped by client'))
   })
 })
