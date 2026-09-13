@@ -2867,6 +2867,10 @@ export type ScanProgressEvent =
   | { kind: 'providers'; providers: string[]; cold?: boolean }
   | { kind: 'provider'; provider: string; state: 'start' | 'done' | 'skipped'; files?: number }
   | { kind: 'tick'; provider: string; done: number; total: number }
+  // Phases outside any provider's per-file tick stream (daily-cache hydration,
+  // optimize scan, payload assembly). The watchdog accepts these as idle
+  // heartbeats; optional done/total mirror the tick rules.
+  | { kind: 'stage'; stage: string; done?: number; total?: number }
 
 export function emitScanProgress(event: ScanProgressEvent): void {
   if (process.env['METRORA_PROGRESS'] !== '1') return
@@ -2988,11 +2992,19 @@ async function parseProviderSources(
   // agent-traces.db) can accumulate via the merge logic below rather than
   // being wiped on every iteration.
   const clearedPaths = new Set<string>()
+  // Non-claude providers previously emitted only start/done, so a long
+  // transcript parse left the desktop's idle watchdog silent for the whole
+  // pass. Emit per-file ticks (baseline zero first; only strictly increasing
+  // ticks are heard). Only the provider's first pass per process is in the
+  // gate's 'start' state — which is the pass that does the real parsing.
+  const parseableSources = dateRange
+    ? changedSources.filter(({ fp }) => fp.mtimeMs >= dateRange.start.getTime())
+    : changedSources
+  if (parseableSources.length > 0) emitScanProgress({ kind: 'tick', provider: providerName, done: 0, total: parseableSources.length })
   try {
-    for (const { source, fp, cached: cachedFallback } of changedSources) {
-      if (dateRange) {
-        if (fp.mtimeMs < dateRange.start.getTime()) continue
-      }
+    for (let sourceIndex = 0; sourceIndex < parseableSources.length; sourceIndex++) {
+      const { source, fp, cached: cachedFallback } = parseableSources[sourceIndex]!
+      emitScanProgress({ kind: 'tick', provider: providerName, done: sourceIndex + 1, total: parseableSources.length })
 
       // Clear stale entry before parse — but only once per path so that
       // multiple sources mapping to the same file path can merge their turns.

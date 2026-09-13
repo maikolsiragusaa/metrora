@@ -1,6 +1,6 @@
 import { CATEGORY_LABELS, type ProjectSummary, type TaskCategory, type DateRange } from './types.js'
 import { type PeriodData, type ProviderCost, type MenubarPayload, type ClaudeConfigSelector, buildMenubarPayload } from './menubar-json.js'
-import { parseAllSessions, filterProjectsByName, filterProjectsByDays, filterProjectsByClaudeConfigSource, isSessionHydrationComplete } from './parser.js'
+import { parseAllSessions, filterProjectsByName, filterProjectsByDays, filterProjectsByClaudeConfigSource, isSessionHydrationComplete, emitScanProgress } from './parser.js'
 import { findUnpricedModels, isExpectedFreeModel } from './models.js'
 import { getAllProviders, safeDiscoverSessions } from './providers/index.js'
 import { claude, getClaudeConfigDirs, getDesktopSessionsDirs } from './providers/claude.js'
@@ -264,7 +264,16 @@ export async function buildDurablePeriod(periodInfo: PeriodInfo, opts: Aggregate
   const rangeEndStr = toDateString(periodInfo.range.end)
   const isTodayOnly = rangeStartStr === todayStr && rangeEndStr === todayStr
 
-  const cache = isSnapshotReadMode() ? await loadDailyCache() : await hydrateCache()
+  let cache: DailyCache
+  if (isSnapshotReadMode()) {
+    cache = await loadDailyCache()
+  } else {
+    // The daily hydration (including a cold multi-day backfill) can run long
+    // before the first per-file parse tick; announce the phase so the desktop's
+    // idle watchdog knows the fresh read is alive.
+    emitScanProgress({ kind: 'stage', stage: 'daily-cache' })
+    cache = await hydrateCache()
+  }
 
   // Today's live data always comes from an all-provider parse so the union (and
   // any per-provider slice of it) sees every provider's today. `todayAllDays` is
@@ -678,6 +687,7 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
 
   const breakdowns = buildUsageBreakdowns(scanProjects)
 
+  emitScanProgress({ kind: 'stage', stage: 'payload' })
   const optimize = opts.optimize === false ? null : await resolveOptimize(scanProjects, scanRange, pf, scopeId)
   const granularRange = opts.daysSelection?.range ?? scanRange
   const granularHistory = opts.timeline === false ? undefined : buildGranularHistory(scanProjects, granularRange)

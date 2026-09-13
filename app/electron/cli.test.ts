@@ -475,6 +475,57 @@ describe('bounded process watchdog', () => {
     await expect(spawnCli(['status'], { timeoutMs: 170, idleTimeoutMs: 50 })).rejects.toMatchObject({ kind: 'timeout' })
   })
 
+  it('accepts stage events as idle heartbeats and forwards them to onProgress', async () => {
+    const seen: unknown[] = []
+    const lines = [
+      'METRORA_PROGRESS {"kind":"stage","stage":"daily-cache"}',
+      'METRORA_PROGRESS {"kind":"stage","stage":"optimize-scan","done":0,"total":9}',
+      'METRORA_PROGRESS {"kind":"stage","stage":"optimize-scan","done":5,"total":9}',
+      'METRORA_PROGRESS {"kind":"stage","stage":"optimize-scan","done":9,"total":9}',
+    ]
+    fakeBin('valid-stage.cjs', heartbeatScript(lines, SUCCESS_HEARTBEAT_INTERVAL_MS))
+    const result = await spawnCli(['status'], {
+      timeoutMs: SUCCESS_ABSOLUTE_TIMEOUT_MS,
+      idleTimeoutMs: SUCCESS_IDLE_TIMEOUT_MS,
+      onProgress: event => seen.push(event),
+    })
+    expect(result).toEqual({ ok: 1 })
+    // The done=0 baseline is stored but neither forwarded nor idle-reset,
+    // mirroring the tick rules.
+    expect(seen).toEqual([
+      { kind: 'stage', stage: 'daily-cache' },
+      { kind: 'stage', stage: 'optimize-scan', done: 5, total: 9 },
+      { kind: 'stage', stage: 'optimize-scan', done: 9, total: 9 },
+    ])
+  })
+
+  it('does not treat fake stage heartbeats as progress (repeat, decreasing, bad name, post-done transition)', async () => {
+    const lines = [
+      'METRORA_PROGRESS {"kind":"providers","providers":["claude"]}',
+      'METRORA_PROGRESS {"kind":"provider","provider":"claude","state":"start"}',
+      'METRORA_PROGRESS {"kind":"tick","provider":"claude","done":1,"total":3}',
+      'METRORA_PROGRESS {"kind":"stage","stage":"optimize-scan","done":5,"total":9}',
+      'METRORA_PROGRESS {"kind":"stage","stage":"optimize-scan","done":5,"total":9}',
+      'METRORA_PROGRESS {"kind":"stage","stage":"optimize-scan","done":4,"total":9}',
+      'METRORA_PROGRESS {"kind":"stage","stage":"Bad_Name"}',
+      'METRORA_PROGRESS {"kind":"stage","stage":"optimize-scan"}',
+    ]
+    const fakeScript = [
+      'const lines = ' + JSON.stringify(lines) + '; let i = 0;',
+      "setInterval(() => { if (i < lines.length) process.stderr.write(lines[i++] + '\\n'); else process.stderr.write('still noisy\\n'); }, 10);",
+    ].join('\n')
+    fakeBin('fake-stage.cjs', fakeScript)
+    await expect(spawnCli(['status'], { timeoutMs: 500, idleTimeoutMs: 70 })).rejects.toMatchObject({ kind: 'timeout' })
+  })
+
+  it('names the idle deadline as the termination cause for a healthy-but-silent child', async () => {
+    fakeBin('silent-alive.cjs', "setInterval(() => process.stderr.write('quiet but alive\\n'), 10)")
+    await expect(spawnCli(['status'], { timeoutMs: 500, idleTimeoutMs: 70 })).rejects.toMatchObject({
+      kind: 'timeout',
+      message: expect.stringContaining('no reconciliation progress for 70ms'),
+    })
+  })
+
   it('uses bounded SIGTERM grace and hard-kill fallback for responsive and ignoring children', async () => {
     fakeBin('term-responsive.cjs', "process.on('SIGTERM', () => process.exit(0)); setInterval(() => {}, 1000)")
     const responsiveStarted = Date.now()
