@@ -55,7 +55,15 @@ export type PeriodData = {
   /// current tables (#638): their calls contribute $0 to `cost`. Optional so
   /// PeriodData producers that predate the field keep compiling.
   unpricedModels?: Array<{ model: string; calls: number; tokens: number }>
-  projects?: Array<{ name: string; cost: number; savingsUSD: number; sessions: number; sessionDetails?: Array<{ cost: number; savingsUSD: number; calls: number; inputTokens: number; outputTokens: number; date: string; models: Array<{ name: string; cost: number; savingsUSD: number }> }> }>
+  projects?: Array<{
+    name: string
+    cost: number
+    savingsUSD: number
+    sessions: number
+    calls?: number
+    dailySpend?: Array<{ date: string; cost: number }>
+    sessionDetails?: Array<{ cost: number; savingsUSD: number; calls: number; inputTokens: number; outputTokens: number; date: string; models: Array<{ name: string; cost: number; savingsUSD: number }> }>
+  }>
   modelEfficiency?: Array<{ name: string; costPerEdit: number | null; oneShotRate: number | null }>
   topSessions?: Array<{ project: string; cost: number; savingsUSD: number; calls: number; date: string }>
   /// Workflow-intelligence rollups (issue: workflow intelligence). Optional so
@@ -119,9 +127,11 @@ import type { ModelBrandId } from './model-brand.js'
 export type { ModelAccountingRow } from './model-accounting-types.js'
 import type { ModelAccountingRow } from './model-accounting-types.js'
 import type { ProjectDetailCoverage } from './project-coverage.js'
+import { buildProjectSpend, buildTopProjects } from './project-spend-projection.js'
+export type { ProjectSpendProjection } from './project-spend-projection.js'
+import type { ProjectSpendProjection } from './project-spend-projection.js'
 const TOP_ACTIVITIES_LIMIT = 20
 const TOP_FINDINGS_LIMIT = 10
-const TOP_PROJECTS_LIMIT = 5
 const TOP_SESSIONS_LIMIT = 3
 const MODEL_EFFICIENCY_LIMIT = 5
 const TOP_REWORKED_FILES_LIMIT = 8
@@ -289,6 +299,10 @@ export type MenubarPayload = {
     /// internal client name (round-trips as --provider), `label` the display name.
     /// The `providers` map keys stay lowercased display names for compatibility.
     providerDetails: Array<{ id: string; label: string; cost: number }>
+    /// Complete project rollup for the Projects view. Optional for older
+    /// payloads; current producers populate it from the same PeriodData used
+    /// for the headline and topProjects projection.
+    projectSpend?: ProjectSpendProjection[]
     topProjects: Array<{
       name: string
       cost: number
@@ -465,29 +479,6 @@ function buildProviderDetails(providers: ProviderCost[]): MenubarPayload['curren
     .map(p => ({ id: p.name, label: p.displayName, cost: p.cost }))
 }
 
-function buildTopProjects(projects: PeriodData['projects']): MenubarPayload['current']['topProjects'] {
-  return (projects ?? [])
-    .filter(p => p.cost > 0 || p.savingsUSD > 0)
-    .sort((a, b) => (b.cost + b.savingsUSD) - (a.cost + a.savingsUSD))
-    .slice(0, TOP_PROJECTS_LIMIT)
-    .map(p => ({
-      name: p.name,
-      cost: p.cost,
-      savingsUSD: p.savingsUSD,
-      sessions: p.sessions,
-      avgCostPerSession: p.sessions > 0 ? p.cost / p.sessions : 0,
-      sessionDetails: (p.sessionDetails ?? []).map(s => ({
-        cost: s.cost,
-        savingsUSD: s.savingsUSD,
-        calls: s.calls,
-        inputTokens: s.inputTokens,
-        outputTokens: s.outputTokens,
-        date: s.date,
-        models: s.models,
-      })),
-    }))
-}
-
 function buildModelEfficiency(models: PeriodData['modelEfficiency']): MenubarPayload['current']['modelEfficiency'] {
   return (models ?? [])
     .filter(m => m.costPerEdit !== null)
@@ -567,6 +558,7 @@ export function buildMenubarPayload(
       localModelSavings: breakdowns?.localModelSavings ?? { totalUSD: 0, calls: 0, byModel: [], byProvider: [] },
       providers: buildProviders(providers),
       providerDetails: buildProviderDetails(providers),
+      projectSpend: buildProjectSpend(current.projects ?? []),
       topProjects: buildTopProjects(current.projects ?? []),
       modelEfficiency: buildModelEfficiency(current.modelEfficiency ?? []),
       topSessions: buildTopSessions(current.topSessions ?? []),

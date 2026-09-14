@@ -7,9 +7,11 @@
 import type { ModelAccounting, ModelPresentation } from './model-projection-types'
 import type { ModelReportRow } from './model-report-types'
 import type { ProjectScopePayload } from './project-bridge-types'
+import type { ProjectSpendProjection } from './spend-types'
 import type { ModelStats, SessionRow } from './usage-projection-types'
 import type { ProviderQuotaSnapshot, ProviderQuotaWindow } from '../../electron/quota/types'
 export type { ProjectScopePayload } from './project-bridge-types'
+export type { ProjectSpendProjection } from './spend-types'
 
 export type {
   DurableModelAccountingRow,
@@ -162,6 +164,7 @@ export type MenubarPayload = {
     // (round-trips as --provider), `label` the display name. Fall back to
     // `providers` when absent.
     providerDetails?: Array<{ id: string; label: string; cost: number }>
+    projectSpend?: ProjectSpendProjection[]
     topProjects: Array<{
       name: string
       cost: number
@@ -275,6 +278,8 @@ export type MenubarPayload = {
   }
   history: {
     daily: DailyHistoryEntry[]
+    /** Exact selected-period history when the durable cache can provide it. */
+    periodDaily?: DailyHistoryEntry[]
   }
   // Active display currency. Payload costs are raw USD; the renderer multiplies by
   // `rate` and prefixes `symbol` at display time. Optional: older CLIs omit it.
