@@ -27,6 +27,7 @@ import { friendlyProject, populateProjectRollups } from './project-report.js'
 import { withProjectDetailCoverage } from './project-coverage.js'
 import { buildMobileFoundationPayload } from './sharing/mobile-foundation.js'
 import { readProjectRegistry } from './project-registry.js'
+import { reconcilePendingOpenCodeDailyHistory } from './opencode-daily-reconciliation.js'
 import {
   ALL_PROJECTS_SCOPE_ID,
   buildProjectScopePayload,
@@ -301,6 +302,19 @@ export async function buildDurablePeriod(periodInfo: PeriodInfo, opts: Aggregate
     const rawProv = fp(await parseAllSessions(isTodayOnly ? todayRange : periodInfo.range, pf))
     liveProjects = daysSelection && !isTodayOnly ? filterProjectsByDays(rawProv, daysSelection.days) : rawProv
     scanRange = isTodayOnly ? todayRange : periodInfo.range
+  }
+
+  // A fresh live parse can discover a late OpenCode source after the initial
+  // daily-cache hydration. Publish its historical slices before projecting the
+  // durable headline, so Models and Sessions see the same source set.
+  if (!isSnapshotReadMode()) {
+    try {
+      cache = await reconcilePendingOpenCodeDailyHistory(cache)
+    } catch {
+      // Keep the current live response usable; the invalidation marker remains
+      // on disk and the next fresh pass retries the durable publication.
+      cache = { ...cache, complete: false }
+    }
   }
 
   const allDays = unionDaysForPeriod(cache, todayAllDays, periodInfo, daysSelection?.days ?? null)

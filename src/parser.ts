@@ -66,6 +66,7 @@ import { applySessionCacheDiscoveryCompleteness } from './session-cache-complete
 import { callIsInDateRange, sliceCachedTurnToDateRange, sliceClassifiedTurnToDateRange, sliceParsedTurnToDateRange } from './date-range-projection.js'
 import { claudeSlugFallbackPath, normalizeProjectPathKey, projectNameFromPath, unsanitizePath } from './project-path-utils.js'
 import { flushCopilotChatJournalInvalidations, queueCopilotChatJournalSource, recordCopilotChatJournalSourceChange, recordCopilotChatJournalSourceFailure } from './copilot-chat-journal-reconciliation.js'
+import { flushOpenCodeDailyInvalidations, recordOpenCodeSourceChange, recordOpenCodeSourceFailure } from './opencode-daily-invalidation.js'
 import { reconcileMissingProviderSources, shouldReconcileMissingProviderSources } from './parser-source-reconciliation.js'
 import { buildCwdEvidenceIndex, timeBoundCwdRefs } from './pr-attribution-time-bound.js'
 import { flattenString, flattenStringArray, flattenStringPrefix, flattenToolSequence } from './string-retention.js'
@@ -3005,6 +3006,7 @@ async function parseProviderSources(
     for (let sourceIndex = 0; sourceIndex < parseableSources.length; sourceIndex++) {
       const { source, fp, cached: cachedFallback } = parseableSources[sourceIndex]!
       emitScanProgress({ kind: 'tick', provider: providerName, done: sourceIndex + 1, total: parseableSources.length })
+      const previousTurns = cachedFallback?.turns ?? []
 
       // Clear stale entry before parse — but only once per path so that
       // multiple sources mapping to the same file path can merge their turns.
@@ -3053,6 +3055,7 @@ async function parseProviderSources(
           }
         }
         recordCopilotChatJournalSourceChange(providerName, source.path, turns)
+        recordOpenCodeSourceChange(providerName, previousTurns, turns)
         didParse = true
         ;(diskCache as { _dirty?: boolean })._dirty = true
       } catch (err) {
@@ -3064,6 +3067,7 @@ async function parseProviderSources(
             ;(diskCache as { _dirty?: boolean })._dirty = true
           }
           warnProviderReadFailureOnce(providerName, err)
+          recordOpenCodeSourceFailure(providerName, previousTurns)
           continue
         }
         // A single malformed session file must not abort the entire run — that
@@ -3082,6 +3086,7 @@ async function parseProviderSources(
           section.files[source.path] = { fingerprint: fp, mcpInventory: [], turns: [], failed: true }
         }
         recordCopilotChatJournalSourceFailure(providerName, source.path)
+        recordOpenCodeSourceFailure(providerName, previousTurns)
         ;(diskCache as { _dirty?: boolean })._dirty = true
         warnProviderParseFailure(providerName, source.path, err)
         continue
@@ -3822,6 +3827,7 @@ async function runParse(
     otherProjects.push(...projects)
   }
 
+  if (!readOnly) await flushOpenCodeDailyInvalidations()
   if (!readOnly && discoveryComplete) await flushCopilotChatJournalInvalidations()
 
   // Every published v8 call carries an explicit valuation basis. This also

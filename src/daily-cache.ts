@@ -260,6 +260,7 @@ export async function ensureCacheHydrated(
     const historyAuthorityChanged = durableHistoryAuthority !== undefined
       && cache.durableHistoryAuthority !== durableHistoryAuthority
 
+    const cacheBeforeProviderReconciliation = cache
     cache = await reconcileProviderDays(
       cache,
       parseSessions,
@@ -269,6 +270,8 @@ export async function ensureCacheHydrated(
       yesterdayEnd,
       yesterdayStr,
     )
+    const providerDaysReconciled = cache !== cacheBeforeProviderReconciliation
+    if (providerDaysReconciled) await saveDailyCache(cache)
 
     // Serialize simultaneous invalidations. First re-derive the accounting
     // authority while retaining the old timezone, then persist that intermediate

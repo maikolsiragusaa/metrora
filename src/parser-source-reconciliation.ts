@@ -1,5 +1,6 @@
 import type { ProviderSection, SessionCache } from './session-cache.js'
 import { recordCopilotChatJournalSourceEviction } from './copilot-chat-journal-reconciliation.js'
+import { recordOpenCodeSourceEviction } from './opencode-daily-invalidation.js'
 import { COPILOT_CHAT_JOURNAL_PROVIDER } from './provider-parse-authorities.js'
 
 export function shouldReconcileMissingProviderSources(providerName: string, sourceCount: number, discoveryComplete?: boolean): boolean {
@@ -15,7 +16,9 @@ export function reconcileMissingProviderSources(
 ): void {
   for (const cachedPath of Object.keys(section.files)) {
     if (discoveredPaths.has(cachedPath)) continue
-    recordCopilotChatJournalSourceEviction(providerName, cachedPath, section.files[cachedPath]!.turns)
+    const turns = section.files[cachedPath]!.turns
+    recordCopilotChatJournalSourceEviction(providerName, cachedPath, turns)
+    recordOpenCodeSourceEviction(providerName, turns)
     delete section.files[cachedPath]
     ;(diskCache as SessionCache & { _dirty?: boolean })._dirty = true
   }
