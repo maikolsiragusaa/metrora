@@ -24,8 +24,9 @@ export type TrustedProgressEvent =
   | { kind: 'providers'; providers: string[]; cold?: boolean }
   | { kind: 'provider'; provider: string; state: 'start' | 'done' | 'skipped'; files?: number }
   | { kind: 'tick'; provider: string; done: number; total: number }
+  | { kind: 'stage'; stage: string; done?: number; total?: number }
 
-export type TerminationReason = 'timeout' | 'too-large' | 'cancelled'
+export type TerminationReason = 'timeout' | 'idle-timeout' | 'too-large' | 'cancelled'
 
 export type BoundedProcessResult = {
   stdout: string
@@ -85,6 +86,9 @@ function createProgressGate(onAccepted?: (event: TrustedProgressEvent) => void):
   const providers = new Set<string>()
   const providerStates = new Map<string, 'start' | 'done' | 'skipped'>()
   const ticks = new Map<string, { done: number; total: number }>()
+  // Declared stages: null = transition-only, number = last accepted done.
+  const stages = new Map<string, number | null>()
+  const stageTotals = new Map<string, number>()
 
   const accept = (raw: unknown): TrustedProgressEvent | null => {
     if (!isRecord(raw) || typeof raw.kind !== 'string') return null
@@ -102,6 +106,32 @@ function createProgressGate(onAccepted?: (event: TrustedProgressEvent) => void):
       return raw.cold === undefined
         ? { kind: 'providers', providers: [...names] }
         : { kind: 'providers', providers: [...names], cold: raw.cold }
+    }
+
+    // Stage events mark progress in phases that run outside any provider's
+    // per-file tick stream (daily-cache hydration, optimize scan, payload
+    // assembly) and need no provider declaration — e.g. the daily-cache stage
+    // fires before the provider scan even starts. A bare `{kind:'stage',
+    // stage}` is a one-shot transition; with done/total it mirrors the tick
+    // rules — strictly increasing done, baseline zero cannot keep a stalled
+    // process alive.
+    if (raw.kind === 'stage') {
+      if (!hasOnlyKeys(raw, ['kind', 'stage', 'done', 'total'])) return null
+      if (!boundedName(raw.stage)) return null
+      const declared = stages.get(raw.stage)
+      if (raw.done === undefined && raw.total === undefined) {
+        if (declared !== undefined) return null
+        stages.set(raw.stage, null)
+        return { kind: 'stage', stage: raw.stage }
+      }
+      if (typeof raw.done !== 'number' || typeof raw.total !== 'number') return null
+      if (!boundedInteger(raw.done, MAX_PROGRESS_FILES) || !boundedInteger(raw.total, MAX_PROGRESS_FILES)) return null
+      if (raw.done > raw.total) return null
+      if (typeof declared === 'number' && (raw.done <= declared || raw.total < (stageTotals.get(raw.stage) ?? raw.total))) return null
+      stages.set(raw.stage, raw.done)
+      stageTotals.set(raw.stage, raw.total)
+      if (raw.done === 0) return null
+      return { kind: 'stage', stage: raw.stage, done: raw.done, total: raw.total }
     }
 
     if (!providersDeclared || typeof raw.provider !== 'string' || !providers.has(raw.provider)) return null
@@ -278,7 +308,7 @@ export function runBoundedProcess(
     const resetIdleTimer = (): void => {
       if (idleTimeoutMs === undefined || settled || termination) return
       if (idleTimer !== undefined) clearTimeout(idleTimer)
-      idleTimer = setTimeout(() => requestTermination('timeout'), idleTimeoutMs)
+      idleTimer = setTimeout(() => requestTermination('idle-timeout'), idleTimeoutMs)
     }
 
     const progressGate = createProgressGate(event => {

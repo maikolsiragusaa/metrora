@@ -59,14 +59,15 @@ import type {
 } from './types.js'
 import { classifyTurn, BASH_TOOLS, EDIT_TOOLS } from './classifier.js'
 import { extractBashCommands } from './bash-utils.js'
-import { isSnapshotReadMode } from './read-lifecycle.js'
+import { isSnapshotReadMode, markFreshReconcileSkipped } from './read-lifecycle.js'
+import { emitScanProgress } from './scan-progress.js'
 import { getClaudeNativeIdentity, reconcileClaudeNativeCalls } from './claude-native-reconciliation.js'
 import { resolveParserDiscovery } from './parser-discovery-state.js'
 import { applySessionCacheDiscoveryCompleteness } from './session-cache-completeness.js'
 import { callIsInDateRange, sliceCachedTurnToDateRange, sliceClassifiedTurnToDateRange, sliceParsedTurnToDateRange } from './date-range-projection.js'
 import { claudeSlugFallbackPath, normalizeProjectPathKey, projectNameFromPath, unsanitizePath } from './project-path-utils.js'
-import { flushCopilotChatJournalInvalidations, queueCopilotChatJournalSource, recordCopilotChatJournalSourceChange, recordCopilotChatJournalSourceFailure } from './copilot-chat-journal-reconciliation.js'
-import { reconcileMissingProviderSources, shouldReconcileMissingProviderSources } from './parser-source-reconciliation.js'
+import { queueCopilotChatJournalSource } from './copilot-chat-journal-reconciliation.js'
+import { flushProviderSourceReconciliations, recordProviderSourceBusyFailure, recordProviderSourceChange, recordProviderSourceFailure, reconcileMissingProviderSources, shouldReconcileMissingProviderSources } from './parser-source-reconciliation.js'
 import { buildCwdEvidenceIndex, timeBoundCwdRefs } from './pr-attribution-time-bound.js'
 import { flattenString, flattenStringArray, flattenStringPrefix, flattenToolSequence } from './string-retention.js'
 import { traceProviderParse } from './reconciliation-diagnostics.js'
@@ -2852,26 +2853,8 @@ export function setInteractiveScanUI(active = true): void {
   interactiveScanUI = active
 }
 
-// Machine-readable scan progress for the desktop app's first-run splash. Plain
-// CLI/terminal usage is untouched: emission is gated on METRORA_PROGRESS=1,
-// which only the app's cold-start warmup spawn sets. Each event is one
-// newline-delimited JSON object behind a sentinel prefix so the reader can pick
-// it out of stderr that may also carry provider warnings. This is orthogonal to
-// createScanProgress's `\r` TTY line (that one never fires under a piped spawn).
-export const PROGRESS_LINE_PREFIX = 'METRORA_PROGRESS '
-export type ScanProgressEvent =
-  // `cold` is true only for a genuine full hydration (the on-disk cache was
-  // empty). A warm launch's incremental re-parse of a handful of changed files
-  // still emits `providers`/`tick`, so consumers must gate any "indexing" UI on
-  // this flag, not on the mere presence of tick work.
-  | { kind: 'providers'; providers: string[]; cold?: boolean }
-  | { kind: 'provider'; provider: string; state: 'start' | 'done' | 'skipped'; files?: number }
-  | { kind: 'tick'; provider: string; done: number; total: number }
-
-export function emitScanProgress(event: ScanProgressEvent): void {
-  if (process.env['METRORA_PROGRESS'] !== '1') return
-  try { process.stderr.write(`${PROGRESS_LINE_PREFIX}${JSON.stringify(event)}\n`) } catch { /* stderr closed */ }
-}
+export { createStageProgress, emitScanProgress, PROGRESS_LINE_PREFIX } from './scan-progress.js'
+export type { ScanProgressEvent } from './scan-progress.js'
 
 // Minimum spacing between partial-progress saves during a cold parse. Low enough
 // that an interrupted long run loses little work, high enough that repeated
@@ -2988,11 +2971,20 @@ async function parseProviderSources(
   // agent-traces.db) can accumulate via the merge logic below rather than
   // being wiped on every iteration.
   const clearedPaths = new Set<string>()
+  // Non-claude providers previously emitted only start/done, so a long
+  // transcript parse left the desktop's idle watchdog silent for the whole
+  // pass. Emit per-file ticks (baseline zero first; only strictly increasing
+  // ticks are heard). Only the provider's first pass per process is in the
+  // gate's 'start' state — which is the pass that does the real parsing.
+  const parseableSources = dateRange
+    ? changedSources.filter(({ fp }) => fp.mtimeMs >= dateRange.start.getTime())
+    : changedSources
+  if (parseableSources.length > 0) emitScanProgress({ kind: 'tick', provider: providerName, done: 0, total: parseableSources.length })
   try {
-    for (const { source, fp, cached: cachedFallback } of changedSources) {
-      if (dateRange) {
-        if (fp.mtimeMs < dateRange.start.getTime()) continue
-      }
+    for (let sourceIndex = 0; sourceIndex < parseableSources.length; sourceIndex++) {
+      const { source, fp, cached: cachedFallback } = parseableSources[sourceIndex]!
+      emitScanProgress({ kind: 'tick', provider: providerName, done: sourceIndex + 1, total: parseableSources.length })
+      const previousTurns = cachedFallback?.turns ?? []
 
       // Clear stale entry before parse — but only once per path so that
       // multiple sources mapping to the same file path can merge their turns.
@@ -3040,7 +3032,7 @@ async function parseProviderSources(
             section.files[source.path] = { fingerprint: fp, mcpInventory: [], turns }
           }
         }
-        recordCopilotChatJournalSourceChange(providerName, source.path, turns)
+        recordProviderSourceChange(providerName, source.path, previousTurns, turns)
         didParse = true
         ;(diskCache as { _dirty?: boolean })._dirty = true
       } catch (err) {
@@ -3052,6 +3044,7 @@ async function parseProviderSources(
             ;(diskCache as { _dirty?: boolean })._dirty = true
           }
           warnProviderReadFailureOnce(providerName, err)
+          recordProviderSourceBusyFailure(providerName, previousTurns)
           continue
         }
         // A single malformed session file must not abort the entire run — that
@@ -3069,7 +3062,7 @@ async function parseProviderSources(
         } else {
           section.files[source.path] = { fingerprint: fp, mcpInventory: [], turns: [], failed: true }
         }
-        recordCopilotChatJournalSourceFailure(providerName, source.path)
+        recordProviderSourceFailure(providerName, source.path, previousTurns)
         ;(diskCache as { _dirty?: boolean })._dirty = true
         warnProviderParseFailure(providerName, source.path, err)
         continue
@@ -3679,6 +3672,9 @@ async function parseAllSessionsWithHistoricalContext(dateRange?: DateRange, prov
   const priorSnapshot = diskCache
   const refresh = await acquireCacheRefreshLock()
   if (refresh.outcome === 'timed-out' || refresh.outcome === 'unavailable') {
+    // Serving the prior snapshot exits 0 like a real reconcile; record the
+    // downgrade so the payload's freshness stamp cannot claim a fresh read.
+    markFreshReconcileSkipped('skipped-lock-busy')
     return runParse(key, priorSnapshot, dateRange, providerFilter, { readOnly: true })
   }
   if (refresh.outcome === 'completed-by-other') {
@@ -3692,6 +3688,7 @@ async function parseAllSessionsWithHistoricalContext(dateRange?: DateRange, prov
     return await runParse(key, diskCache, dateRange, providerFilter, { refreshLock: refresh.handle })
   } catch (err) {
     if (!(err instanceof RefreshFenceLostError) && !(err instanceof RefreshPublicationUnavailableError)) throw err
+    markFreshReconcileSkipped('skipped-fence-lost')
     return runParse(key, await loadCache(), dateRange, providerFilter, { readOnly: true })
   } finally {
     await refresh.handle.release()
@@ -3806,7 +3803,7 @@ async function runParse(
     otherProjects.push(...projects)
   }
 
-  if (!readOnly && discoveryComplete) await flushCopilotChatJournalInvalidations()
+  await flushProviderSourceReconciliations(readOnly, discoveryComplete)
 
   // Every published v8 call carries an explicit valuation basis. This also
   // settles carried v7 PR/durable orphans that can no longer be re-parsed.

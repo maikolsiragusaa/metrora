@@ -3,6 +3,7 @@ import type { Command } from 'commander'
 import { assertProvider } from './cli-validation.js'
 import { loadPricing } from './models.js'
 import { parseAllSessions } from './parser.js'
+import { reconcilePendingOpenCodeDailyHistory } from './opencode-daily-reconciliation.js'
 
 export function registerOpenCodeReconcileCommand(program: Command): void {
   program
@@ -17,6 +18,7 @@ export function registerOpenCodeReconcileCommand(program: Command): void {
       }
       await loadPricing()
       const projects = await parseAllSessions(undefined, 'opencode')
+      await reconcilePendingOpenCodeDailyHistory()
       const calls = projects.reduce((total, project) => total + project.sessions.reduce(
         (sessionTotal, session) => sessionTotal + session.turns.reduce(
           (turnTotal, turn) => turnTotal + turn.assistantCalls.length,

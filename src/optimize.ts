@@ -6,7 +6,7 @@ import { homedir } from 'os'
 
 import { readSessionLines, readSessionFileSync } from './fs-utils.js'
 import { discoverAllSessions } from './providers/index.js'
-import { parseJsonlLine, shouldSkipLine } from './parser.js'
+import { parseJsonlLine, shouldSkipLine, createStageProgress } from './parser.js'
 import type { DateRange, ProjectSummary, SessionSummary } from './types.js'
 import { formatCost } from './currency.js'
 import { formatTokens } from './format.js'
@@ -565,15 +565,15 @@ async function scanSessions(dateRange?: DateRange, provider?: string): Promise<S
       tasks.push({ file, project: source.project })
     }
   }
-
+  const reportProgress = createStageProgress('optimize-scan', tasks.length)
   await runWithConcurrency(tasks, FILE_READ_CONCURRENCY, async ({ file, project }) => {
     const { calls, cwds, apiCalls, userMessages } = await scanJsonlFile(file, project, dateRange)
+    reportProgress()
     allCalls.push(...calls)
     for (const cwd of cwds) allCwds.add(cwd)
     allApiCalls.push(...apiCalls)
     allUserMessages.push(...userMessages)
   })
-
   return { toolCalls: allCalls, projectCwds: allCwds, apiCalls: allApiCalls, userMessages: allUserMessages }
 }
 

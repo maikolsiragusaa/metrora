@@ -20,9 +20,20 @@ type Progress = {
   claudeDone: number
   claudeTotal: number
   cold: boolean
+  stage: string | null
+  stageDone: number | null
+  stageTotal: number | null
 }
 
-const EMPTY: Progress = { order: [], status: {}, claudeDone: 0, claudeTotal: 0, cold: false }
+const EMPTY: Progress = { order: [], status: {}, claudeDone: 0, claudeTotal: 0, cold: false, stage: null, stageDone: null, stageTotal: null }
+
+// Phases outside any provider's per-file tick stream. Rendered when no
+// provider is actively indexing.
+const STAGE_LABELS: Record<string, string> = {
+  'daily-cache': 'Updating daily history…',
+  'optimize-scan': 'Scanning for optimization opportunities…',
+  payload: 'Assembling your report…',
+}
 
 function reduceProgress(state: Progress, event: ScanProgressEvent): Progress {
   switch (event.kind) {
@@ -38,6 +49,8 @@ function reduceProgress(state: Progress, event: ScanProgressEvent): Progress {
     }
     case 'tick':
       return { ...state, claudeDone: event.done, claudeTotal: event.total }
+    case 'stage':
+      return { ...state, stage: event.stage, stageDone: event.done ?? null, stageTotal: event.total ?? null }
     case 'done': {
       const status = { ...state.status }
       for (const provider of state.order) status[provider] = 'done'
@@ -55,11 +68,17 @@ function SplashStatus({ progress }: { progress: Progress }) {
   const counter = active === 'claude' && progress.claudeTotal > 0
     ? ` · ${progress.claudeDone.toLocaleString('en-US')}/${progress.claudeTotal.toLocaleString('en-US')}`
     : ''
+  const stageLabel = progress.stage ? STAGE_LABELS[progress.stage] ?? null : null
+  const stageCounter = active === null && stageLabel && progress.stageDone !== null && progress.stageTotal
+    ? ` · ${progress.stageDone.toLocaleString('en-US')}/${progress.stageTotal.toLocaleString('en-US')}`
+    : ''
   const line = active
     ? `Indexing ${providerLabel(active)}${counter}`
-    : progress.order.length > 0
-      ? 'Preparing your usage history…'
-      : 'Loading local analytics…'
+    : stageLabel
+      ? `${stageLabel}${stageCounter}`
+      : progress.order.length > 0
+        ? 'Preparing your usage history…'
+        : 'Loading local analytics…'
   const note = progress.cold
     ? 'First history scan · future launches reuse the local index'
     : 'Reading your local Metrora data'

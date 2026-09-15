@@ -2,7 +2,8 @@ import { existsSync } from 'fs'
 import { readFile, readdir, stat } from 'fs/promises'
 import { dirname, join } from 'path'
 import { performance } from 'node:perf_hooks'
-import { isSessionHydrationComplete } from './parser.js'
+import { emitScanProgress, isSessionHydrationComplete } from './parser.js'
+import { isSnapshotReadMode } from './read-lifecycle.js'
 import { currentSessionSnapshotCompleteness } from './session-snapshot-completeness.js'
 import type { DateRange, ProjectSummary } from './types.js'
 import { aggregateProjectsIntoDays, dateKeyInTz } from './day-aggregator.js'
@@ -17,6 +18,12 @@ export * from './daily-cache-core.js'
 
 export type DailyCache = core.DailyCache & {
   watermarkTrusted?: boolean
+}
+
+export async function loadDailyCacheForRead(hydrate: () => Promise<DailyCache>): Promise<DailyCache> {
+  if (isSnapshotReadMode()) return loadDailyCache()
+  emitScanProgress({ kind: 'stage', stage: 'daily-cache' })
+  return hydrate()
 }
 
 function withTrust(cache: core.DailyCache, watermarkTrusted: boolean): DailyCache {
@@ -260,6 +267,7 @@ export async function ensureCacheHydrated(
     const historyAuthorityChanged = durableHistoryAuthority !== undefined
       && cache.durableHistoryAuthority !== durableHistoryAuthority
 
+    const cacheBeforeProviderReconciliation = cache
     cache = await reconcileProviderDays(
       cache,
       parseSessions,
@@ -269,6 +277,8 @@ export async function ensureCacheHydrated(
       yesterdayEnd,
       yesterdayStr,
     )
+    const providerDaysReconciled = cache !== cacheBeforeProviderReconciliation
+    if (providerDaysReconciled) await saveDailyCache(cache)
 
     // Serialize simultaneous invalidations. First re-derive the accounting
     // authority while retaining the old timezone, then persist that intermediate

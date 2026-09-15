@@ -7,6 +7,7 @@ import { seriesColorForModel } from '../components/ListRow'
 import { Panel } from '../components/Panel'
 import { SectionSkeleton } from '../components/Skeleton'
 import { IncompleteReconciliationBanner, StaleBanner } from '../components/StaleBanner'
+import { SectionFreshness } from '../components/SectionFreshness'
 import type { Section } from '../components/Sidebar'
 import { usePolled, type Polled } from '../hooks/usePolled'
 import { formatCompact, formatUsd } from '../lib/format'
@@ -257,6 +258,7 @@ function ModelsUsage({
       <div className="models-analytics-workspace">
         <section className="models-list-pane" aria-label="Models grouped by task">
           {report.error && <StaleBanner error={report.error} />}
+          <SectionFreshness report={report} />
           <Panel className="scroll-x">
             <div style={{ padding: '12px 14px 4px' }}>
               <strong>Task breakdown · Available detail</strong>
@@ -374,6 +376,7 @@ function AuditLens({
     <div className="models-analytics-workspace">
       <section className="models-list-pane" aria-label="Model usage evidence list">
         {report.error && <StaleBanner error={report.error} />}
+        <SectionFreshness report={report} />
         <Panel className="scroll-x">
           {report.data.length ? (
             <AuditTable rows={report.data} selectedId={selectedId} onSelect={setSelectedId} />
