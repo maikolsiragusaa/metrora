@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, within } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -42,27 +42,8 @@ function payload(): MenubarPayload {
         sessions: 2,
         avgCostPerSession: 2.25,
         sessionDetails: [
-          {
-            date: 'not-a-date',
-            calls: 1,
-            cost: 1.5,
-            savingsUSD: 0,
-            inputTokens: 0,
-            outputTokens: 0,
-            models: [],
-          },
-          {
-            date: '2026-08-04',
-            calls: 2,
-            cost: 3,
-            savingsUSD: 0,
-            inputTokens: 0,
-            outputTokens: 0,
-            models: [
-              { name: 'model-a', cost: 2, savingsUSD: 0 },
-              { name: 'model-b', cost: 1, savingsUSD: 0 },
-            ],
-          },
+          { date: 'not-a-date', calls: 1, cost: 1.5, savingsUSD: 0, inputTokens: 0, outputTokens: 0, models: [] },
+          { date: '2026-08-04', calls: 2, cost: 3, savingsUSD: 0, inputTokens: 0, outputTokens: 0, models: [{ name: 'model-a', cost: 2, savingsUSD: 0 }, { name: 'model-b', cost: 1, savingsUSD: 0 }] },
         ],
       }],
       modelEfficiency: [],
@@ -79,46 +60,22 @@ function payload(): MenubarPayload {
   }
 }
 
-function emptyFlow(): SpendFlow {
-  return {
-    period: { label: 'Today', start: '2026-08-04', end: '2026-08-04' },
-    models: [],
-    projects: [],
-    links: [],
-  }
-}
-
-describe('Spend project session evidence', () => {
+describe('Spend project inspector legibility', () => {
   beforeEach(() => {
     mocks.getOverview.mockReset()
     mocks.getSpendFlow.mockReset()
     mocks.getOverview.mockResolvedValue(payload())
-    mocks.getSpendFlow.mockResolvedValue(emptyFlow())
+    mocks.getSpendFlow.mockResolvedValue({ period: { label: 'Today', start: '2026-08-04', end: '2026-08-04' }, models: [], projects: [], links: [] })
   })
 
-  it('names missing dates and models without turning them into zero or an anonymous dash', async () => {
+  it('keeps unavailable dates and model identity explicit in the selected inspector', async () => {
     const user = userEvent.setup()
     render(<Spend period="today" provider="all" />)
+    await user.click(await screen.findByRole('tab', { name: 'Projects' }))
+    await user.click(screen.getByTestId('spend-project-row'))
 
-    await user.click(await screen.findByRole('button', { name: /project-alpha/i }))
-
-    const table = screen.getByRole('table', { name: 'project-alpha sessions' })
-    expect(within(table).getByRole('columnheader', { name: 'Date' })).toBeInTheDocument()
-    expect(within(table).getByRole('columnheader', { name: 'Models' })).toBeInTheDocument()
-    expect(within(table).getByLabelText('Date not available')).toHaveTextContent('—')
-    expect(within(table).getByLabelText('Models: not identified')).toHaveTextContent('Not identified')
-  })
-
-  it('preserves every model in the accessible name while keeping the dense row compact', async () => {
-    const user = userEvent.setup()
-    render(<Spend period="today" provider="all" />)
-
-    await user.click(await screen.findByRole('button', { name: /project-alpha/i }))
-
-    const table = screen.getByRole('table', { name: 'project-alpha sessions' })
-    const models = within(table).getByLabelText('Models: model-a, model-b')
-    expect(models).toHaveTextContent('model-a +1 more')
-    expect(models).toHaveAttribute('title', 'model-a, model-b')
-    expect(within(table).getByRole('row', { name: /Aug 4\. Models model-a, model-b\. 2 calls\. Cost \$3\.00\./ })).toBeInTheDocument()
+    expect(screen.getByText('Date unavailable')).toBeInTheDocument()
+    expect(screen.getByText('Models unavailable')).toBeInTheDocument()
+    expect(screen.getByText('model-a, model-b')).toBeInTheDocument()
   })
 })

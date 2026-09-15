@@ -1,50 +1,21 @@
-import { Fragment, useState } from 'react'
+import { useState } from 'react'
 
-import { CliErrorPanel, CliErrorText } from '../components/CliErrorPanel'
-import { EmptyNote } from '../components/EmptyState'
-import { ListRow } from '../components/ListRow'
-import { Panel } from '../components/Panel'
-import { Sankey } from '../components/Sankey'
-import { SectionSkeleton } from '../components/Skeleton'
-import { StackedBars } from '../components/StackedBars'
-import { StaleBanner } from '../components/StaleBanner'
+import { CliErrorPanel } from '../components/CliErrorPanel'
 import { SectionFreshness } from '../components/SectionFreshness'
+import { SectionSkeleton } from '../components/Skeleton'
+import { StaleBanner } from '../components/StaleBanner'
 import { type Polled, usePolled } from '../hooks/usePolled'
-import { formatUsd } from '../lib/format'
 import { metrora } from '../lib/ipc'
-import { contiguousDailyWindow, dataStartKey, localDateKey } from '../lib/period'
-import type { CliError, DateRange, MenubarPayload, Period, SpendFlow } from '../lib/types'
+import { contiguousDailyWindow, localDateKey, periodWindowStart, sliceDailyToPeriod, sliceDailyToRange } from '../lib/period'
+import type { CliError, DailyHistoryEntry, DateRange, MenubarPayload, Period, SpendFlow as SpendFlowData } from '../lib/types'
+import { SpendDrivers } from './SpendDrivers'
+import { SpendFlow } from './SpendFlow'
+import { SpendOverview } from './SpendOverview'
+import { SpendProjects } from './SpendProjects'
 
-type Project = MenubarPayload['current']['topProjects'][number]
-type ProjectSession = Project['sessionDetails'][number]
+export type SpendView = 'overview' | 'projects' | 'drivers' | 'flow'
 
-/** Date-only CLI strings ("2026-07-11") formatted at local noon so the calendar day never rolls across time zones. */
-function formatProjectDay(date: string): string | null {
-  const d = new Date(`${date}T12:00:00`)
-  return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-}
-
-function projectSessionModels(models: ProjectSession['models']): { visible: string; accessible: string; title?: string } {
-  const names = models.map(model => model.name).filter(Boolean)
-  if (names.length === 0) return { visible: 'Not identified', accessible: 'not identified' }
-  if (names.length === 1) return { visible: names[0]!, accessible: names[0]! }
-  return {
-    visible: `${names[0]} +${names.length - 1} more`,
-    accessible: names.join(', '),
-    title: names.join(', '),
-  }
-}
-
-const SPEND_CHART_DAYS = 15
-
-function providerLabel(provider: string): string {
-  if (provider === 'all') return 'All models'
-  return provider
-    .split(/[-\s]+/)
-    .filter(Boolean)
-    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ')
-}
+const MAX_CHART_DAYS = 365
 
 export function Spend({ period, provider, projectScopeId, range = null }: { period: Period; provider: string; projectScopeId?: string; range?: DateRange | null }) {
   const scopedProject = projectScopeId && projectScopeId !== 'all' ? projectScopeId : undefined
@@ -74,11 +45,8 @@ export function SpendContent({
   refreshToken?: number
   ready?: boolean
 }) {
-  // Spend's main surfaces paint from the already-loaded Overview. The expensive
-  // model→project relationship graph is deliberately progressive: it fills its
-  // reserved panel when ready instead of holding the rest of the page hostage.
   const scopedProject = projectScopeId && projectScopeId !== 'all' ? projectScopeId : undefined
-  const flow = usePolled<SpendFlow>(
+  const flow = usePolled<SpendFlowData>(
     () => range
       ? scopedProject ? metrora.getSpendFlow(period, provider, range, scopedProject) : metrora.getSpendFlow(period, provider, range)
       : scopedProject ? metrora.getSpendFlow(period, provider, undefined, scopedProject) : metrora.getSpendFlow(period, provider),
@@ -92,211 +60,79 @@ export function SpendContent({
   }
 
   const animateKey = `${period}|${provider}|${range?.from ?? ''}|${range?.to ?? ''}`
-  return <SpendPage data={overview.data} flow={flow} provider={provider} range={range} staleError={overview.error} animateKey={animateKey} />
+  return <SpendPage data={overview.data} flow={flow} period={period} range={range} staleError={overview.error} animateKey={animateKey} />
+}
+
+function chartDaily(data: MenubarPayload, period: Period, range: DateRange | null): DailyHistoryEntry[] {
+  const today = localDateKey(new Date())
+  const to = range?.to ?? today
+  const exact = data.history.periodDaily
+  const selected = range
+    ? exact ?? sliceDailyToRange(data.history.daily, range.from, range.to)
+    : exact ?? sliceDailyToPeriod(data.history.daily, period)
+  // Keep the lifetime view bounded to the payload's available history. The
+  // source remains authoritative; this only prevents a 1970→today empty-fill
+  // from turning the chart into tens of thousands of columns.
+  const bounded = selected.length > MAX_CHART_DAYS ? selected.slice(-MAX_CHART_DAYS) : selected
+  const from = range?.from ?? ((period === 'lifetime' || period === 'all')
+    ? bounded[0]?.date ?? to
+    : periodWindowStart(period))
+  return contiguousDailyWindow(bounded, from, to)
 }
 
 function SpendPage({
   data,
   flow,
-  provider,
+  period,
   range,
   staleError,
   animateKey,
 }: {
   data: MenubarPayload
-  flow: ReturnType<typeof usePolled<SpendFlow>>
-  provider: string
+  flow: Polled<SpendFlowData>
+  period: Period
   range: DateRange | null
   staleError: CliError | null
   animateKey: string
 }) {
-  // `history.daily` is SPARSE (active days only), so zero-fill a contiguous
-  // calendar window client-side; date keys are localDateKey / the CLI dateKey,
-  // which match exactly, so real days always land in place.
-  const now = new Date()
-  const chartDaily = range
-    ? contiguousDailyWindow(data.history.daily, range.from, range.to)
-    : contiguousDailyWindow(
-        data.history.daily,
-        localDateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - (SPEND_CHART_DAYS - 1))),
-        localDateKey(now),
-      )
-  const chartHasSpend = chartDaily.some(day => day.cost > 0)
-  const dataStart = dataStartKey(data.history.daily)
-  const projects = data.current.topProjects
-  const breakdowns = [
-    {
-      title: 'Activity',
-      rows: [
-        ...data.current.topActivities.map(row => ({
-          key: `activity-${row.name}`,
-          title: row.name,
-          sub: `${row.turns.toLocaleString('en-US')} turns`,
-          value: formatUsd(row.cost),
-        })),
-        ...data.current.skills.map(row => ({
-          key: `skill-${row.name}`,
-          title: row.name,
-          sub: `${row.turns.toLocaleString('en-US')} turns · skill`,
-          value: formatUsd(row.cost),
-        })),
-      ],
-    },
-    {
-      title: 'Tools',
-      rows: data.current.tools.map(row => ({
-        key: row.name,
-        title: row.name,
-        sub: `${row.calls.toLocaleString('en-US')} calls`,
-        value: undefined,
-      })),
-    },
-    {
-      title: 'MCP',
-      rows: data.current.mcpServers.map(row => ({
-        key: row.name,
-        title: row.name,
-        sub: `${row.calls.toLocaleString('en-US')} calls`,
-        value: undefined,
-      })),
-    },
-    {
-      title: 'Subagents',
-      rows: data.current.subagents.map(row => ({
-        key: row.name,
-        title: row.name,
-        sub: `${row.calls.toLocaleString('en-US')} calls`,
-        value: formatUsd(row.cost),
-      })),
-    },
-  ].filter(section => section.rows.length)
+  const [view, setView] = useState<SpendView>('overview')
+  const daily = chartDaily(data, period, range)
 
   return (
-    <>
-      {staleError && <StaleBanner error={staleError} />}
-      <SectionFreshness report={flow} />
-
-      <Panel title="Daily spend by model" right="Cost over time" className="spend-chart-panel">
-        {chartHasSpend
-          ? <StackedBars daily={chartDaily} fallbackLabel={providerLabel(provider)} animateKey={animateKey} dataStart={dataStart} />
-          : <EmptyNote>No model spend in this range yet.</EmptyNote>}
-      </Panel>
-
-      <Panel title="Cost flow · model → project" right={flow.switching ? 'Refreshing flow…' : flow.data ? 'Observed cost allocation' : 'Building flow…'} className="scroll-x spend-flow-panel">
-        {flow.data && flow.data.links.length ? (
-          <Sankey flow={flow.data} />
-        ) : flow.error ? (
-          <CliErrorText error={flow.error} />
-        ) : flow.loading ? (
-          <div className="spend-flow-loading" role="status" aria-live="polite">
-            <SectionSkeleton label="Building model → project flow…" rows={2} chart />
-          </div>
-        ) : (
-          <EmptyNote>No model-project flow in this range yet.</EmptyNote>
-        )}
-      </Panel>
-
-      <div className="spend-breakdowns">
-        <ProjectBreakdown projects={projects} />
-        {breakdowns.length
-          ? breakdowns.map(section => <RowsPanel key={section.title} title={section.title} rows={section.rows} />)
-          : null}
+    <div className="spend-page" data-testid="spend-page" data-spend-view={view}>
+      {staleError ? <StaleBanner error={staleError} /> : null}
+      <div className="spend-heading">
+        <div className="spend-title-line">
+          <div><h1>Spend</h1><p>Understand where observed AI spend goes and what drives it.</p></div>
+          <SectionFreshness report={flow} />
+        </div>
+        <div className="spend-view-tabs" role="tablist" aria-label="Spend views">
+          {([
+            ['overview', 'Overview'],
+            ['projects', 'Projects'],
+            ['drivers', 'Drivers'],
+            ['flow', 'Flow'],
+          ] as Array<[SpendView, string]>).map(([value, label]) => (
+            <button
+              type="button"
+              key={value}
+              role="tab"
+              aria-selected={view === value}
+              aria-controls={`spend-view-${value}`}
+              onClick={() => setView(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
-      {!projects.length && !breakdowns.length ? (
-        <EmptyNote>No project, activity, tool, MCP, or subagent detail in this range yet.</EmptyNote>
-      ) : null}
-    </>
-  )
-}
 
-function ProjectBreakdown({ projects }: { projects: Project[] }) {
-  const [expanded, setExpanded] = useState<string | null>(null)
-
-  return (
-    <Panel title="Projects" right={projects.length ? `top ${projects.length}` : undefined} className="spend-scroll">
-      {projects.length ? (
-        projects.map((project, i) => {
-          const open = expanded === project.name
-          const sessionsLabel = `${project.name} sessions`
-          return (
-            <Fragment key={project.name}>
-              <ListRow
-                no={String(i + 1).padStart(2, '0')}
-                title={project.name}
-                sub={`${project.sessions.toLocaleString('en-US')} ${project.sessions === 1 ? 'session' : 'sessions'}`}
-                value={formatUsd(project.cost)}
-                expanded={open}
-                onClick={() => setExpanded(current => current === project.name ? null : project.name)}
-              />
-              {open && (
-                <div className="spend-proj-detail" role="region" aria-label={sessionsLabel}>
-                  <div role="table" aria-label={sessionsLabel}>
-                    <div className="sr-only" role="row">
-                      <span role="columnheader">Date</span>
-                      <span role="columnheader">Models</span>
-                      <span role="columnheader">Calls</span>
-                      <span role="columnheader">Cost</span>
-                    </div>
-                    {project.sessionDetails.length ? (
-                      project.sessionDetails.map((session, j) => {
-                        const day = formatProjectDay(session.date)
-                        const models = projectSessionModels(session.models)
-                        return (
-                          <div
-                            className="spend-proj-session"
-                            role="row"
-                            key={`${session.date}-${j}`}
-                            aria-label={`${day ?? 'Date not available'}. Models ${models.accessible}. ${session.calls.toLocaleString('en-US')} calls. Cost ${formatUsd(session.cost)}.`}
-                          >
-                            <span
-                              className="sps-date"
-                              role="cell"
-                              aria-label={day ? `Date ${day}` : 'Date not available'}
-                              title={day ? undefined : 'Date not available'}
-                            >
-                              {day ?? <span aria-hidden="true">—</span>}
-                            </span>
-                            <span
-                              className="sps-model"
-                              role="cell"
-                              aria-label={`Models: ${models.accessible}`}
-                              title={models.title}
-                            >
-                              {models.visible}
-                            </span>
-                            <span className="sps-calls" role="cell">{session.calls.toLocaleString('en-US')} calls</span>
-                            <span className="sps-cost" role="cell">{formatUsd(session.cost)}</span>
-                          </div>
-                        )
-                      })
-                    ) : (
-                      <div className="spend-proj-empty">No session detail for this project.</div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </Fragment>
-          )
-        })
-      ) : (
-        <EmptyNote>No project spend in this range yet.</EmptyNote>
-      )}
-    </Panel>
-  )
-}
-
-function RowsPanel({
-  title,
-  rows,
-}: {
-  title: string
-  rows: Array<{ key: string; title: string; sub: string; value?: string }>
-}) {
-  return (
-    <Panel title={title} className="spend-scroll">
-      {rows.map((row, i) => (
-        <ListRow key={row.key} no={String(i + 1).padStart(2, '0')} title={row.title} sub={row.sub} value={row.value} />
-      ))}
-    </Panel>
+      <div id={`spend-view-${view}`} role="tabpanel" aria-label={`${view} spend view`}>
+        {view === 'overview' ? <SpendOverview data={data} daily={daily} animateKey={animateKey} /> : null}
+        {view === 'projects' ? <SpendProjects data={data} /> : null}
+        {view === 'drivers' ? <SpendDrivers data={data} /> : null}
+        {view === 'flow' ? <SpendFlow flow={flow} /> : null}
+      </div>
+    </div>
   )
 }
