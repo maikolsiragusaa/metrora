@@ -2,8 +2,11 @@ import { mkdir, readFile, rename, writeFile } from 'fs/promises'
 import { join } from 'path'
 
 import { toDateString } from './daily-cache.js'
-import type { DateRange } from './types.js'
-import type { OptimizeResult } from './optimize.js'
+import { getMetroraCacheDir } from './product-paths.js'
+import { isSnapshotReadMode } from './read-lifecycle.js'
+import { sessionCacheFingerprint } from './session-cache-fingerprint.js'
+import type { DateRange, ProjectSummary } from './types.js'
+import { scanAndDetect, type OptimizeResult } from './optimize.js'
 
 /**
  * Disk cache for the optimize findings scan, shared across CLI processes.
@@ -75,4 +78,23 @@ export async function persistOptimizeResult(cacheDir: string, key: string, finge
     await writeFile(tmpPath, JSON.stringify({ version: 1, entries: Object.fromEntries(kept) } satisfies ScanCacheFile))
     await rename(tmpPath, finalPath)
   } catch { /* best-effort: a later scan simply re-runs */ }
+}
+
+/** Serve persisted findings only for snapshot reads; fresh reads always rescan. */
+export async function resolveOptimize(
+  projects: ProjectSummary[],
+  range: DateRange,
+  provider: string,
+  scopeId: string,
+  scan: typeof scanAndDetect,
+): Promise<OptimizeResult> {
+  const key = optimizeScanCacheKey(provider, range, scopeId)
+  const fingerprint = await sessionCacheFingerprint()
+  if (isSnapshotReadMode() && fingerprint) {
+    const persisted = await loadPersistedOptimizeResult(getMetroraCacheDir(), key, fingerprint)
+    if (persisted) return persisted
+  }
+  const result = await scan(projects, range, provider)
+  if (fingerprint) await persistOptimizeResult(getMetroraCacheDir(), key, fingerprint, result)
+  return result
 }

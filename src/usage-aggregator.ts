@@ -12,22 +12,20 @@ import { enrichModelsWithObservedPerformance } from './model-performance.js'
 import { aggregateModels } from './models-report.js'
 import { scanUserCorrections, medianTimeToFirstEditMs, aggregateFileChurn, computePricingCoverage } from './workflow-insights.js'
 import { buildPrAttribution, aggregateByBranch } from './sessions-report.js'
-import { scanAndDetect, type OptimizeResult } from './optimize.js'
-import { loadPersistedOptimizeResult, optimizeScanCacheKey, persistOptimizeResult } from './optimize-scan-cache.js'
-import { getMetroraCacheDir } from './product-paths.js'
-import { sessionCacheFingerprint } from './session-cache.js'
-import { getDaysInRange, loadDailyCache, emptyCache, BACKFILL_DAYS, toDateString, type DailyCache, type DailyEntry } from './daily-cache.js'
+import { scanAndDetect } from './optimize.js'
+import { resolveOptimize } from './optimize-scan-cache.js'
+import { getDaysInRange, emptyCache, BACKFILL_DAYS, toDateString, loadDailyCacheForRead, type DailyCache, type DailyEntry } from './daily-cache.js'
 import { getDailyCacheConfigHash } from './daily-cache-config.js'
 export { getDailyCacheConfigHash } from './daily-cache-config.js'
 import { buildGranularHistory } from './granular-history.js'
-import { consumeFreshReconcileOutcome, isSnapshotReadMode, withReadFreshness } from './read-lifecycle.js'
+import { consumeFreshReconcileOutcome, withReadFreshness } from './read-lifecycle.js'
 import { hydrateCopilotDailyCache } from './copilot-chat-journal-hydration.js'
 import { buildUsageBreakdowns } from './usage-breakdowns.js'
 import { friendlyProject, populateProjectRollups } from './project-report.js'
 import { withProjectDetailCoverage } from './project-coverage.js'
 import { buildMobileFoundationPayload } from './sharing/mobile-foundation.js'
 import { readProjectRegistry } from './project-registry.js'
-import { reconcilePendingOpenCodeDailyHistory } from './opencode-daily-reconciliation.js'
+import { reconcileFreshOpenCodeDailyHistory } from './opencode-daily-reconciliation.js'
 import {
   ALL_PROJECTS_SCOPE_ID,
   buildProjectScopePayload,
@@ -264,17 +262,7 @@ export async function buildDurablePeriod(periodInfo: PeriodInfo, opts: Aggregate
   const rangeStartStr = toDateString(periodInfo.range.start)
   const rangeEndStr = toDateString(periodInfo.range.end)
   const isTodayOnly = rangeStartStr === todayStr && rangeEndStr === todayStr
-
-  let cache: DailyCache
-  if (isSnapshotReadMode()) {
-    cache = await loadDailyCache()
-  } else {
-    // The daily hydration (including a cold multi-day backfill) can run long
-    // before the first per-file parse tick; announce the phase so the desktop's
-    // idle watchdog knows the fresh read is alive.
-    emitScanProgress({ kind: 'stage', stage: 'daily-cache' })
-    cache = await hydrateCache()
-  }
+  let cache = await loadDailyCacheForRead(hydrateCache)
 
   // Today's live data always comes from an all-provider parse so the union (and
   // any per-provider slice of it) sees every provider's today. `todayAllDays` is
@@ -303,20 +291,7 @@ export async function buildDurablePeriod(periodInfo: PeriodInfo, opts: Aggregate
     liveProjects = daysSelection && !isTodayOnly ? filterProjectsByDays(rawProv, daysSelection.days) : rawProv
     scanRange = isTodayOnly ? todayRange : periodInfo.range
   }
-
-  // A fresh live parse can discover a late OpenCode source after the initial
-  // daily-cache hydration. Publish its historical slices before projecting the
-  // durable headline, so Models and Sessions see the same source set.
-  if (!isSnapshotReadMode()) {
-    try {
-      cache = await reconcilePendingOpenCodeDailyHistory(cache)
-    } catch {
-      // Keep the current live response usable; the invalidation marker remains
-      // on disk and the next fresh pass retries the durable publication.
-      cache = { ...cache, complete: false }
-    }
-  }
-
+  cache = await reconcileFreshOpenCodeDailyHistory(cache)
   const allDays = unionDaysForPeriod(cache, todayAllDays, periodInfo, daysSelection?.days ?? null)
   const projectFilterActive = hasDurableProjectFilter(projectFilter)
   const days = allDays.map(day => {
@@ -352,28 +327,6 @@ export async function buildDurablePeriod(periodInfo: PeriodInfo, opts: Aggregate
 
   const carriedCostUSD = days.reduce((s, d) => s + (d.carried ? d.cost : 0), 0)
   return { data, days, carriedCostUSD, liveProjects, cache, todayAllDays, scanRange }
-}
-
-/**
- * Optimize findings with a process-spanning cache. The scan re-reads every
- * in-range Claude transcript, which is proportionate for an explicit fresh
- * reconcile but not for the desktop's read-only snapshot polls (one CLI process
- * each, so the in-process result cache never carries over). Snapshots serve the
- * result persisted by the last scan, validated against the session-cache file
- * fingerprint: snapshot parses never write that cache, so the fingerprint only
- * moves when a real reconcile publishes. Fresh reconciles always re-scan and
- * refresh the persisted entry.
- */
-async function resolveOptimize(projects: ProjectSummary[], range: DateRange, provider: string, scopeId: string): Promise<OptimizeResult> {
-  const key = optimizeScanCacheKey(provider, range, scopeId)
-  const fingerprint = await sessionCacheFingerprint()
-  if (isSnapshotReadMode() && fingerprint) {
-    const persisted = await loadPersistedOptimizeResult(getMetroraCacheDir(), key, fingerprint)
-    if (persisted) return persisted
-  }
-  const result = await scanAndDetect(projects, range, provider)
-  if (fingerprint) await persistOptimizeResult(getMetroraCacheDir(), key, fingerprint, result)
-  return result
 }
 
 /**
@@ -698,11 +651,9 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
     baselineCostPerEdit: baseline?.costPerEditUSD ?? 0,
     byModel: routingWasteByModel.slice(0, 5),
   }
-
   const breakdowns = buildUsageBreakdowns(scanProjects)
-
   emitScanProgress({ kind: 'stage', stage: 'payload' })
-  const optimize = opts.optimize === false ? null : await resolveOptimize(scanProjects, scanRange, pf, scopeId)
+  const optimize = opts.optimize === false ? null : await resolveOptimize(scanProjects, scanRange, pf, scopeId, scanAndDetect)
   const granularRange = opts.daysSelection?.range ?? scanRange
   const granularHistory = opts.timeline === false ? undefined : buildGranularHistory(scanProjects, granularRange)
   const periodDailyHistory = cacheDaysForPeriod ? dailyEntriesToHistory(cacheDaysForPeriod) : undefined
