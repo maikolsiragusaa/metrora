@@ -13,6 +13,7 @@ import {
   type DailyCache,
 } from './daily-cache.js'
 import { getDailyCacheConfigHash } from './daily-cache-config.js'
+import { isSnapshotReadMode } from './read-lifecycle.js'
 
 /**
  * A provider-scoped parse that returns no calls is not safe to publish over an
@@ -82,4 +83,13 @@ export async function reconcilePendingOpenCodeDailyHistory(existingCache?: Daily
 
   if (providerComplete && cache.complete === true) await clearOpenCodeDailyInvalidations()
   return cache
+}
+
+export async function reconcileFreshOpenCodeDailyHistory(cache: DailyCache): Promise<DailyCache> {
+  if (isSnapshotReadMode()) return cache
+  try {
+    return await reconcilePendingOpenCodeDailyHistory(cache)
+  } catch {
+    return { ...cache, complete: false }
+  }
 }

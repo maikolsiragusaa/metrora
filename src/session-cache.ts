@@ -271,21 +271,6 @@ function getLegacyCachePath(): string {
   return join(getCacheDir(), LEGACY_CACHE_FILE)
 }
 
-/**
- * Stable identity of the on-disk session cache file (mtime+size), usable as a
- * vintage stamp for anything derived from a reconcile — snapshot parses never
- * write the cache, so the fingerprint only moves when a real reconcile
- * publishes. Null while no versioned cache file exists.
- */
-export async function sessionCacheFingerprint(): Promise<string | null> {
-  try {
-    const stats = await stat(getCachePath())
-    return `${stats.mtimeMs}:${stats.size}`
-  } catch {
-    return null
-  }
-}
-
 /** Absolute path of the active (version-suffixed) session cache file. */
 export function sessionCachePath(): string {
   return getCachePath()

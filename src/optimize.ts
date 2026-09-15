@@ -6,7 +6,7 @@ import { homedir } from 'os'
 
 import { readSessionLines, readSessionFileSync } from './fs-utils.js'
 import { discoverAllSessions } from './providers/index.js'
-import { parseJsonlLine, shouldSkipLine, emitScanProgress } from './parser.js'
+import { parseJsonlLine, shouldSkipLine, createStageProgress } from './parser.js'
 import type { DateRange, ProjectSummary, SessionSummary } from './types.js'
 import { formatCost } from './currency.js'
 import { formatTokens } from './format.js'
@@ -565,22 +565,15 @@ async function scanSessions(dateRange?: DateRange, provider?: string): Promise<S
       tasks.push({ file, project: source.project })
     }
   }
-
-  // Stage-scoped progress: the scan runs after every provider parse has
-  // finished, so no provider tick stream can cover it — on a large history the
-  // transcript re-read is the longest silent phase of a fresh reconcile.
-  let scanned = 0
-  if (tasks.length > 0) emitScanProgress({ kind: 'stage', stage: 'optimize-scan', done: 0, total: tasks.length })
+  const reportProgress = createStageProgress('optimize-scan', tasks.length)
   await runWithConcurrency(tasks, FILE_READ_CONCURRENCY, async ({ file, project }) => {
     const { calls, cwds, apiCalls, userMessages } = await scanJsonlFile(file, project, dateRange)
-    scanned++
-    emitScanProgress({ kind: 'stage', stage: 'optimize-scan', done: scanned, total: tasks.length })
+    reportProgress()
     allCalls.push(...calls)
     for (const cwd of cwds) allCwds.add(cwd)
     allApiCalls.push(...apiCalls)
     allUserMessages.push(...userMessages)
   })
-
   return { toolCalls: allCalls, projectCwds: allCwds, apiCalls: allApiCalls, userMessages: allUserMessages }
 }
 
