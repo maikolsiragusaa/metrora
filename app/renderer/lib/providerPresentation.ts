@@ -29,6 +29,10 @@ const KNOWN_PROVIDER_LABELS: Record<string, string> = {
   bedrock: 'Amazon Bedrock',
   zcode: 'ZCode',
   zed: 'Zed',
+  nvidia: 'NVIDIA',
+  orcarouter: 'OrcaRouter',
+  poolside: 'Poolside',
+  xiaomi: 'Xiaomi',
 }
 
 function normalize(value: string): string {
@@ -47,9 +51,14 @@ export function providerLogoKey(value: string): string {
   const normalizedValue = normalize(value)
   if (normalizedValue.includes('openai') || normalizedValue === 'codex') return 'codex'
   if (normalizedValue.includes('anthropic') || normalizedValue.includes('claude')) return 'claude'
-  if (normalizedValue.includes('google') || normalizedValue.includes('gemini')) return 'gemini'
+  if (normalizedValue.includes('google') || normalizedValue.includes('gemini') || normalizedValue.includes('vertex')) return 'gemini'
   if (normalizedValue.includes('mistral')) return 'mistral-vibe'
   if (normalizedValue.includes('alibaba') || normalizedValue.includes('qwen')) return 'qwen'
   if (normalizedValue.includes('x.ai') || normalizedValue.includes('grok')) return 'grok'
+  if (normalizedValue.includes('opencode')) return 'opencode'
+  if (normalizedValue.includes('openrouter') || normalizedValue.includes('open-router')) return 'openrouter'
+  if (normalizedValue.includes('orcarouter') || normalizedValue.includes('orca-router')) return 'orcarouter'
+  if (normalizedValue.includes('nvidia') || normalizedValue.includes('nemotron')) return 'nvidia'
+  if (normalizedValue.includes('bedrock')) return 'amazon-bedrock'
   return value
 }

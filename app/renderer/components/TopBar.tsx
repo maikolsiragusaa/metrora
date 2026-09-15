@@ -41,6 +41,7 @@ export function TopBar({
   provider,
   providerLabel,
   providerOptions,
+  providerAriaLabel = 'Providers',
   onProviderSelect,
   claudeConfigs,
   configSource,
@@ -64,6 +65,7 @@ export function TopBar({
   provider: string
   providerLabel: string
   providerOptions: ProviderOption[]
+  providerAriaLabel?: string
   onProviderSelect: (value: string) => void
   claudeConfigs?: ClaudeConfigSelector
   configSource: string | null
@@ -85,7 +87,7 @@ export function TopBar({
         className="bar-command"
         aria-label="Search Metrora sections"
         title="Search Metrora sections (⌘K / Ctrl+K)"
-        onClick={() => window.dispatchEvent(new Event('metrora:open-command-menu'))}
+        onClick={() => document.dispatchEvent(new Event('metrora:open-command-menu'))}
       >
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.3" /><path d="m16 16 4.5 4.5" /></svg>
         <span>Search sections</span>
@@ -104,7 +106,7 @@ export function TopBar({
       )}
       {capabilities.customRange && <CalendarPop value={customRange} onSelect={onRangeSelect} />}
       {capabilities.provider && (
-        <ProviderPop value={provider} label={providerLabel} options={providerOptions} onSelect={onProviderSelect} />
+        <ProviderPop value={provider} label={providerLabel} ariaLabel={providerAriaLabel} options={providerOptions} onSelect={onProviderSelect} />
       )}
       {projectOptions && projectOptions.length > 0 && projectScopeId && onProjectScopeSelect && (
         <Dropdown
@@ -122,13 +124,17 @@ export function TopBar({
       {capabilities.globalRefresh && onRefresh && (
         <button
           type="button"
-          className="btn btn-s refresh-button"
+          className={`btn btn-s refresh-button${refreshing ? ' is-refreshing' : ''}`}
           onClick={onRefresh}
           disabled={refreshing}
           aria-label={refreshing ? 'Refreshing' : 'Refresh'}
           title={refreshing ? 'Refreshing' : 'Refresh'}
         >
-          {refreshing ? 'Refreshing…' : 'Refresh'}
+          <svg className="refresh-button-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 11.5a8 8 0 1 0-2.6 6.4" />
+            <path d="M20 4.5v7h-7" fill="none" />
+          </svg>
+          <span className="refresh-button-label">{refreshing ? 'Refreshing…' : 'Refresh'}</span>
         </button>
       )}
     </div>

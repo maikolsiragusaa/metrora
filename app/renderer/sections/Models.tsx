@@ -7,6 +7,7 @@ import { seriesColorForModel } from '../components/ListRow'
 import { Panel } from '../components/Panel'
 import { SectionSkeleton } from '../components/Skeleton'
 import { IncompleteReconciliationBanner, StaleBanner } from '../components/StaleBanner'
+import { SectionFreshness } from '../components/SectionFreshness'
 import type { Section } from '../components/Sidebar'
 import { usePolled, type Polled } from '../hooks/usePolled'
 import { formatCompact, formatUsd } from '../lib/format'
@@ -257,6 +258,7 @@ function ModelsUsage({
       <div className="models-analytics-workspace">
         <section className="models-list-pane" aria-label="Models grouped by task">
           {report.error && <StaleBanner error={report.error} />}
+          <SectionFreshness report={report} />
           <Panel className="scroll-x">
             <div style={{ padding: '12px 14px 4px' }}>
               <strong>Task breakdown · Available detail</strong>
@@ -308,26 +310,26 @@ function auditEstimated(row: AuditRow): boolean {
   return Math.abs(row.cost.recomputedTotalUSD - row.attributedCostUSD) > 0.005
 }
 
-function auditPricingState(row: AuditRow): 'Priced' | 'Estimated' | 'Unpriced' {
+function auditPricingState(row: AuditRow): 'Resolved' | 'Estimated' | 'Unpriced' {
   if (!row.rates) return 'Unpriced'
-  return auditEstimated(row) ? 'Estimated' : 'Priced'
+  return auditEstimated(row) ? 'Estimated' : 'Resolved'
 }
 
 function auditDisplayedTotal(row: AuditRow): number {
   return row.displayed.inputTokens + row.displayed.outputTokens + row.displayed.cacheReadTokens + row.displayed.cacheWriteTokens
 }
 
-function auditReconciliation(row: AuditRow): number | null {
-  if (!row.rates) return null
-  const denominator = Math.abs(row.attributedCostUSD)
-  if (denominator <= 0.000001 && Math.abs(row.cost.recomputedTotalUSD) <= 0.000001) return 100
-  if (denominator <= 0.000001) return 0
-  return Math.max(0, Math.min(100, (1 - Math.abs(row.cost.recomputedTotalUSD - row.attributedCostUSD) / denominator) * 100))
+function auditRawFieldsComplete(row: AuditRow): boolean {
+  return Object.values(row.raw).every(value => typeof value === 'number' && Number.isFinite(value))
 }
 
-function auditEvidenceComplete(row: AuditRow): boolean {
-  return Object.values(row.raw).every(value => typeof value === 'number' && Number.isFinite(value))
-    && Object.values(row.displayed).every(value => typeof value === 'number' && Number.isFinite(value))
+function auditReconciliationState(row: AuditRow): '100%' | 'Partial' | 'Unknown' {
+  if (!row.rates) return 'Unknown'
+  return auditEstimated(row) ? 'Partial' : '100%'
+}
+
+function auditReasoningState(row: AuditRow): 'Observed' | 'Unavailable' {
+  return row.raw.reasoningTokens > 0 ? 'Observed' : 'Unavailable'
 }
 
 function auditUnitCost(row: AuditRow): number | null {
@@ -374,6 +376,7 @@ function AuditLens({
     <div className="models-analytics-workspace">
       <section className="models-list-pane" aria-label="Model usage evidence list">
         {report.error && <StaleBanner error={report.error} />}
+        <SectionFreshness report={report} />
         <Panel className="scroll-x">
           {report.data.length ? (
             <AuditTable rows={report.data} selectedId={selectedId} onSelect={setSelectedId} />
@@ -403,7 +406,7 @@ function AuditTable({ rows, selectedId, onSelect }: { rows: AuditRow[]; selected
           <th scope="col">Total tokens</th>
           <th scope="col">Cost</th>
           <th scope="col">Cost / 1M</th>
-          <th scope="col">Evidence</th>
+          <th scope="col" title="Completeness of the raw fields recorded by the source">Raw fields</th>
           <th scope="col">Pricing</th>
           <th scope="col">Recon</th>
           <th scope="col">Reasoning</th>
@@ -422,9 +425,10 @@ function AuditTableRow({ row, selected, onSelect }: { row: AuditRow; selected: b
   const estimated = auditEstimated(row)
   const total = auditDisplayedTotal(row)
   const unitCost = auditUnitCost(row)
-  const reconciliation = auditReconciliation(row)
-  const complete = auditEvidenceComplete(row)
+  const rawFieldsComplete = auditRawFieldsComplete(row)
   const pricingState = auditPricingState(row)
+  const reconciliationState = auditReconciliationState(row)
+  const reasoningState = auditReasoningState(row)
   return (
     <tr>
       <td title={row.model}>
@@ -446,10 +450,10 @@ function AuditTableRow({ row, selected, onSelect }: { row: AuditRow; selected: b
         {estimated ? <span className="est" title="Cost is estimated (no live pricing or derived rate)"> est</span> : null}
       </td>
       <td>{unitCost == null ? <span className="models-unavailable" aria-label="Cost per 1M is unavailable">—</span> : formatUsd(unitCost)}</td>
-      <td><span className={`models-evidence-state ${complete ? 'is-complete' : 'is-partial'}`} title={complete ? 'Raw and displayed token fields are present.' : 'One or more audited token fields are unavailable.'}>{complete ? 'Complete' : 'Partial'}</span></td>
-      <td><span className={`models-evidence-state ${pricingState === 'Priced' ? 'is-complete' : pricingState === 'Estimated' ? 'is-partial' : 'is-unpriced'}`} title={pricingState === 'Unpriced' ? 'No pricing rate record was resolved for this audit row.' : pricingState === 'Estimated' ? 'A rate record was resolved, but attributed cost does not equal a simple displayed-token recompute.' : 'A pricing rate record was resolved for this audit row.'}>{pricingState}</span></td>
-      <td>{reconciliation == null ? <span className="models-unavailable" aria-label="Reconciliation is unavailable">—</span> : `${reconciliation.toFixed(0)}%`}</td>
-      <td><span className={`models-evidence-state ${row.raw.reasoningTokens > 0 ? 'is-observed' : 'is-none'}`}>{row.raw.reasoningTokens > 0 ? 'Observed' : 'None recorded'}</span></td>
+      <td><span className={`models-evidence-state ${rawFieldsComplete ? 'is-complete' : 'is-partial'}`} title={rawFieldsComplete ? 'All raw fields are present.' : 'One or more raw fields are unavailable.'}>{rawFieldsComplete ? 'Complete' : 'Partial'}</span></td>
+      <td><span className={`models-evidence-state ${pricingState === 'Resolved' ? 'is-complete' : pricingState === 'Estimated' ? 'is-partial' : 'is-unpriced'}`} title={pricingState === 'Unpriced' ? 'No pricing rate record was resolved for this audit row.' : pricingState === 'Estimated' ? 'A rate record was resolved, but attributed cost does not equal a simple displayed-token recompute.' : 'A pricing rate record was resolved for this audit row.'}>{pricingState}</span></td>
+      <td><span className={`models-evidence-state ${reconciliationState === '100%' ? 'is-complete' : reconciliationState === 'Partial' ? 'is-partial' : 'is-none'}`} title={reconciliationState === '100%' ? 'Recomputed and attributed cost agree within the canonical tolerance.' : reconciliationState === 'Partial' ? 'Recomputed and attributed cost do not fully agree.' : 'Reconciliation is unavailable without a resolved rate record.'}>{reconciliationState}</span></td>
+      <td><span className={`models-evidence-state ${reasoningState === 'Observed' ? 'is-observed' : 'is-none'}`}>{reasoningState}</span></td>
     </tr>
   )
 }

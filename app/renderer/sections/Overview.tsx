@@ -388,6 +388,9 @@ export function OverviewContent({
           current={data.current}
           scope={data.current.label}
           providerLabel={providerLabel}
+          period={period}
+          provider={provider}
+          ready={ready}
           quota={quota.data}
           onNavigate={onNavigate}
           onShare={() => setShareOpen(true)}

@@ -6,6 +6,7 @@ import { Panel } from '../components/Panel'
 import { SectionSkeleton } from '../components/Skeleton'
 import { SegTabs } from '../components/SegTabs'
 import { StaleBanner } from '../components/StaleBanner'
+import { SectionFreshness } from '../components/SectionFreshness'
 import { type Polled, usePolled } from '../hooks/usePolled'
 import { formatCompact, formatUsd } from '../lib/format'
 import { metrora } from '../lib/ipc'
@@ -77,6 +78,7 @@ export function OptimizeContent({
   return (
     <>
       {overview.error && <StaleBanner error={overview.error} />}
+      <SectionFreshness report={optimizeReport} />
       <div className="opt-intro">
         <div>
           <span className="ov-label">Evidence-based insights</span>

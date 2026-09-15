@@ -315,6 +315,12 @@ function runCli(
     onStderr,
     onProgress,
   }).then(result => {
+    if (result.reason === 'idle-timeout') {
+      // Distinct from the absolute deadline: the child was healthy but silent
+      // and was killed by the progress-idle watchdog. Name the real cause
+      // instead of the generic absolute-deadline message.
+      throw new CliError('timeout', `Metrora ${cmdLabel} stopped: no reconciliation progress for ${idleTimeoutMs}ms`)
+    }
     if (result.reason === 'timeout') {
       throw new CliError('timeout', `Metrora ${cmdLabel} timed out after ${timeoutMs}ms`)
     }

@@ -20,6 +20,10 @@ export type ModelHouseId =
   | 'microsoft'
   | 'minimax'
   | 'ai21'
+  | 'cursor'
+  | 'nvidia'
+  | 'xiaomi'
+  | 'poolside'
   | 'unresolved'
 
 const MODEL_HOUSE_LABELS: Record<ModelHouseId, string> = {
@@ -37,7 +41,11 @@ const MODEL_HOUSE_LABELS: Record<ModelHouseId, string> = {
   microsoft: 'Microsoft',
   minimax: 'MiniMax',
   ai21: 'AI21',
-  unresolved: 'Other model houses',
+  cursor: 'Cursor',
+  nvidia: 'NVIDIA',
+  xiaomi: 'Xiaomi',
+  poolside: 'Poolside',
+  unresolved: 'Brand unavailable',
 }
 
 const MODEL_HOUSE_ALIASES: Record<string, ModelHouseId> = {
@@ -68,6 +76,11 @@ const MODEL_HOUSE_ALIASES: Record<string, ModelHouseId> = {
   'minimax-ai': 'minimax',
   ai21: 'ai21',
   'ai21-labs': 'ai21',
+  cursor: 'cursor',
+  anysphere: 'cursor',
+  nvidia: 'nvidia',
+  xiaomi: 'xiaomi',
+  poolside: 'poolside',
 }
 
 function normalized(value: string): string {
@@ -93,20 +106,37 @@ export function modelHouseIdFromName(value: string): ModelHouseId | undefined {
   if (/(?:^|[-/:])(?:kimi|moonshot)(?:[-/:]|\d|$)/.test(model)) return 'moonshot'
   if (/(?:^|[-/:])(?:mistral|ministral|pixtral)(?:[-/:]|\d|$)/.test(model)) return 'mistral'
   if (/(?:^|[-/:])(?:grok|xai)(?:[-/:]|\d|$)/.test(model)) return 'xai'
-  if (/(?:^|[-/:])(?:llama|meta)(?:[-/:]|\d|$)/.test(model)) return 'meta'
+  if (/(?:^|[-/:])(?:llama|meta|muse)(?:[-/:]|\d|$)/.test(model)) return 'meta'
   if (/(?:^|[-/:])(?:command|aya|cohere)(?:[-/:]|\d|$)/.test(model)) return 'cohere'
   if (/(?:^|[-/:])(?:phi|microsoft)(?:[-/:]|\d|$)/.test(model)) return 'microsoft'
   if (/(?:^|[-/:])minimax(?:[-/:]|\d|$)/.test(model)) return 'minimax'
   if (/(?:^|[-/:])(?:jamba|ai21)(?:[-/:]|\d|$)/.test(model)) return 'ai21'
+  if (/(?:^|[-/:])(?:composer|cursor|anysphere)(?:[-/:]|\d|$)/.test(model)) return 'cursor'
+  if (/(?:^|[-/:])(?:nemotron|nvidia)(?:[-/:]|\d|$)/.test(model)) return 'nvidia'
+  if (/(?:^|[-/:])mimo(?:[-/:]|\d|$)/.test(model)) return 'xiaomi'
+  if (/(?:^|[-/:])laguna(?:[-/:]|\d|$)/.test(model)) return 'poolside'
   return undefined
 }
 
 /** Resolve the model house without ever treating a delivery route as proof of ownership. */
 export function modelHouseValues(row: Pick<DurableModelPresentationRow, 'brandId' | 'name' | 'rawModels'>): ModelHouseId[] {
+  // A model whose own display name names the Cursor product is Cursor's, even
+  // when the recorded brand disagrees (Cursor (auto) can route to Claude).
+  if (normalized(row.name).startsWith('cursor')) return ['cursor']
   const explicit = normalizeModelHouseId(row.brandId)
   if (explicit) return [explicit]
   const inferred = [...new Set([row.name, ...row.rawModels].map(modelHouseIdFromName).filter((value): value is ModelHouseId => value !== undefined))]
   return inferred.length > 0 ? inferred : ['unresolved']
+}
+
+/**
+ * House used for a single model identity line: a name that names the Cursor
+ * product wins over a conflicting recorded brand; otherwise the explicit
+ * brandId leads and the name is the conservative fallback.
+ */
+export function identityModelHouse(name: string, brandId?: string): ModelHouseId | undefined {
+  if (normalized(name).startsWith('cursor')) return 'cursor'
+  return normalizeModelHouseId(brandId) ?? modelHouseIdFromName(name)
 }
 
 export function modelHouseLabel(value: ModelHouseId): string {

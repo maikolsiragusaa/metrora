@@ -581,6 +581,7 @@ export type ScanProgressEvent =
   | { kind: 'providers'; providers: string[]; cold?: boolean }
   | { kind: 'provider'; provider: string; state: 'start' | 'done' | 'skipped'; files?: number }
   | { kind: 'tick'; provider: string; done: number; total: number }
+  | { kind: 'stage'; stage: string; done?: number; total?: number }
   | { kind: 'done' }
 
 /** Update-availability status from the main process (app/electron/updates.ts). */

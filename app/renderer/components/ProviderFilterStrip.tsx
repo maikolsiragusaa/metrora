@@ -48,13 +48,15 @@ export function ProviderFilterStrip({
       data-scroll-interaction="drag-or-wheel"
       onPointerDown={event => {
         if (event.pointerType === 'mouse' && event.button !== 0) return
+        // Capture only once real dragging starts: capturing on pointer-down
+        // retargets the derived click to the strip, so brand buttons never
+        // receive it.
         dragRef.current = {
           pointerId: event.pointerId,
           startX: event.clientX,
           startScrollLeft: event.currentTarget.scrollLeft,
           moved: false,
         }
-        event.currentTarget.setPointerCapture?.(event.pointerId)
       }}
       onPointerMove={event => {
         const drag = dragRef.current

@@ -12,8 +12,9 @@ import { createUpdateChecker, type UpdateChecker, type UpdateStatus } from './up
 import { createBridgeHandlers, NO_UPDATE_STATUS } from './bridge-handlers'
 import { createOpenCodeAccountingEnvironment } from './opencode/config'
 import { createOpenCodeFreshnessCoordinator, createOpenCodeSourceChangeDetector } from './opencode/freshness'
-import { OpenCodeRuntime } from './opencode/runtime'
+import { OpenCodeRuntime, resolveOpenCodeExecutable } from './opencode/runtime'
 import { readOpenCodeDesktopProjects, resolveOpenCodeDesktopGlobalStorePath } from './opencode/project-import'
+import { resolveStandaloneOpenCodeExportRuntime } from './opencode/standalone'
 import { OpenCodeSessionImporter, type OpenCodeImportResult } from './opencode/session-import'
 import { OpenCodeViewManager, normalizeOpenCodeBounds, type OpenCodeApp, type OpenCodeView, type OpenCodeWindow } from './opencode/view'
 
@@ -200,6 +201,18 @@ function registerHandlers(): void {
     userDataPath: app.getPath('userData'),
     platform: process.platform,
     environment: process.env,
+    standaloneResolver: () => resolveStandaloneOpenCodeExportRuntime({
+      platform: process.platform,
+      environment: process.env,
+      excludedRoots: [app.getPath('userData')],
+      // Desktop-only OpenCode installs ship no CLI binary; the staged Metrora
+      // OpenCode runtime can still export from the user's standalone database.
+      stagedExecutablePath: resolveOpenCodeExecutable({
+        appPath: app.getAppPath(),
+        resourcesPath: process.resourcesPath,
+        isPackaged: app.isPackaged,
+      }),
+    }),
     getMetroraCommand: () => openCodeRuntime.createCommandEnvironment(),
     runWithRuntimeStopped: operation => {
       if (!openCodeViewManager) return Promise.reject(new Error('OpenCode runtime is unavailable.'))

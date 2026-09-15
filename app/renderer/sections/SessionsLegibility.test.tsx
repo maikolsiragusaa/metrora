@@ -92,7 +92,7 @@ describe('Sessions dense-report legibility', () => {
     expect(within(detail).getByText('0 of 1 calls known · 0% coverage')).toBeInTheDocument()
     expect(within(detail).getAllByText('Not identified').length).toBeGreaterThan(0)
 
-    await user.click(screen.getByRole('tab', { name: 'Cost' }))
+    await user.click(within(screen.getByRole('table', { name: 'Detailed sessions' })).getByRole('button', { name: 'Cost' }))
     await waitFor(() => expect(status).toHaveTextContent('Sessions sorted by highest cost'))
 
     await user.click(screen.getByRole('button', { name: 'Group by client' }))

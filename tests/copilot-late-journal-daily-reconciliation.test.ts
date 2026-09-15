@@ -153,6 +153,8 @@ describe('Copilot late current-journal daily reconciliation', () => {
     expect(day?.providers.otel?.calls).toBe(3)
     expect(day?.calls).toBe(4)
     expect(day?.cost).toBeCloseTo(0.003)
+    const persisted = await import('../src/daily-cache.js').then(module => module.loadDailyCache())
+    expect(persisted.days.find(entry => entry.date === date)?.providers.copilot?.calls).toBe(1)
   })
 
   it('characterizes an explicit workspace-root switch as a separate source identity', async () => {

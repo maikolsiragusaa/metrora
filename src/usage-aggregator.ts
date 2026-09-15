@@ -1,6 +1,6 @@
 import { CATEGORY_LABELS, type ProjectSummary, type TaskCategory, type DateRange } from './types.js'
 import { type PeriodData, type ProviderCost, type MenubarPayload, type ClaudeConfigSelector, buildMenubarPayload } from './menubar-json.js'
-import { parseAllSessions, filterProjectsByName, filterProjectsByDays, filterProjectsByClaudeConfigSource, isSessionHydrationComplete } from './parser.js'
+import { parseAllSessions, filterProjectsByName, filterProjectsByDays, filterProjectsByClaudeConfigSource, isSessionHydrationComplete, emitScanProgress } from './parser.js'
 import { findUnpricedModels, isExpectedFreeModel } from './models.js'
 import { getAllProviders, safeDiscoverSessions } from './providers/index.js'
 import { claude, getClaudeConfigDirs, getDesktopSessionsDirs } from './providers/claude.js'
@@ -13,17 +13,19 @@ import { aggregateModels } from './models-report.js'
 import { scanUserCorrections, medianTimeToFirstEditMs, aggregateFileChurn, computePricingCoverage } from './workflow-insights.js'
 import { buildPrAttribution, aggregateByBranch } from './sessions-report.js'
 import { scanAndDetect } from './optimize.js'
-import { getDaysInRange, loadDailyCache, emptyCache, BACKFILL_DAYS, toDateString, type DailyCache, type DailyEntry } from './daily-cache.js'
+import { resolveOptimize } from './optimize-scan-cache.js'
+import { getDaysInRange, emptyCache, BACKFILL_DAYS, toDateString, loadDailyCacheForRead, type DailyCache, type DailyEntry } from './daily-cache.js'
 import { getDailyCacheConfigHash } from './daily-cache-config.js'
 export { getDailyCacheConfigHash } from './daily-cache-config.js'
 import { buildGranularHistory } from './granular-history.js'
-import { isSnapshotReadMode, withReadFreshness } from './read-lifecycle.js'
+import { consumeFreshReconcileOutcome, withReadFreshness } from './read-lifecycle.js'
 import { hydrateCopilotDailyCache } from './copilot-chat-journal-hydration.js'
 import { buildUsageBreakdowns } from './usage-breakdowns.js'
 import { friendlyProject, populateProjectRollups } from './project-report.js'
 import { withProjectDetailCoverage } from './project-coverage.js'
 import { buildMobileFoundationPayload } from './sharing/mobile-foundation.js'
 import { readProjectRegistry } from './project-registry.js'
+import { reconcileFreshOpenCodeDailyHistory } from './opencode-daily-reconciliation.js'
 import {
   ALL_PROJECTS_SCOPE_ID,
   buildProjectScopePayload,
@@ -260,8 +262,7 @@ export async function buildDurablePeriod(periodInfo: PeriodInfo, opts: Aggregate
   const rangeStartStr = toDateString(periodInfo.range.start)
   const rangeEndStr = toDateString(periodInfo.range.end)
   const isTodayOnly = rangeStartStr === todayStr && rangeEndStr === todayStr
-
-  const cache = isSnapshotReadMode() ? await loadDailyCache() : await hydrateCache()
+  let cache = await loadDailyCacheForRead(hydrateCache)
 
   // Today's live data always comes from an all-provider parse so the union (and
   // any per-provider slice of it) sees every provider's today. `todayAllDays` is
@@ -290,7 +291,7 @@ export async function buildDurablePeriod(periodInfo: PeriodInfo, opts: Aggregate
     liveProjects = daysSelection && !isTodayOnly ? filterProjectsByDays(rawProv, daysSelection.days) : rawProv
     scanRange = isTodayOnly ? todayRange : periodInfo.range
   }
-
+  cache = await reconcileFreshOpenCodeDailyHistory(cache)
   const allDays = unionDaysForPeriod(cache, todayAllDays, periodInfo, daysSelection?.days ?? null)
   const projectFilterActive = hasDurableProjectFilter(projectFilter)
   const days = allDays.map(day => {
@@ -333,8 +334,7 @@ export async function buildDurablePeriod(periodInfo: PeriodInfo, opts: Aggregate
  * Pricing must already be loaded (callers run loadPricing first). When opts.optimize is
  * false, the expensive scanAndDetect pass is skipped (retryTax/routingWaste still computed).
  */
-export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: AggregateOpts = {}): Promise<MenubarPayload> {
-  const pf = opts.provider ?? 'all'
+export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: AggregateOpts = {}): Promise<MenubarPayload> {  const pf = opts.provider ?? 'all'
   const daysSelection = opts.daysSelection ?? null
   const registryResult = await readProjectRegistry()
   const registry = registryResult.registry
@@ -651,10 +651,9 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
     baselineCostPerEdit: baseline?.costPerEditUSD ?? 0,
     byModel: routingWasteByModel.slice(0, 5),
   }
-
   const breakdowns = buildUsageBreakdowns(scanProjects)
-
-  const optimize = opts.optimize === false ? null : await scanAndDetect(scanProjects, scanRange, pf)
+  emitScanProgress({ kind: 'stage', stage: 'payload' })
+  const optimize = opts.optimize === false ? null : await resolveOptimize(scanProjects, scanRange, pf, scopeId, scanAndDetect)
   const granularRange = opts.daysSelection?.range ?? scanRange
   const granularHistory = opts.timeline === false ? undefined : buildGranularHistory(scanProjects, granularRange)
   const periodDailyHistory = cacheDaysForPeriod ? dailyEntriesToHistory(cacheDaysForPeriod) : undefined
@@ -673,6 +672,7 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
     ),
     cache,
     effectivelyScoped,
+    consumeFreshReconcileOutcome(),
   )
   payload.projectScope = buildProjectScopePayload(registry, registryResult.status, scanProjects, scopeId, cache.days)
   payload.mobileFoundation = buildMobileFoundationPayload(payload, scanProjects, registry, opts.trendGranularity)

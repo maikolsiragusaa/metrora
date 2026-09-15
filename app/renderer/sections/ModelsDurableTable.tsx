@@ -3,7 +3,7 @@ import { Fragment, useMemo, useState } from 'react'
 import { ProviderLogo } from '../components/ProviderLogo'
 import { SegTabs } from '../components/SegTabs'
 import { formatCompact, formatUsd } from '../lib/format'
-import { modelHouseIdFromName, modelHouseLogoKey, normalizeModelHouseId } from '../lib/modelPresentation'
+import { identityModelHouse, modelHouseLogoKey } from '../lib/modelPresentation'
 import { cacheReuseMultiple, cacheShare, costPerMillionTotal, formatReuseMultiple, totalTokenCount } from '../lib/usageMetrics'
 import type { DurableModelAccountingRow, DurableModelPresentationRow, ModelAccounting, ModelPresentation } from '../lib/types'
 
@@ -30,7 +30,7 @@ function fmtInt(n: number): string {
 }
 
 export function ModelIdentity({ name, brandId }: { name: string; brandId?: string }) {
-  const house = normalizeModelHouseId(brandId) ?? modelHouseIdFromName(name)
+  const house = identityModelHouse(name, brandId)
   const provider = house ? modelHouseLogoKey(house) : null
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
