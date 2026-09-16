@@ -11,6 +11,7 @@ import {
   sameSourceProbe,
   type SourceObservation,
 } from './sqlite-source-probe.js'
+import { emitScanProgress } from './scan-progress.js'
 
 
 
@@ -140,9 +141,55 @@ type SourceSnapshot = {
 const SNAPSHOT_DIRECTORY = 'sqlite-source-snapshots'
 const SNAPSHOT_PREFIX = 'sqlite-source-read-'
 const SNAPSHOT_ATTEMPTS = 3
+const SNAPSHOT_COPY_CHUNK_BYTES = 1024 * 1024
+let snapshotProgressSequence = 0
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
+}
+
+function copyFileWithProgressSync(
+  sourcePath: string,
+  destinationPath: string,
+  expectedBytes: number,
+  onBytesCopied: (bytes: number) => void,
+): void {
+  const sourceMode = fs.statSync(sourcePath).mode
+  const sourceFd = fs.openSync(sourcePath, 'r')
+  let destinationFd: number | undefined
+
+  try {
+    destinationFd = fs.openSync(destinationPath, 'wx', sourceMode)
+    const buffer = Buffer.allocUnsafe(SNAPSHOT_COPY_CHUNK_BYTES)
+    let position = 0
+
+    while (position < expectedBytes) {
+      const bytesToRead = Math.min(buffer.length, expectedBytes - position)
+      const bytesRead = fs.readSync(sourceFd, buffer, 0, bytesToRead, position)
+      if (bytesRead <= 0) throw new Error('SQLite source ended during snapshot copy')
+
+      let bytesWritten = 0
+      while (bytesWritten < bytesRead) {
+        const written = fs.writeSync(
+          destinationFd,
+          buffer,
+          bytesWritten,
+          bytesRead - bytesWritten,
+          position + bytesWritten,
+        )
+        if (written <= 0) throw new Error('SQLite snapshot copy stopped before all bytes were written')
+        bytesWritten += written
+      }
+
+      position += bytesRead
+      onBytesCopied(bytesRead)
+    }
+  } finally {
+    if (destinationFd !== undefined) {
+      try { fs.closeSync(destinationFd) } catch { /* preserve the copy error */ }
+    }
+    try { fs.closeSync(sourceFd) } catch { /* preserve the copy error */ }
+  }
 }
 
 function sameFingerprint(a: SourceFileFingerprint | null, b: SourceFileFingerprint | null): boolean {
@@ -222,13 +269,23 @@ function createSnapshot(sourcePath: string): SourceSnapshot {
       const walPath = databasePath + '-wal'
       const stagedDatabasePath = databasePath + '.copying'
       const stagedWalPath = walPath + '.copying'
+      const databaseBytes = fs.statSync(before.path).size
+      const walBytes = before.hasLiveWal ? fs.statSync(before.walPath).size : 0
+      const totalBytes = databaseBytes + walBytes
+      const progressStage = 'sqlite-snapshot-' + (++snapshotProgressSequence)
+      let copiedBytes = 0
+      const reportCopiedBytes = (bytes: number): void => {
+        copiedBytes += bytes
+        emitScanProgress({ kind: 'stage', stage: progressStage, done: copiedBytes, total: totalBytes })
+      }
+      if (totalBytes > 0) emitScanProgress({ kind: 'stage', stage: progressStage })
 
       // Copy WAL first, then the main file. Neither name is published until
       // both copies pass the source consistency fence; SHM is never copied.
       if (before.hasLiveWal) {
-        fs.copyFileSync(before.walPath, stagedWalPath)
+        copyFileWithProgressSync(before.walPath, stagedWalPath, walBytes, reportCopiedBytes)
       }
-      fs.copyFileSync(before.path, stagedDatabasePath)
+      copyFileWithProgressSync(before.path, stagedDatabasePath, databaseBytes, reportCopiedBytes)
 
       const after = observeSource(sourcePath)
       if (after.fingerprint === null) {

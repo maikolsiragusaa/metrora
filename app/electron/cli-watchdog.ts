@@ -13,6 +13,9 @@ export const DEFAULT_MAX_OUTPUT_BYTES = 16 * 1024 * 1024
 const MAX_PROGRESS_LINE_BYTES = 64 * 1024
 const MAX_PROGRESS_PROVIDERS = 128
 const MAX_PROGRESS_FILES = 1_000_000
+const MAX_PROGRESS_SCANS = 16
+const MAX_PROGRESS_STAGES = 256
+const MAX_PROGRESS_STAGE_BYTES = Number.MAX_SAFE_INTEGER
 
 export type SpawnSpec = {
   bin: string
@@ -83,6 +86,7 @@ function createProgressGate(onAccepted?: (event: TrustedProgressEvent) => void):
   let lineBytes = 0
   let discardingLongLine = false
   let providersDeclared = false
+  let progressScans = 0
   const providers = new Set<string>()
   const providerStates = new Map<string, 'start' | 'done' | 'skipped'>()
   const ticks = new Map<string, { done: number; total: number }>()
@@ -94,14 +98,27 @@ function createProgressGate(onAccepted?: (event: TrustedProgressEvent) => void):
     if (!isRecord(raw) || typeof raw.kind !== 'string') return null
 
     if (raw.kind === 'providers') {
-      if (providersDeclared || !hasOnlyKeys(raw, ['kind', 'providers', 'cold'])) return null
+      if (!hasOnlyKeys(raw, ['kind', 'providers', 'cold'])) return null
       if (!Array.isArray(raw.providers) || raw.providers.length > MAX_PROGRESS_PROVIDERS) return null
       if (raw.cold !== undefined && typeof raw.cold !== 'boolean') return null
       const names = raw.providers
+      if (names.length === 0) return null
       if (!names.every(boundedName)) return null
       const unique = new Set(names)
       if (unique.size !== names.length) return null
+      if (providersDeclared) {
+        if (progressScans >= MAX_PROGRESS_SCANS) return null
+        const previousScanComplete = [...providers].every(name => {
+          const state = providerStates.get(name)
+          return state === 'done' || state === 'skipped'
+        })
+        if (!previousScanComplete) return null
+        providers.clear()
+        providerStates.clear()
+        ticks.clear()
+      }
       providersDeclared = true
+      progressScans += 1
       for (const name of names) providers.add(name)
       return raw.cold === undefined
         ? { kind: 'providers', providers: [...names] }
@@ -120,12 +137,16 @@ function createProgressGate(onAccepted?: (event: TrustedProgressEvent) => void):
       if (!boundedName(raw.stage)) return null
       const declared = stages.get(raw.stage)
       if (raw.done === undefined && raw.total === undefined) {
-        if (declared !== undefined) return null
+        if (declared !== undefined || stages.size >= MAX_PROGRESS_STAGES) return null
         stages.set(raw.stage, null)
         return { kind: 'stage', stage: raw.stage }
       }
       if (typeof raw.done !== 'number' || typeof raw.total !== 'number') return null
-      if (!boundedInteger(raw.done, MAX_PROGRESS_FILES) || !boundedInteger(raw.total, MAX_PROGRESS_FILES)) return null
+      if (declared === undefined && stages.size >= MAX_PROGRESS_STAGES) return null
+      const maxStageValue = /^sqlite-snapshot-[0-9]+$/.test(raw.stage)
+        ? MAX_PROGRESS_STAGE_BYTES
+        : MAX_PROGRESS_FILES
+      if (!boundedInteger(raw.done, maxStageValue) || !boundedInteger(raw.total, maxStageValue)) return null
       if (raw.done > raw.total) return null
       if (typeof declared === 'number' && (raw.done <= declared || raw.total < (stageTotals.get(raw.stage) ?? raw.total))) return null
       stages.set(raw.stage, raw.done)

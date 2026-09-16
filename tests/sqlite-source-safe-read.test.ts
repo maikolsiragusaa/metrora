@@ -62,6 +62,18 @@ function snapshotDirectories(cache: string): string[] {
   }
 }
 
+function spyOnSnapshotWrites(afterFirstWrite?: () => void): { spy: ReturnType<typeof vi.spyOn>; callCount: () => number } {
+  const realWriteSync = fs.writeSync
+  let calls = 0
+  const spy = vi.spyOn(fs, 'writeSync').mockImplementation((...args: Parameters<typeof fs.writeSync>) => {
+    const result = Reflect.apply(realWriteSync, fs, args) as number
+    calls += 1
+    if (calls === 1) afterFirstWrite?.()
+    return result
+  })
+  return { spy, callCount: () => calls }
+}
+
 function directorySnapshot(directory: string): Array<[string, string]> {
   try {
     return fs.readdirSync(directory)
@@ -238,18 +250,49 @@ sqliteDescribe('shared SQLite source-safe reads', () => {
     expect(snapshotDirectories(cache)).toEqual([])
   })
 
+  it('reports monotonic byte progress while copying a large owned SQLite snapshot', () => {
+    const testRoot = root('metrora-sqlite-safe-progress-')
+    const cache = cacheFor(testRoot)
+    const source = createRollbackSource(testRoot, 'x'.repeat(5 * 1024 * 1024))
+    vi.stubEnv('METRORA_PROGRESS', '1')
+    const stderrWrite = vi.spyOn(process.stderr, 'write').mockReturnValue(true)
+
+    const db = openTracked(source.sourcePath)
+    const events = stderrWrite.mock.calls
+      .flatMap(([chunk]) => String(chunk).split('\n'))
+      .filter(line => line.startsWith('METRORA_PROGRESS '))
+      .map(line => JSON.parse(line.slice('METRORA_PROGRESS '.length)) as Record<string, unknown>)
+    const stage = events.find(event =>
+      event.kind === 'stage'
+      && typeof event.stage === 'string'
+      && event.stage.startsWith('sqlite-snapshot-'),
+    )?.stage
+    const byteUpdates = events.filter(event => event.kind === 'stage' && event.stage === stage && typeof event.done === 'number')
+    const copiedBytes = byteUpdates.map(event => event.done as number)
+
+    expect(stage).toMatch(/^sqlite-snapshot-[0-9]+$/)
+    expect(byteUpdates.length).toBeGreaterThan(1)
+    expect(copiedBytes).toEqual([...copiedBytes].sort((left, right) => left - right))
+    expect(byteUpdates.at(-1)).toMatchObject({ done: expect.any(Number), total: expect.any(Number) })
+    expect(byteUpdates.at(-1)?.done).toBe(byteUpdates.at(-1)?.total)
+    expect(db.query<{ length: number }>('SELECT length(value) AS length FROM items')).toEqual([{ length: 5 * 1024 * 1024 }])
+    expect(JSON.stringify(events)).not.toContain(source.sourceDirectory)
+    db.close()
+    expect(snapshotDirectories(cache)).toEqual([])
+  })
+
   it('snapshots committed rows from a live WAL without touching the producer directory', () => {
     const testRoot = root('metrora-sqlite-safe-wal-')
     const cache = cacheFor(testRoot)
     const source = createActiveWalSource(testRoot)
     const before = directorySnapshot(source.sourceDirectory)
-    const snapshotCopy = vi.spyOn(fs, 'copyFileSync')
+    const snapshotWrites = spyOnSnapshotWrites()
 
     const db = openTracked(source.sourcePath)
     expect(db.query<{ value: string }>('SELECT value FROM items')).toEqual([{ value: 'wal-row' }])
     expect(db.query<{ value: string }>('SELECT value FROM items')).toEqual([{ value: 'wal-row' }])
     expect(snapshotDirectories(cache)).toHaveLength(1)
-    expect(snapshotCopy).toHaveBeenCalledTimes(2)
+    expect(snapshotWrites.spy).toHaveBeenCalledTimes(2)
     db.close()
 
     expect(directorySnapshot(source.sourceDirectory)).toEqual(before)
@@ -319,7 +362,7 @@ sqliteDescribe('shared SQLite source-safe reads', () => {
     const db = openTracked(source.sourcePath)
     const sourceStat = vi.spyOn(fs, 'statSync')
     const sourceOpen = vi.spyOn(fs, 'openSync')
-    const sourceCopy = vi.spyOn(fs, 'copyFileSync')
+    const sourceCopy = vi.spyOn(fs, 'writeSync')
 
     for (let index = 0; index < 25; index++) {
       expect(db.query<{ value: string }>('SELECT value FROM items')).toEqual([{ value: 'wal-row' }])
@@ -336,21 +379,13 @@ sqliteDescribe('shared SQLite source-safe reads', () => {
     const testRoot = root('metrora-sqlite-safe-wal-during-copy-')
     const cache = cacheFor(testRoot)
     const source = createWalModeMainOnly(testRoot)
-    const realCopyFileSync = fs.copyFileSync
-    let copyCalls = 0
-
-    vi.spyOn(fs, 'copyFileSync').mockImplementation((from: fs.PathLike, to: fs.PathLike, mode?: number) => {
-      const result = realCopyFileSync(from, to, mode)
-      copyCalls++
-      if (copyCalls === 1) {
-        fs.writeFileSync(source.sourcePath + '-wal', source.walBytes)
-      }
-      return result
+    const snapshotWrites = spyOnSnapshotWrites(() => {
+      fs.writeFileSync(source.sourcePath + '-wal', source.walBytes)
     })
 
     const db = openTracked(source.sourcePath)
     expect(db.query<{ value: string }>('SELECT value FROM items ORDER BY id')).toEqual([{ value: 'wal-row' }])
-    expect(copyCalls).toBeGreaterThanOrEqual(3)
+    expect(snapshotWrites.callCount()).toBeGreaterThanOrEqual(3)
     expect(fs.existsSync(source.sourcePath + '-shm')).toBe(false)
     expect(fs.readdirSync(source.sourceDirectory).sort()).toEqual(['source.sqlite', 'source.sqlite-wal'])
     db.close()
@@ -387,21 +422,13 @@ sqliteDescribe('shared SQLite source-safe reads', () => {
     const testRoot = root('metrora-sqlite-safe-immutable-race-')
     const cache = cacheFor(testRoot)
     const source = createWalModeMainOnly(testRoot, 'immutable-race-source', 'immutable-race-producer')
-    const realCopyFileSync = fs.copyFileSync
-    let copyCalls = 0
-
-    vi.spyOn(fs, 'copyFileSync').mockImplementation((from: fs.PathLike, to: fs.PathLike, mode?: number) => {
-      const result = realCopyFileSync(from, to, mode)
-      copyCalls++
-      if (copyCalls === 1) {
-        fs.writeFileSync(source.sourcePath + '-wal', source.walBytes)
-      }
-      return result
+    const snapshotWrites = spyOnSnapshotWrites(() => {
+      fs.writeFileSync(source.sourcePath + '-wal', source.walBytes)
     })
 
     const db = openTracked(source.sourcePath)
     expect(db.query<{ value: string }>('SELECT value FROM items ORDER BY id')).toEqual([{ value: 'wal-row' }])
-    expect(copyCalls).toBeGreaterThanOrEqual(3)
+    expect(snapshotWrites.callCount()).toBeGreaterThanOrEqual(3)
     expect(fs.existsSync(source.sourcePath + '-shm')).toBe(false)
     db.close()
     expect(snapshotDirectories(cache)).toEqual([])
@@ -412,21 +439,13 @@ sqliteDescribe('shared SQLite source-safe reads', () => {
     const cache = cacheFor(testRoot)
     const source = createActiveWalSource(testRoot)
     const beforeNames = new Set(fs.readdirSync(source.sourceDirectory))
-    const realCopyFileSync = fs.copyFileSync
-    let copyCalls = 0
-
-    vi.spyOn(fs, 'copyFileSync').mockImplementation((from: fs.PathLike, to: fs.PathLike, mode?: number) => {
-      const result = realCopyFileSync(from, to, mode)
-      copyCalls++
-      if (copyCalls === 1) {
-        source.producer.exec('PRAGMA wal_checkpoint(TRUNCATE)')
-      }
-      return result
+    const snapshotWrites = spyOnSnapshotWrites(() => {
+      source.producer.exec('PRAGMA wal_checkpoint(TRUNCATE)')
     })
 
     const db = openTracked(source.sourcePath)
     expect(db.query<{ value: string }>('SELECT value FROM items')).toEqual([{ value: 'wal-row' }])
-    expect(copyCalls).toBeGreaterThanOrEqual(2)
+    expect(snapshotWrites.callCount()).toBeGreaterThanOrEqual(2)
     for (const name of fs.readdirSync(source.sourceDirectory)) {
       expect(beforeNames.has(name)).toBe(true)
     }
@@ -438,20 +457,12 @@ sqliteDescribe('shared SQLite source-safe reads', () => {
     const testRoot = root('metrora-sqlite-safe-journal-during-copy-')
     const cache = cacheFor(testRoot)
     const source = createRollbackSource(testRoot)
-    const realCopyFileSync = fs.copyFileSync
-    let copyCalls = 0
-
-    vi.spyOn(fs, 'copyFileSync').mockImplementation((from: fs.PathLike, to: fs.PathLike, mode?: number) => {
-      const result = realCopyFileSync(from, to, mode)
-      copyCalls++
-      if (copyCalls === 1) {
-        fs.writeFileSync(source.sourcePath + '-journal', Buffer.alloc(512))
-      }
-      return result
+    const snapshotWrites = spyOnSnapshotWrites(() => {
+      fs.writeFileSync(source.sourcePath + '-journal', Buffer.alloc(512))
     })
 
     expect(() => openTracked(source.sourcePath)).toThrow(/rollback journal|source-safe snapshot failed/i)
-    expect(copyCalls).toBe(1)
+    expect(snapshotWrites.callCount()).toBeGreaterThan(0)
     expect(snapshotDirectories(cache)).toEqual([])
     expect(fs.existsSync(source.sourcePath + '-shm')).toBe(false)
     expect(fs.existsSync(source.sourcePath + '-wal')).toBe(false)
@@ -462,23 +473,17 @@ sqliteDescribe('shared SQLite source-safe reads', () => {
     const cache = cacheFor(testRoot)
     const source = createRollbackSource(testRoot, 'old-row', 'replacement-source')
     const replacement = createRollbackSource(testRoot, 'replacement-fixture', 'replacement-target')
-    const realCopyFileSync = fs.copyFileSync
-    let copyCalls = 0
     let replaced = false
-
-    vi.spyOn(fs, 'copyFileSync').mockImplementation((from: fs.PathLike, to: fs.PathLike, mode?: number) => {
-      const result = realCopyFileSync(from, to, mode)
-      copyCalls++
-      if (copyCalls === 1 && !replaced) {
+    const snapshotWrites = spyOnSnapshotWrites(() => {
+      if (!replaced) {
         replaced = true
         replaceSourceFile(source.sourcePath, replacement.sourcePath)
       }
-      return result
     })
 
     const db = openTracked(source.sourcePath)
     expect(db.query<{ value: string }>('SELECT value FROM items')).toEqual([{ value: 'replacement-fixture' }])
-    expect(copyCalls).toBeGreaterThanOrEqual(2)
+    expect(snapshotWrites.callCount()).toBeGreaterThanOrEqual(2)
     db.close()
     expect(snapshotDirectories(cache)).toEqual([])
   })
@@ -487,14 +492,8 @@ sqliteDescribe('shared SQLite source-safe reads', () => {
     const testRoot = root('metrora-sqlite-safe-disappearance-')
     const cache = cacheFor(testRoot)
     const source = createRollbackSource(testRoot)
-    const realCopyFileSync = fs.copyFileSync
-    let copyCalls = 0
-
-    vi.spyOn(fs, 'copyFileSync').mockImplementation((from: fs.PathLike, to: fs.PathLike, mode?: number) => {
-      const result = realCopyFileSync(from, to, mode)
-      copyCalls++
-      if (copyCalls === 1) fs.unlinkSync(source.sourcePath)
-      return result
+    const snapshotWrites = spyOnSnapshotWrites(() => {
+      fs.unlinkSync(source.sourcePath)
     })
 
     expect(() => openDatabase(source.sourcePath)).toThrow(/disappeared|snapshot failed|source changed/i)
