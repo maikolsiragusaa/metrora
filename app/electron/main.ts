@@ -148,6 +148,23 @@ export function shouldInstallApplicationMenu(_isDev: boolean, platform = process
   return platform === 'darwin'
 }
 
+/** Build the progress-aware automatic OpenCode reconciliation callback used by the freshness coordinator. */
+export function createOpenCodeFreshnessReconcile(
+  runCli: typeof spawnCli,
+  accountingEnv: NodeJS.ProcessEnv,
+): () => Promise<unknown> {
+  return () => runCli(
+    ['reconcile', '--provider', 'opencode'],
+    {
+      timeoutMs: 10 * 60_000,
+      idleTimeoutMs: 45_000,
+      extraEnv: { ...accountingEnv, METRORA_READ_MODE: '', METRORA_PROGRESS: '1' },
+      priority: 'background',
+      bypassCache: true,
+    },
+  )
+}
+
 function registerHandlers(): void {
   const openCodeAccountingEnv = createOpenCodeAccountingEnvironment(app.getPath('userData'))
   const openCodeFreshness = createOpenCodeFreshnessCoordinator({
@@ -155,16 +172,7 @@ function registerHandlers(): void {
       statePath: path.join(app.getPath('userData'), 'opencode', 'freshness.json'),
       environment: openCodeAccountingEnv,
     }),
-    reconcile: () => spawnCli(
-      ['reconcile', '--provider', 'opencode'],
-      {
-        timeoutMs: 10 * 60_000,
-        idleTimeoutMs: 45_000,
-        extraEnv: { ...openCodeAccountingEnv, METRORA_READ_MODE: '', METRORA_PROGRESS: '' },
-        priority: 'background',
-        bypassCache: true,
-      },
-    ),
+    reconcile: createOpenCodeFreshnessReconcile(spawnCli, openCodeAccountingEnv),
     onSuccess: clearCliReadCache,
   })
   const share = initializeDesktopShareRuntime({

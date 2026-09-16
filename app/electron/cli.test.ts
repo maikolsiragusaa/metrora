@@ -441,6 +441,58 @@ describe('bounded process watchdog', () => {
     expect(seen).toHaveLength(5)
   })
 
+  it('accepts progress from a second parser scan after the previous scan completes', async () => {
+    const seen: unknown[] = []
+    const lines = [
+      'METRORA_PROGRESS {"kind":"providers","providers":["opencode"]}',
+      'METRORA_PROGRESS {"kind":"provider","provider":"opencode","state":"start"}',
+      'METRORA_PROGRESS {"kind":"tick","provider":"opencode","done":1,"total":2}',
+      'METRORA_PROGRESS {"kind":"provider","provider":"opencode","state":"done","files":2}',
+      'METRORA_PROGRESS {"kind":"providers","providers":["opencode"]}',
+      'METRORA_PROGRESS {"kind":"provider","provider":"opencode","state":"start"}',
+      'METRORA_PROGRESS {"kind":"tick","provider":"opencode","done":1,"total":2}',
+      'METRORA_PROGRESS {"kind":"provider","provider":"opencode","state":"done","files":2}',
+    ]
+    fakeBin('repeat-scan-heartbeat.cjs', heartbeatScript(lines, SUCCESS_HEARTBEAT_INTERVAL_MS))
+
+    const result = await spawnCli(['status'], {
+      timeoutMs: SUCCESS_ABSOLUTE_TIMEOUT_MS,
+      idleTimeoutMs: SUCCESS_IDLE_TIMEOUT_MS,
+      onProgress: event => seen.push(event),
+    })
+
+    expect(result).toEqual({ ok: 1 })
+    expect(seen).toHaveLength(8)
+    expect(seen.filter(event => (event as { kind?: string }).kind === 'providers')).toHaveLength(2)
+  })
+
+  it('does not restart an incomplete parser scan on a repeated providers declaration', async () => {
+    const seen: unknown[] = []
+    const lines = [
+      'METRORA_PROGRESS {"kind":"providers","providers":["opencode"]}',
+      'METRORA_PROGRESS {"kind":"provider","provider":"opencode","state":"start"}',
+      'METRORA_PROGRESS {"kind":"providers","providers":["claude"]}',
+      'METRORA_PROGRESS {"kind":"provider","provider":"claude","state":"start"}',
+      'METRORA_PROGRESS {"kind":"tick","provider":"opencode","done":1,"total":2}',
+      'METRORA_PROGRESS {"kind":"provider","provider":"opencode","state":"done","files":2}',
+    ]
+    fakeBin('overlapping-scan-heartbeat.cjs', heartbeatScript(lines, SUCCESS_HEARTBEAT_INTERVAL_MS))
+
+    const result = await spawnCli(['status'], {
+      timeoutMs: SUCCESS_ABSOLUTE_TIMEOUT_MS,
+      idleTimeoutMs: SUCCESS_IDLE_TIMEOUT_MS,
+      onProgress: event => seen.push(event),
+    })
+
+    expect(result).toEqual({ ok: 1 })
+    expect(seen).toEqual([
+      { kind: 'providers', providers: ['opencode'] },
+      { kind: 'provider', provider: 'opencode', state: 'start' },
+      { kind: 'tick', provider: 'opencode', done: 1, total: 2 },
+      { kind: 'provider', provider: 'opencode', state: 'done', files: 2 },
+    ])
+  })
+
   it('does not treat raw stderr chatter as progress', async () => {
     fakeBin('raw-chatter.cjs', "setInterval(() => process.stderr.write('raw chatter\\n'), 10)")
     await expect(spawnCli(['status'], { timeoutMs: 500, idleTimeoutMs: 70 })).rejects.toMatchObject({ kind: 'timeout' })
@@ -496,6 +548,29 @@ describe('bounded process watchdog', () => {
       { kind: 'stage', stage: 'daily-cache' },
       { kind: 'stage', stage: 'optimize-scan', done: 5, total: 9 },
       { kind: 'stage', stage: 'optimize-scan', done: 9, total: 9 },
+    ])
+  })
+
+  it('accepts measured SQLite snapshot byte progress above the file-count bound', async () => {
+    const seen: unknown[] = []
+    const lines = [
+      'METRORA_PROGRESS {"kind":"stage","stage":"sqlite-snapshot-1"}',
+      'METRORA_PROGRESS {"kind":"stage","stage":"sqlite-snapshot-1","done":1048576,"total":1375305728}',
+      'METRORA_PROGRESS {"kind":"stage","stage":"sqlite-snapshot-1","done":2097152,"total":1375305728}',
+    ]
+    fakeBin('sqlite-snapshot-heartbeat.cjs', heartbeatScript(lines, SUCCESS_HEARTBEAT_INTERVAL_MS))
+
+    const result = await spawnCli(['status'], {
+      timeoutMs: SUCCESS_ABSOLUTE_TIMEOUT_MS,
+      idleTimeoutMs: SUCCESS_IDLE_TIMEOUT_MS,
+      onProgress: event => seen.push(event),
+    })
+
+    expect(result).toEqual({ ok: 1 })
+    expect(seen).toEqual([
+      { kind: 'stage', stage: 'sqlite-snapshot-1' },
+      { kind: 'stage', stage: 'sqlite-snapshot-1', done: 1048576, total: 1375305728 },
+      { kind: 'stage', stage: 'sqlite-snapshot-1', done: 2097152, total: 1375305728 },
     ])
   })
 
@@ -589,6 +664,27 @@ describe('spawnCli coalescing (read-only)', () => {
     expect(a).toEqual({ ok: 1 })
     expect(b).toEqual({ ok: 1 })
     expect(readFileSync(countFile, 'utf8')).toBe('x') // exactly one spawn
+  })
+
+  it('starts a real new attempt after a progress-idle timeout', async () => {
+    const attemptsFile = join(dir, 'retry-attempts')
+    const script = [
+      'const fs = require("node:fs")',
+      'const attemptsFile = ' + JSON.stringify(attemptsFile),
+      'let attempt = 1',
+      'try { attempt = Number(fs.readFileSync(attemptsFile, "utf8")) + 1 } catch {}',
+      'fs.writeFileSync(attemptsFile, String(attempt))',
+      'process.stderr.write(\'METRORA_PROGRESS {"kind":"providers","providers":["claude"]}\\n\')',
+      'process.stderr.write(\'METRORA_PROGRESS {"kind":"provider","provider":"claude","state":"start"}\\n\')',
+      'if (attempt === 1) setInterval(() => process.stderr.write("still working\\n"), 10)',
+      'else { process.stderr.write(\'METRORA_PROGRESS {"kind":"provider","provider":"claude","state":"done"}\\n\'); process.stdout.write(JSON.stringify({ attempt })) }',
+    ].join('\n')
+    fakeBin('retry-after-idle-timeout.cjs', script)
+    const options = { timeoutMs: 2_000, idleTimeoutMs: 250, bypassCache: true }
+
+    await expect(spawnCli(['status'], options)).rejects.toMatchObject({ kind: 'timeout' })
+    await expect(spawnCli(['status'], options)).resolves.toEqual({ attempt: 2 })
+    expect(readFileSync(attemptsFile, 'utf8')).toBe('2')
   })
 
   it('does not coalesce snapshot and fresh reads with identical argv', async () => {

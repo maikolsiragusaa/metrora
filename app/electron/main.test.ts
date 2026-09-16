@@ -14,7 +14,7 @@ vi.mock('electron', () => ({
   shell: { openExternal: vi.fn() },
 }))
 
-import { createApplicationMenuTemplate, createBeforeQuitHandler, createBridgeHandlers, createOpenCodeWebPreferences, OPENCODE_WEB_PARTITION, shouldInstallApplicationMenu, windowChromeOverlay } from './main'
+import { createApplicationMenuTemplate, createBeforeQuitHandler, createBridgeHandlers, createOpenCodeFreshnessReconcile, createOpenCodeWebPreferences, OPENCODE_WEB_PARTITION, shouldInstallApplicationMenu, windowChromeOverlay } from './main'
 import { CliError } from './cli'
 import type { DesktopShareRuntime, DesktopShareStatus } from './share-runtime'
 import { Telemetry } from './telemetry'
@@ -43,6 +43,29 @@ describe('OpenCode WebContentsView configuration', () => {
     expect(preferences).toMatchObject({ contextIsolation: true, nodeIntegration: false, sandbox: true })
     expect(preferences).not.toHaveProperty('preload')
     expect(JSON.stringify(preferences)).not.toMatch(/username|password|credential/iu)
+  })
+})
+
+describe('automatic OpenCode freshness reconciliation', () => {
+  it('enables progress before invoking the coordinator reconciliation callback', async () => {
+    const accountingEnv = {
+      METRORA_OPENCODE_EXTRA_DATA_DIRS: JSON.stringify(['C:\\metrora-owned\\opencode\\db']),
+    }
+    const runCli = vi.fn(async () => ({ ok: true }))
+    const reconcile = createOpenCodeFreshnessReconcile(runCli, accountingEnv)
+
+    await reconcile()
+
+    expect(runCli).toHaveBeenCalledWith(
+      ['reconcile', '--provider', 'opencode'],
+      expect.objectContaining({
+        timeoutMs: 10 * 60_000,
+        idleTimeoutMs: 45_000,
+        extraEnv: { ...accountingEnv, METRORA_READ_MODE: '', METRORA_PROGRESS: '1' },
+        priority: 'background',
+        bypassCache: true,
+      }),
+    )
   })
 })
 
@@ -684,6 +707,21 @@ describe('createBridgeHandlers (snapshot reads and explicit refresh)', () => {
     expect(opts[1]?.timeoutMs).toBeUndefined()
     expect(opts[0]?.extraEnv?.METRORA_READ_MODE).toBe('snapshot')
     expect(opts[1]?.extraEnv?.METRORA_READ_MODE).toBe('snapshot')
+  })
+
+  it('starts a new explicit Refresh after a progress idle timeout', async () => {
+    const spawnCli = vi.fn()
+      .mockRejectedValueOnce(new CliError('timeout', 'Metrora status stopped: no reconciliation progress for 45000ms'))
+      .mockResolvedValueOnce({ current: { cost: 1 } })
+    const handlers = createBridgeHandlers(base({ spawnCli, emitProgress: vi.fn() }))
+
+    expect(await handlers['metrora:getOverview']!('today', 'all', undefined, undefined, false, true)).toMatchObject({ ok: false })
+    expect(await handlers['metrora:getOverview']!('today', 'all', undefined, undefined, false, true)).toMatchObject({ ok: true })
+    expect(spawnCli).toHaveBeenCalledTimes(2)
+    for (const [, options] of spawnCli.mock.calls) {
+      expect(options).toMatchObject({ timeoutMs: 10 * 60_000, idleTimeoutMs: 45_000, bypassCache: true })
+      expect((options as { extraEnv?: Record<string, string> }).extraEnv?.METRORA_PROGRESS).toBe('1')
+    }
   })
 
   it('parses CLI scan-progress stderr lines and forwards them to emitProgress', async () => {
