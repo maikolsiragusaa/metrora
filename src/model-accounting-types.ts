@@ -31,6 +31,9 @@ export type ModelAccountingRow = {
   activeGeneratedTokens?: number
   /** Whether active-generation timing is observed for this exact row. */
   timingCoverage?: 'observed' | 'partial' | 'unavailable'
+  /** Timed-call sample count behind the speed figure. Additive across merged
+   *  rows; present only when timing evidence was assigned, never synthesized. */
+  timingCalls?: number
   reasoningTokens?: number
   additiveReasoningTokens?: number
 }

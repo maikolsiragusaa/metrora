@@ -1,5 +1,6 @@
 import type { MenubarPayload, ModelAccounting, PeriodData } from './menubar-json.js'
 import { getHistoricalPricingModelKey, getShortModelName } from './models.js'
+import { timingCoverageForSample } from './model-performance.js'
 import { resolveModelBrandId, type ModelBrandId } from './model-brand.js'
 import { combineReasoningSemantics, providerHasSeparateReasoning, reasoningSemanticsForProviders, reasoningTokenTotals, type ReasoningTokenSemantics } from './token-semantics.js'
 
@@ -20,6 +21,7 @@ type MergedModelRow = {
   tokenDetail: boolean
   activeDurationMs: number
   activeGeneratedTokens: number
+  timingCalls: number
   timingCoverage?: 'observed' | 'partial' | 'unavailable'
   provider?: string
   brandId?: ModelBrandId
@@ -132,6 +134,7 @@ function mergedModelRows(models: PeriodData['models']): MergedModelRow[] {
       tokenDetail: true,
       activeDurationMs: 0,
       activeGeneratedTokens: 0,
+      timingCalls: 0,
       timingCoverage: undefined,
       estimatedCostUSD: 0,
       costIsEstimated: false,
@@ -177,9 +180,15 @@ function mergedModelRows(models: PeriodData['models']): MergedModelRow[] {
       typeof model.activeDurationMs === 'number' && Number.isFinite(model.activeDurationMs) && model.activeDurationMs > 0
       && typeof model.activeGeneratedTokens === 'number' && Number.isFinite(model.activeGeneratedTokens) && model.activeGeneratedTokens > 0
     ) {
-      acc.timingCoverage = mergeTimingCoverage(acc.timingCoverage, model.timingCoverage ?? 'observed')
+      // A sample count recomputes the coverage: 2 timed calls out of 10 are
+      // partial even when an older producer stamped the row observed.
+      const entryCoverage = model.timingCalls != null
+        ? timingCoverageForSample({ calls: model.calls, timingCalls: model.timingCalls, hasActiveTiming: true })
+        : (model.timingCoverage ?? 'observed')
+      acc.timingCoverage = mergeTimingCoverage(acc.timingCoverage, entryCoverage)
       acc.activeDurationMs += model.activeDurationMs
       acc.activeGeneratedTokens += model.activeGeneratedTokens
+      acc.timingCalls += model.timingCalls ?? 0
     } else {
       acc.timingCoverage = mergeTimingCoverage(acc.timingCoverage, model.timingCoverage ?? 'unavailable')
     }
@@ -255,6 +264,7 @@ export function buildModelAccounting(models: PeriodData['models'], totalCost: nu
     ...(row.activeDurationMs > 0 && row.activeGeneratedTokens > 0
       ? { activeDurationMs: row.activeDurationMs, activeGeneratedTokens: row.activeGeneratedTokens }
       : {}),
+    ...(row.timingCalls > 0 ? { timingCalls: row.timingCalls } : {}),
     ...(row.timingCoverage && row.timingCoverage !== 'unavailable' ? { timingCoverage: row.timingCoverage } : {}),
   }))
   const representedCost = rows.reduce((sum, row) => sum + row.cost, 0)

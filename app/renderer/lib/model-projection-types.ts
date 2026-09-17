@@ -25,6 +25,8 @@ export type DurableModelAccountingRow = {
   activeDurationMs?: number
   activeGeneratedTokens?: number
   timingCoverage?: 'observed' | 'partial' | 'unavailable'
+  /** Timed-call sample count behind the speed figure; absent when unavailable. */
+  timingCalls?: number
 }
 
 export type DurableModelPresentationRow = DurableModelAccountingRow & {
