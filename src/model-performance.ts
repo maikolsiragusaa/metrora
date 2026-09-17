@@ -1,4 +1,5 @@
 import { getShortModelName } from './models.js'
+import type { TimingCoverage } from './model-presentation.js'
 import type { ProjectSummary } from './types.js'
 import { generatedTokensForReasoningMix } from './token-semantics.js'
 
@@ -9,6 +10,31 @@ export type ObservedModelPerformance = {
 }
 
 type RouteTotals = Map<string, ObservedModelPerformance>
+
+/**
+ * Truthful timing-coverage reading from a timed-call sample.
+ *
+ * `observed` means the timing evidence covers the relevant call set under a
+ * defensible definition: every eligible call carries active-generation
+ * timing. A speed computed from 2 of 10 calls is `partial`, never `observed`;
+ * with no active timing at all the answer is `unavailable`.
+ *
+ * Legacy evidence without a sample count (no `timingCalls`) and rows whose
+ * call denominator is unknown keep the prior `observed` reading: evidence
+ * exists, and inventing a denominator would be the fabrication this rule
+ * exists to prevent.
+ */
+export function timingCoverageForSample(sample: {
+  calls?: number
+  timingCalls?: number
+  hasActiveTiming: boolean
+}): TimingCoverage {
+  if (!sample.hasActiveTiming) return 'unavailable'
+  if (sample.timingCalls == null) return 'observed'
+  if (!(sample.timingCalls > 0)) return 'unavailable'
+  if (!(sample.calls != null && sample.calls > 0)) return 'observed'
+  return sample.timingCalls >= sample.calls ? 'observed' : 'partial'
+}
 
 function modelKey(model: string): string {
   return getShortModelName(model).trim().toLowerCase()
@@ -68,6 +94,7 @@ export function aggregateModelPerformanceByRoute(projects: ProjectSummary[]): Ma
 
 type EnrichableModel = {
   name: string
+  calls?: number
   modelProvider?: string
   sourceProviders?: string[]
   timingCoverage?: 'observed' | 'partial' | 'unavailable'
@@ -116,7 +143,11 @@ export function enrichModelsWithObservedPerformance<T extends EnrichableModel>(m
       // must not read as authoritative as one from 100%. Carried alongside
       // the sums so accounting/presentation can surface coverage honestly.
       timingCalls: timing.timingCalls,
-      timingCoverage: 'observed' as const,
+      timingCoverage: timingCoverageForSample({
+        calls: model.calls,
+        timingCalls: timing.timingCalls,
+        hasActiveTiming: true,
+      }),
     }
   })
 }

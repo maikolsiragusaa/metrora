@@ -1,4 +1,5 @@
 import { getHistoricalPricingModelKey, getShortModelName } from './models.js'
+import { timingCoverageForSample } from './model-performance.js'
 import type { ModelAccounting, ModelAccountingRow } from './menubar-json.js'
 import type { ModelBrandId } from './model-brand.js'
 import {
@@ -203,7 +204,13 @@ function buildRow(identity: PresentationIdentity, rows: ModelAccountingRow[]): M
   const activeGeneratedTokens = rows.reduce((sum, row) => sum + (row.activeGeneratedTokens ?? 0), 0)
   const timingCalls = rows.reduce((sum, row) => sum + (row.timingCalls ?? 0), 0)
   const estimatedCostUSD = rows.reduce((sum, row) => sum + (row.estimatedCostUSD ?? 0), 0)
-  const timingStates = rows.map(row => row.timingCoverage ?? (row.activeDurationMs && row.activeGeneratedTokens ? 'observed' : 'unavailable'))
+  const timingStates = rows.map(row => {
+    const hasActiveTiming = Boolean(row.activeDurationMs && row.activeGeneratedTokens)
+    if (row.timingCalls != null) {
+      return timingCoverageForSample({ calls: row.calls, timingCalls: row.timingCalls, hasActiveTiming })
+    }
+    return row.timingCoverage ?? (hasActiveTiming ? 'observed' : 'unavailable')
+  })
   const timingCoverage: TimingCoverage = timingStates.every(state => state === 'observed')
     ? 'observed'
     : timingStates.every(state => state === 'unavailable')

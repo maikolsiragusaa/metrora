@@ -46,6 +46,8 @@ export const MAX_STORED_SNAPSHOTS = 24
 
 type FreshnessRank = 0 | 1 | 2
 
+export type { FreshnessRank as ReportFreshnessRank }
+
 /** Rank a fetched value for the complete-over-partial rule. */
 export function snapshotRank(value: unknown): FreshnessRank {
   if (!value || typeof value !== 'object') return 1

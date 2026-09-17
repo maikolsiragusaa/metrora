@@ -1,5 +1,6 @@
 import type { MenubarPayload, ModelAccounting, PeriodData } from './menubar-json.js'
 import { getHistoricalPricingModelKey, getShortModelName } from './models.js'
+import { timingCoverageForSample } from './model-performance.js'
 import { resolveModelBrandId, type ModelBrandId } from './model-brand.js'
 import { combineReasoningSemantics, providerHasSeparateReasoning, reasoningSemanticsForProviders, reasoningTokenTotals, type ReasoningTokenSemantics } from './token-semantics.js'
 
@@ -179,7 +180,12 @@ function mergedModelRows(models: PeriodData['models']): MergedModelRow[] {
       typeof model.activeDurationMs === 'number' && Number.isFinite(model.activeDurationMs) && model.activeDurationMs > 0
       && typeof model.activeGeneratedTokens === 'number' && Number.isFinite(model.activeGeneratedTokens) && model.activeGeneratedTokens > 0
     ) {
-      acc.timingCoverage = mergeTimingCoverage(acc.timingCoverage, model.timingCoverage ?? 'observed')
+      // A sample count recomputes the coverage: 2 timed calls out of 10 are
+      // partial even when an older producer stamped the row observed.
+      const entryCoverage = model.timingCalls != null
+        ? timingCoverageForSample({ calls: model.calls, timingCalls: model.timingCalls, hasActiveTiming: true })
+        : (model.timingCoverage ?? 'observed')
+      acc.timingCoverage = mergeTimingCoverage(acc.timingCoverage, entryCoverage)
       acc.activeDurationMs += model.activeDurationMs
       acc.activeGeneratedTokens += model.activeGeneratedTokens
       acc.timingCalls += model.timingCalls ?? 0

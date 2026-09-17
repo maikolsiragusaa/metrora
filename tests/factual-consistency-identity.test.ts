@@ -228,17 +228,25 @@ describe('factual consistency: timing sample count', () => {
     } as unknown as ProjectSummary]
   }
 
-  it('carries the timed-call sample count alongside observed timing', () => {
-    const rows = enrichModelsWithObservedPerformance(
-      [{ name: 'GPT-5.6 Luna', modelProvider: 'openai', sourceProviders: ['codex'] }],
+  it('marks fully timed samples observed and partially timed samples partial', () => {
+    const full = enrichModelsWithObservedPerformance(
+      [{ name: 'GPT-5.6 Luna', calls: 2, modelProvider: 'openai', sourceProviders: ['codex'] }],
       projects(),
     )
-    expect(rows[0]).toMatchObject({
+    expect(full[0]).toMatchObject({
       activeDurationMs: 3000,
       activeGeneratedTokens: 300,
       timingCalls: 2,
       timingCoverage: 'observed',
     })
+    const partial = enrichModelsWithObservedPerformance(
+      [{ name: 'GPT-5.6 Luna', calls: 10, modelProvider: 'openai', sourceProviders: ['codex'] }],
+      projects(),
+    )
+    expect(partial[0]).toMatchObject({ timingCalls: 2, timingCoverage: 'partial' })
+  })
+
+  it('reads 2 timed calls out of 10 as partial through accounting and presentation', () => {
     const accounted = buildModelAccounting(
       [{
         name: 'gpt-5.6-luna', cost: 1, savingsUSD: 0, calls: 10,
@@ -249,9 +257,49 @@ describe('factual consistency: timing sample count', () => {
       1,
       10,
     )
-    expect(accounted.rows[0]).toMatchObject({ timingCalls: 2 })
+    // The sample count recomputes the coverage: a stale observed stamp never
+    // survives a 2-of-10 sample.
+    expect(accounted.rows[0]).toMatchObject({ timingCalls: 2, timingCoverage: 'partial' })
     const projection = buildModelPresentation(accounted)
-    expect(projection.rows[0]).toMatchObject({ timingCalls: 2, timingCoverage: 'observed' })
+    expect(projection.rows[0]).toMatchObject({ timingCalls: 2, timingCoverage: 'partial' })
+  })
+
+  it('reads 10 timed calls out of 10 as observed', () => {
+    const accounted = buildModelAccounting(
+      [{
+        name: 'gpt-5.6-luna', cost: 1, savingsUSD: 0, calls: 10,
+        inputTokens: 100, outputTokens: 900, cacheReadTokens: 0, cacheWriteTokens: 0,
+        modelProvider: 'openai', sourceProviders: ['codex'],
+        activeDurationMs: 3000, activeGeneratedTokens: 300, timingCalls: 10,
+      }],
+      1,
+      10,
+    )
+    expect(accounted.rows[0]).toMatchObject({ timingCalls: 10, timingCoverage: 'observed' })
+    expect(buildModelPresentation(accounted).rows[0]).toMatchObject({ timingCoverage: 'observed' })
+  })
+
+  it('reads a fully timed delivery next to an untimed one as partial overall', () => {
+    const accounted = buildModelAccounting(
+      [
+        {
+          name: 'gpt-5.6-luna', cost: 1, savingsUSD: 0, calls: 10,
+          inputTokens: 100, outputTokens: 900, cacheReadTokens: 0, cacheWriteTokens: 0,
+          modelProvider: 'openai', sourceProviders: ['codex'],
+          activeDurationMs: 3000, activeGeneratedTokens: 300, timingCalls: 10,
+        },
+        {
+          name: 'gpt-5.6-luna', cost: 1, savingsUSD: 0, calls: 5,
+          inputTokens: 50, outputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0,
+          modelProvider: 'zed.dev', sourceProviders: ['zed'],
+        },
+      ],
+      2,
+      15,
+    )
+    const projection = buildModelPresentation(accounted)
+    expect(projection.rows).toHaveLength(1)
+    expect(projection.rows[0]).toMatchObject({ calls: 15, timingCalls: 10, timingCoverage: 'partial' })
   })
 
   it('never invents a sample count where timing was not observed', () => {
@@ -264,5 +312,7 @@ describe('factual consistency: timing sample count', () => {
       4,
     )
     expect(accounted.rows[0]).not.toHaveProperty('timingCalls')
+    expect(accounted.rows[0]).not.toHaveProperty('timingCoverage')
+    expect(buildModelPresentation(accounted).rows[0]).toMatchObject({ timingCoverage: 'unavailable' })
   })
 })

@@ -419,7 +419,7 @@ export function DurableModelsTable({
                             ? unavailableValue('Cache reuse is unavailable because no valid input denominator is recorded for this model.')
                             : formatReuseMultiple(reuse)}</td>
                           <td>{total == null ? unavailableValue('Total token evidence is unavailable for this model.') : formatCompact(total)}</td>
-                          <td title={generatedTps == null ? 'No reliable active-generation timing for this delivery.' : `Observed active-generation timing: ${formatCompact(model.activeGeneratedTokens ?? 0)} timed generated tokens${model.timingCalls ? ` across ${model.timingCalls.toLocaleString('en-US')} timed calls` : ''} from available source sessions; timing coverage is ${model.timingCoverage}.`}>{generatedTps == null
+                          <td title={generatedTps == null ? 'No reliable active-generation timing for this delivery.' : `Observed active-generation timing: ${formatCompact(model.activeGeneratedTokens ?? 0)} timed generated tokens${model.timingCalls ? ` across ${model.timingCalls.toLocaleString('en-US')} of ${model.calls.toLocaleString('en-US')} calls` : ''} from available source sessions; timing coverage is ${model.timingCoverage}.`}>{generatedTps == null
                             ? unavailableValue('Generated tok/s is unavailable because reliable active-generation timing is not recorded.')
                             : formatGeneratedTps(generatedTps)}</td>
                           <td title={activeMs == null ? 'No reliable active-generation timing for this delivery.' : 'Inverse of Generated tok/s.'}>{activeMs == null
@@ -430,7 +430,7 @@ export function DurableModelsTable({
                             ? unavailableValue('Cost / 1M is unavailable because a safe token denominator is not recorded.')
                             : formatUsd(unitCost)}</td>
                           <SavedCell row={model} />
-                          <td title={model.timingCalls ? `${model.timingCalls.toLocaleString('en-US')} of ${model.calls.toLocaleString('en-US')} calls carry observed active-generation timing` : model.timingCoverage === 'observed' ? 'Active-generation timing observed' : model.timingCoverage === 'partial' ? 'Active-generation timing observed for only some deliveries' : 'No reliable active-generation timing recorded for this model'}>{model.timingCoverage}</td>
+                          <td title={model.timingCalls ? `${model.timingCalls.toLocaleString('en-US')} of ${model.calls.toLocaleString('en-US')} calls timed · timing coverage is ${model.timingCoverage}` : model.timingCoverage === 'observed' ? 'Active-generation timing observed' : model.timingCoverage === 'partial' ? 'Active-generation timing observed for only some deliveries' : 'No reliable active-generation timing recorded for this model'}>{model.timingCoverage}{model.timingCalls && model.timingCoverage === 'partial' ? ` · ${model.timingCalls.toLocaleString('en-US')}/${model.calls.toLocaleString('en-US')}` : null}</td>
                           <td title={quality.detail}>{modelCostLabel(quality)}</td>
                         </tr>
                         {isExpanded ? <tr className="model-delivery-row"><td colSpan={16}><DeliveryBreakdown id={deliveryId} model={model} unpricedModels={unpricedModels} /></td></tr> : null}

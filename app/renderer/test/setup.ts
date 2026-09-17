@@ -19,10 +19,14 @@ if (typeof document !== 'undefined') {
   // durable restart snapshots live in the same jsdom localStorage across the
   // whole file, so they are cleared too: otherwise a payload one test
   // persisted would paint as another test's instant snapshot after the reset.
+  // The report generation counter is likewise reset: generation enforcement
+  // (stale memos never serve past a publish) must start deterministic.
   const { __resetPolledMemo } = await import('../hooks/usePolled')
+  const { __resetReportGeneration } = await import('../lib/reportGeneration')
   afterEach(() => {
     cleanup()
     __resetPolledMemo()
+    __resetReportGeneration()
     try {
       globalThis.localStorage?.clear()
     } catch {

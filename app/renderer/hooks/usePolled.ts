@@ -3,7 +3,7 @@ import { useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { normalizeCliError } from '../lib/ipc'
 import { RefreshCadenceContext } from '../lib/refreshCadence'
 import { currentReportGeneration } from '../lib/reportGeneration'
-import { invalidateDurableSnapshots, readDurableSnapshot, snapshotRank, writeDurableSnapshot } from '../lib/reportSnapshot'
+import { invalidateDurableSnapshots, readDurableSnapshot, snapshotRank, writeDurableSnapshot, type ReportFreshnessRank } from '../lib/reportSnapshot'
 import type { CliError } from '../lib/types'
 
 export type Polled<T> = {
@@ -54,17 +54,31 @@ export function setPolledMemoMax(n: number): void {
 function memoGet<T>(key: string): MemoEntry & { value: T } | undefined {
   const memory = memoStore.get(key)
   if (memory) {
+    // A memo accepted under a previous report generation is never current
+    // last-good once a newer canonical generation exists. Drop it so the
+    // caller re-reads the canonical snapshot instead of painting stale
+    // authority — then the fresh result is stamped with the new generation.
+    if (memory.generation !== currentReportGeneration().n) {
+      memoStore.delete(key)
+      return undefined
+    }
     // Touch recency.
     memoStore.delete(key)
     memoStore.set(key, memory)
     return memory as MemoEntry & { value: T }
   }
   // Restart-time read-through: a complete payload the previous run accepted
-  // paints instantly, then revalidates behind the painted data. Promoted into
-  // the bounded memory LRU so the prefetcher can skip work already warmed.
+  // paints instantly, then revalidates behind the painted data — but only
+  // while this renderer has not published a newer explicit generation. A
+  // pre-process snapshot must never win over current authority, so the
+  // promoted entry is adopted at the current generation (a later publish
+  // retires it like any other memo) while keeping its `durable` marker so it
+  // never stamps the refresh clock. Promoted into the bounded memory LRU so
+  // the prefetcher can skip work already warmed.
+  if (currentReportGeneration().n !== 0) return undefined
   const durable = readDurableSnapshot<T>(key)
   if (durable) {
-    const entry: MemoEntry = { value: durable.value, at: durable.at, generation: -1, durable: true }
+    const entry: MemoEntry = { value: durable.value, at: durable.at, generation: currentReportGeneration().n, durable: true }
     memoSetEntry(key, entry)
     return entry as MemoEntry & { value: T }
   }
@@ -158,11 +172,11 @@ export function usePolled<T>(
   const [loading, setLoading] = useState(true)
   const [switching, setSwitching] = useState(false)
   const [lastSuccessAt, setLastSuccessAt] = useState<number | null>(null)
-  // Whether the value currently displayed is a finished answer, and the key
-  // it belongs to. A finished answer is never given up for an unfinished one
-  // resolving late for the same key: the producer keeps converging and the
-  // next poll replaces it; until then the screen keeps the complete numbers.
-  const completeRef = useRef(false)
+  // Rank of the report currently displayed for the active key. An incoming
+  // result with a lower rank never replaces what is on screen for the same
+  // key: complete displaces anything, targeted displaces degraded, degraded
+  // displaces nothing — while a newer complete always replaces an older one.
+  const displayRankRef = useRef<ReportFreshnessRank>(0)
   const dataKeyRef = useRef<string | null>(null)
   // Generation counter: every load() (mount, deps change, interval, refresh)
   // claims the next epoch; a fetch applies its result only while its epoch is
@@ -203,7 +217,7 @@ export function usePolled<T>(
       if (cached !== undefined) {
         setData(cached.value)
         dataKeyRef.current = memoKey
-        completeRef.current = snapshotRank(cached.value) > 0
+        displayRankRef.current = snapshotRank(cached.value)
         servedCached = true
         servedDurable = cached.durable === true
         // A durable entry is a snapshot from an earlier app run, not a refresh
@@ -217,7 +231,7 @@ export function usePolled<T>(
       } else {
         setData(null)
         dataKeyRef.current = null
-        completeRef.current = false
+        displayRankRef.current = 0
       }
     }
     setLoading(true)
@@ -229,16 +243,24 @@ export function usePolled<T>(
     selectedFetcher()
       .then(result => {
         if (epochRef.current !== epoch) return
-        if (snapshotRank(result) === 0 && completeRef.current && dataKeyRef.current === (memoKey ?? null)) return
+        // A lower-rank result never regresses the live view for the same key.
+        // The memo store applies the same ordering, so screen and memo agree.
+        // Loading/switching still resolve in `finally` below.
+        if (dataKeyRef.current === (memoKey ?? null) && snapshotRank(result) < displayRankRef.current) return
         setData(result)
         dataKeyRef.current = memoKey ?? null
-        completeRef.current = snapshotRank(result) > 0
+        displayRankRef.current = snapshotRank(result)
         setError(null)
         const at = Date.now()
         setLastSuccessAt(at)
         lastSuccessRef.current = at
-        if (memoKey) memoSet(memoKey, result)
+        // The manual success callback runs before memoization: for the
+        // canonical Overview it publishes the new report generation, so the
+        // result memoized below is stamped with the generation it established
+        // instead of being orphaned as previous-generation data (which the
+        // next load would drop and needlessly re-read).
         if (manual) onManualSuccessRef.current?.(result)
+        if (memoKey) memoSet(memoKey, result)
       })
       .catch(err => {
         if (epochRef.current !== epoch) return
