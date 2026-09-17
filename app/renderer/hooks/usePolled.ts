@@ -2,6 +2,8 @@ import { useCallback, useContext, useEffect, useRef, useState } from 'react'
 
 import { normalizeCliError } from '../lib/ipc'
 import { RefreshCadenceContext } from '../lib/refreshCadence'
+import { currentReportGeneration } from '../lib/reportGeneration'
+import { invalidateDurableSnapshots, readDurableSnapshot, snapshotRank, writeDurableSnapshot } from '../lib/reportSnapshot'
 import type { CliError } from '../lib/types'
 
 export type Polled<T> = {
@@ -33,7 +35,8 @@ export type Polled<T> = {
 const DEFAULT_MEMO_MAX = 8
 const MEMO_MAX_CAP = 24
 let memoMax = DEFAULT_MEMO_MAX
-const memoStore = new Map<string, unknown>()
+type MemoEntry = { value: unknown; at: number; generation: number; durable?: boolean }
+const memoStore = new Map<string, MemoEntry>()
 
 /** Raise (or lower) the instant-switch memo cap so warmed entries survive between
  *  polls. Clamped to [DEFAULT_MEMO_MAX, MEMO_MAX_CAP]; trims immediately if the
@@ -48,23 +51,47 @@ export function setPolledMemoMax(n: number): void {
   }
 }
 
-function memoGet<T>(key: string): T | undefined {
-  if (!memoStore.has(key)) return undefined
-  const value = memoStore.get(key) as T
-  // Touch recency.
-  memoStore.delete(key)
-  memoStore.set(key, value)
-  return value
+function memoGet<T>(key: string): MemoEntry & { value: T } | undefined {
+  const memory = memoStore.get(key)
+  if (memory) {
+    // Touch recency.
+    memoStore.delete(key)
+    memoStore.set(key, memory)
+    return memory as MemoEntry & { value: T }
+  }
+  // Restart-time read-through: a complete payload the previous run accepted
+  // paints instantly, then revalidates behind the painted data. Promoted into
+  // the bounded memory LRU so the prefetcher can skip work already warmed.
+  const durable = readDurableSnapshot<T>(key)
+  if (durable) {
+    const entry: MemoEntry = { value: durable.value, at: durable.at, generation: -1, durable: true }
+    memoSetEntry(key, entry)
+    return entry as MemoEntry & { value: T }
+  }
+  return undefined
 }
 
-function memoSet(key: string, value: unknown): void {
+function memoSetEntry(key: string, entry: MemoEntry): void {
   if (memoStore.has(key)) memoStore.delete(key)
-  memoStore.set(key, value)
+  memoStore.set(key, entry)
   while (memoStore.size > memoMax) {
     const oldest = memoStore.keys().next().value
     if (oldest === undefined) break
     memoStore.delete(oldest)
   }
+}
+
+function memoSet(key: string, value: unknown): void {
+  const at = Date.now()
+  // A degraded report never displaces a complete one, in memory or on disk:
+  // the memo is what a scope switch paints from, so a partial cached here
+  // would resurface as the answer long after the producer had converged.
+  const held = memoStore.get(key)
+  if (held && snapshotRank(value) < snapshotRank(held.value)) return
+  memoSetEntry(key, { value, at, generation: currentReportGeneration().n })
+  // Partial hydration and degraded reads are useful last-good data for the
+  // current renderer, but must never become the restart-time exact answer.
+  writeDurableSnapshot(key, value, at)
 }
 
 /** Test-only: clear the module-level memo between renders so cached results from
@@ -77,9 +104,12 @@ export function __resetPolledMemo(): void {
 /** Empty the instant-switch memo. Called when a Settings action mutates config
  *  that changes computed costs or currency (currency/alias/plan/price-override):
  *  a later provider/period switch must never paint a payload cached under the OLD
- *  config, which is what stuck the display on the previous currency. */
+ *  config, which is what stuck the display on the previous currency. Durable
+ *  snapshots are invalidated through the same call: the logical generation
+ *  bump makes stale bodies unreadable even if their removal is interrupted. */
 export function clearPolledMemo(): void {
   memoStore.clear()
+  invalidateDurableSnapshots()
 }
 
 /** Seed the instant-switch memo out of band. The prefetcher (App.tsx) warms the
@@ -91,9 +121,10 @@ export function primePolledMemo(key: string, value: unknown): void {
 }
 
 /** Whether a live result is already memoized for `key` (does not affect recency).
- *  Lets the prefetcher skip providers it has already warmed. */
+ *  Lets the prefetcher skip providers it has already warmed. A durable hit is
+ *  promoted into the bounded memory LRU. */
 export function hasPolledMemo(key: string): boolean {
-  return memoStore.has(key)
+  return memoGet(key) !== undefined
 }
 
 /**
@@ -122,11 +153,17 @@ export function usePolled<T>(
   const intervalMs = opts.intervalMs !== undefined ? opts.intervalMs : cadence.intervalMs
   const enabled = opts.enabled ?? true
   const memoKey = opts.memoKey
-  const [data, setData] = useState<T | null>(() => (memoKey ? memoGet<T>(memoKey) ?? null : null))
+  const [data, setData] = useState<T | null>(() => (memoKey ? memoGet<T>(memoKey)?.value ?? null : null))
   const [error, setError] = useState<CliError | null>(null)
   const [loading, setLoading] = useState(true)
   const [switching, setSwitching] = useState(false)
   const [lastSuccessAt, setLastSuccessAt] = useState<number | null>(null)
+  // Whether the value currently displayed is a finished answer, and the key
+  // it belongs to. A finished answer is never given up for an unfinished one
+  // resolving late for the same key: the producer keeps converging and the
+  // next poll replaces it; until then the screen keeps the complete numbers.
+  const completeRef = useRef(false)
+  const dataKeyRef = useRef<string | null>(null)
   // Generation counter: every load() (mount, deps change, interval, refresh)
   // claims the next epoch; a fetch applies its result only while its epoch is
   // still current. This is what keeps a slow fetch from an older deps/period
@@ -160,10 +197,28 @@ export function usePolled<T>(
     // numbers. (An interval re-poll keeps the same key, whose last result is
     // always cached, so a background refresh never blanks.)
     let servedCached = false
+    let servedDurable = false
     if (memoKey) {
       const cached = memoGet<T>(memoKey)
-      if (cached !== undefined) { setData(cached); servedCached = true }
-      else setData(null)
+      if (cached !== undefined) {
+        setData(cached.value)
+        dataKeyRef.current = memoKey
+        completeRef.current = snapshotRank(cached.value) > 0
+        servedCached = true
+        servedDurable = cached.durable === true
+        // A durable entry is a snapshot from an earlier app run, not a refresh
+        // this run made: paint it, but stamp no refresh time. The fetch below
+        // is what sets the clock, so the footer never announces a refresh that
+        // happened before this process started.
+        if (!servedDurable) {
+          setLastSuccessAt(cached.at)
+          lastSuccessRef.current = cached.at
+        }
+      } else {
+        setData(null)
+        dataKeyRef.current = null
+        completeRef.current = false
+      }
     }
     setLoading(true)
     setSwitching(servedCached)
@@ -174,7 +229,10 @@ export function usePolled<T>(
     selectedFetcher()
       .then(result => {
         if (epochRef.current !== epoch) return
+        if (snapshotRank(result) === 0 && completeRef.current && dataKeyRef.current === (memoKey ?? null)) return
         setData(result)
+        dataKeyRef.current = memoKey ?? null
+        completeRef.current = snapshotRank(result) > 0
         setError(null)
         const at = Date.now()
         setLastSuccessAt(at)

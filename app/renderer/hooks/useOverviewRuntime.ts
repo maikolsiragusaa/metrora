@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } 
 
 import { setActiveCurrency } from '../lib/format'
 import { metrora } from '../lib/ipc'
+import { publishReportGeneration } from '../lib/reportGeneration'
 import { showToast } from '../lib/toast'
 import type { DateRange, MenubarPayload, Period } from '../lib/types'
 import { providerName } from './useDesktopScope'
@@ -100,6 +101,11 @@ export function useOverviewRuntime({
       memoKey: overviewKey,
       manualFetcher: () => requestOverview(true),
       onManualSuccess: () => {
+        // One successful explicit reconciliation publishes a canonical
+        // generation: section snapshot reads from here on hit the freshly
+        // published cache, so active sections re-read and sections opened
+        // later mount into the same-or-newer authority. No per-section scan.
+        publishReportGeneration()
         // Section-specific snapshot reads run only after the reconciled
         // canonical cache has been atomically published.
         setRefreshToken(token => token + 1)

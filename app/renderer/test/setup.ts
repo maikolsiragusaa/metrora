@@ -15,7 +15,18 @@ if (typeof document !== 'undefined') {
 
   const { cleanup } = await import('@testing-library/react')
   // The usePolled memo is module-level and persists across renders; clear it
-  // between tests so a cached result from one test never seeds another.
+  // between tests so a cached result from one test never seeds another. The
+  // durable restart snapshots live in the same jsdom localStorage across the
+  // whole file, so they are cleared too: otherwise a payload one test
+  // persisted would paint as another test's instant snapshot after the reset.
   const { __resetPolledMemo } = await import('../hooks/usePolled')
-  afterEach(() => { cleanup(); __resetPolledMemo() })
+  afterEach(() => {
+    cleanup()
+    __resetPolledMemo()
+    try {
+      globalThis.localStorage?.clear()
+    } catch {
+      /* storage can be unavailable */
+    }
+  })
 }

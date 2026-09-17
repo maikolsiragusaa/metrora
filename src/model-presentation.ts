@@ -36,6 +36,8 @@ export type ModelPresentationRow = {
   economicVariants: string[]
   activeDurationMs?: number
   activeGeneratedTokens?: number
+  /** Timed-call sample count behind the speed figure; additive like the sums. */
+  timingCalls?: number
   estimatedCostUSD?: number
   costIsEstimated?: boolean
   timingCoverage: TimingCoverage
@@ -115,9 +117,14 @@ export function presentationIdentityForAccountingRow(row: ModelAccountingRow): P
 
   if (family) {
     const economicVariant = free ? 'free' : variant === 'preview' ? 'preview' : 'paid'
+    // A preview row and its settled sibling share the family identity but must
+    // never share the friendly name: two rows the reader cannot tell apart is
+    // the ambiguity this grouping exists to prevent. (`free` already carries
+    // its distinction in the family display name.)
+    const previewSuffix = economicVariant === 'preview' && !/preview/i.test(displayName!) ? ' Preview' : ''
     return {
       key: `family:${family}\u0000${economicVariant}`,
-      name: displayName!,
+      name: `${displayName!}${previewSuffix}`,
       family,
     }
   }
@@ -194,6 +201,7 @@ function buildRow(identity: PresentationIdentity, rows: ModelAccountingRow[]): M
   const hasReasoningEvidence = reasoningSemantics !== 'unavailable' && reasoning.observedReasoningTokens > 0
   const activeDurationMs = rows.reduce((sum, row) => sum + (row.activeDurationMs ?? 0), 0)
   const activeGeneratedTokens = rows.reduce((sum, row) => sum + (row.activeGeneratedTokens ?? 0), 0)
+  const timingCalls = rows.reduce((sum, row) => sum + (row.timingCalls ?? 0), 0)
   const estimatedCostUSD = rows.reduce((sum, row) => sum + (row.estimatedCostUSD ?? 0), 0)
   const timingStates = rows.map(row => row.timingCoverage ?? (row.activeDurationMs && row.activeGeneratedTokens ? 'observed' : 'unavailable'))
   const timingCoverage: TimingCoverage = timingStates.every(state => state === 'observed')
@@ -223,6 +231,7 @@ function buildRow(identity: PresentationIdentity, rows: ModelAccountingRow[]): M
     canonicalIdentities,
     economicVariants,
     ...(activeDurationMs > 0 && activeGeneratedTokens > 0 ? { activeDurationMs, activeGeneratedTokens } : {}),
+    ...(timingCalls > 0 ? { timingCalls } : {}),
     ...(estimatedCostUSD > 0 ? { estimatedCostUSD } : {}),
     ...(rows.some(row => row.costIsEstimated === true) ? { costIsEstimated: true } : {}),
     timingCoverage,

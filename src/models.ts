@@ -1,6 +1,7 @@
 import { getMetroraCacheDir } from './product-paths.js'
 import snapshotData from './data/litellm-snapshot.json'
 import fallbackData from './data/pricing-fallback.json'
+import { looksLikeLocalModel } from './local-model-detection.js'
 import { REVIEWED_MODEL_DISPLAY_NAMES } from './model-display-labels.js'
 import { loadRemotePricing } from './pricing/litellm-pricing.js'
 import {
@@ -12,6 +13,16 @@ import {
 } from './pricing/model-costs.js'
 
 export type { ModelCosts } from './pricing/model-costs.js'
+
+// Local-model detection and unpriced-model classification live in their own
+// module; re-exported here so every existing importer keeps working.
+export {
+  explicitZeroReasonForModel,
+  findUnpricedModels,
+  isExpectedFreeModel,
+  isExplicitFreeModel,
+  type UnpricedModelUsage,
+} from './local-model-detection.js'
 
 type PriceOverrideRates = {
   input: number
@@ -298,7 +309,7 @@ function getLowercasePriceOverrideIndex(): Map<string, ModelCosts> {
   return lowercasePriceOverrideIndex
 }
 
-function getPriceOverrideExact(...keys: string[]): ModelCosts | null {
+export function getPriceOverrideExact(...keys: string[]): ModelCosts | null {
   for (const key of keys) {
     const costs = userPriceOverrides.get(key)
     if (costs) return costs
@@ -454,14 +465,14 @@ export function getProxyPathsConfigHash(): string {
   return [...userProxyPaths].sort().join('\u0002')
 }
 
-function resolveAlias(model: string): string {
+export function resolveAlias(model: string): string {
   if (Object.hasOwn(userAliases, model)) return userAliases[model]!
   if (Object.hasOwn(BUILTIN_ALIASES, model)) return BUILTIN_ALIASES[model]!
   const lowercase = model.toLowerCase()
   if (lowercase !== model && Object.hasOwn(BUILTIN_ALIASES, lowercase)) return BUILTIN_ALIASES[lowercase]!
   return model
 }
-function getCanonicalName(model: string): string {
+export function getCanonicalName(model: string): string {
   return model
     .replace(/@.*$/, '')       // strip pin: claude-sonnet-4-6@20250929 -> claude-sonnet-4-6
     .replace(/-(?:\d{8}|\d{4}-\d{2}-\d{2})$/, '') // strip date pins
@@ -553,51 +564,6 @@ export function getModelCosts(model: string): ModelCosts | null {
 // session that used it, hiding real spend until the user noticed.
 const warnedUnknownModels = new Set<string>()
 
-/// Heuristic for "this looks like a local model that will never be in LiteLLM's
-/// pricing JSON". We suppress the unknown-model warning for these because the
-/// "update metrora" advice can't help — local Ollama models, llama.cpp tags,
-/// LM Studio loads, etc. are billed locally and don't have public pricing.
-/// Users still get $0 in cost reports for them (correct — local inference is
-/// effectively free); the warning was just noise.
-function looksLikeLocalModel(name: string): boolean {
-  // Ollama and LM Studio tags include `:tag` (e.g. qwen3.6:35b-a3b-bf16).
-  if (name.includes(':') && !name.startsWith('http')) return true
-  // GGUF / quantized fingerprints commonly seen in local inference.
-  if (/[-_](q[2-8](_[a-z0-9]+)?|bf16|fp16|gguf|f16|f32)$/i.test(name)) return true
-  return false
-}
-
-/// A free route is usage identity, not a reason to discard the call or apply paid rates.
-export const isExplicitFreeModel = (model: string): boolean => /(?:^|[-:])free(?:$|[-:])/i.test(model.trim())
-
-export interface UnpricedModelUsage {
-  model: string
-  calls: number
-  tokens: number
-}
-
-function hasBillableRate(costs: ModelCosts): boolean {
-  return costs.inputCostPerToken > 0
-    || costs.outputCostPerToken > 0
-    || costs.cacheWriteCostPerToken > 0
-    || costs.cacheReadCostPerToken > 0
-}
-
-// Exact-override lookup with the same key derivation getModelCosts uses. Lets
-// the unpriced detector distinguish "explicitly declared free by the user" (a
-// zero-rate override) from a zero-rate LiteLLM stub, which means "listed but
-// unknown price" and must still be flagged. Only the EXACT override form is
-// consulted: getModelCosts checks it before any table hit, so when one exists
-// it is provably what priced the model. Prefix and case-insensitive overrides
-// resolve AFTER table hits and so cannot prove the $0 was intentional; a
-// zero-rate stub shadowed by one still gets flagged (the honest direction).
-function exactPriceOverrideFor(model: string): ModelCosts | null {
-  const withPrefix = model.replace(/@.*$/, '').replace(/-(?:\d{8}|\d{4}-\d{2}-\d{2})$/, '')
-  const canonicalName = getCanonicalName(model)
-  const canonical = resolveAlias(canonicalName)
-  return getPriceOverrideExact(model, withPrefix, canonicalName, canonical)
-}
-
 // Render-time unpriced detection (#638): flag aggregated model rows that carry
 // usage but $0 cost AND whose pricing lookup yields no billable rate right
 // now. Cost is computed at parse time and cached, so a parse-time registry
@@ -614,55 +580,6 @@ function exactPriceOverrideFor(model: string): ModelCosts | null {
 // raw ids carries cost > 0 and is not flagged. Local-looking models and
 // models with a local-savings mapping are excluded because $0 is their
 // correct cost, as are zero-rate USER overrides (explicitly declared free).
-/// Models whose $0 cost is CORRECT rather than a pricing gap, mirroring the
-/// exclusions findUnpricedModels applies: local-looking models, models mapped
-/// to a local-savings baseline, and models an exact zero-rate user override
-/// declares free. Used to keep their calls out of the pricing-coverage
-/// denominator — otherwise a 95%-ollama user reads high coverage while every
-/// genuinely cost-bearing call is unpriced.
-export function isExpectedFreeModel(model: string): boolean {
-  if (isExplicitFreeModel(model)) return true
-  if (looksLikeLocalModel(model)) return true
-  if (getLocalSavingsBaseline(model)) return true
-  const costs = getModelCosts(model)
-  if (costs && !hasBillableRate(costs) && exactPriceOverrideFor(model)) return true
-  return false
-}
-
-/// Evidence strong enough to classify a zero value as intentional at the
-/// per-call pricing boundary. A local-savings mapping is deliberately excluded:
-/// that mapping is a presentation/accounting overlay whose API-equivalent
-/// baseline remains separately priced and may change without rewriting settled
-/// history.
-export function explicitZeroReasonForModel(model: string): 'free-route' | 'local-inference' | 'manual-reviewed' | undefined {
-  if (isExplicitFreeModel(model)) return 'free-route'
-  if (looksLikeLocalModel(model)) return 'local-inference'
-  const costs = getModelCosts(model)
-  if (costs && !hasBillableRate(costs) && exactPriceOverrideFor(model)) return 'manual-reviewed'
-  return undefined
-}
-
-export function findUnpricedModels(
-  rows: Iterable<{ model: string; calls: number; cost: number; tokens?: number }>,
-): UnpricedModelUsage[] {
-  const out: UnpricedModelUsage[] = []
-  for (const row of rows) {
-    const { model } = row
-    const tokens = row.tokens ?? 0
-    if (!model || model === '<synthetic>') continue
-    if (row.calls <= 0 && tokens <= 0) continue
-    if (row.cost > 0) continue
-    if (looksLikeLocalModel(model)) continue
-    if (getLocalSavingsBaseline(model)) continue
-    const costs = getModelCosts(model)
-    if (costs && hasBillableRate(costs)) continue
-    if (costs && exactPriceOverrideFor(model)) continue
-    out.push({ model, calls: row.calls, tokens })
-  }
-  return out.sort((a, b) => (b.tokens - a.tokens) || (b.calls - a.calls)
-    || (a.model < b.model ? -1 : a.model > b.model ? 1 : 0))
-}
-
 function shouldWarnAboutUnknownModel(name: string): boolean {
   if (!name || name === '<synthetic>') return false
   if (warnedUnknownModels.has(name)) return false
@@ -821,7 +738,15 @@ function deriveClaudeShortName(canonical: string): string | undefined {
   const m = canonical.match(/^claude-(opus|sonnet|haiku)-(\d+)(?:-(\d+))?/)
   if (!m) return undefined
   const [, family, major, minor] = m
-  return `${CLAUDE_FAMILY[family]} ${major}${minor ? `.${minor}` : ''}`
+  const base = `${CLAUDE_FAMILY[family]} ${major}${minor ? `.${minor}` : ''}`
+  // A bare `-thinking` suffix names a reasoning-effort variant of the same
+  // base model (e.g. `claude-opus-4-6-thinking` vs `claude-opus-4-6`). The
+  // canonical/pricing identities stay distinct, so the display name must not
+  // collapse them: two different rows may never share one friendly name.
+  // Variants the accounting layer already surfaces in parentheses
+  // (`-thinking-high` reads as the `high` variant) need no extra marker.
+  if (/-thinking$/i.test(canonical)) return `${base} Thinking`
+  return base
 }
 
 export function getShortModelName(model: string): string {

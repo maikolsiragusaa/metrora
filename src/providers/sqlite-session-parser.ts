@@ -290,7 +290,11 @@ function parseAllSqliteSessions(
 
     const dedupKey = config.providerName + ':' + root + ':session-level'
     const model = sessionTokens.model ?? 'unknown'
-    let costUSD = calculateCost(model, sessionTokens.input, sessionTokens.output, sessionTokens.cacheWrite, sessionTokens.cacheRead, 0)
+    // Session-level reasoning tokens bill at the output rate, exactly like the
+    // per-message path (buildAssistantCall folds reasoning into output).
+    // Reporting the tokens while pricing output alone silently underbills
+    // thinking sessions that only survive as a session-row fallback.
+    let costUSD = calculateCost(model, sessionTokens.input, sessionTokens.output + sessionTokens.reasoning, sessionTokens.cacheWrite, sessionTokens.cacheRead, 0)
     if (costUSD === 0 && sessionTokens.cost > 0) costUSD = sessionTokens.cost
     callsByRoot.set(root, [{
       provider: config.providerName,
@@ -527,7 +531,9 @@ export function createSqliteSessionParser(
             if (!seenKeys.has(dedupKey)) {
               seenKeys.add(dedupKey)
               const model = sessionTokens.model ?? 'unknown'
-              let costUSD = calculateCost(model, sessionTokens.input, sessionTokens.output, sessionTokens.cacheWrite, sessionTokens.cacheRead, 0)
+              // Same output-rate reasoning rule as the shared-database fallback
+              // above: session-row reasoning bills with output, never dropped.
+              let costUSD = calculateCost(model, sessionTokens.input, sessionTokens.output + sessionTokens.reasoning, sessionTokens.cacheWrite, sessionTokens.cacheRead, 0)
               if (costUSD === 0 && sessionTokens.cost > 0) costUSD = sessionTokens.cost
               yield {
                 provider: config.providerName,

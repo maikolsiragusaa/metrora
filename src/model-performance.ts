@@ -71,6 +71,7 @@ type EnrichableModel = {
   modelProvider?: string
   sourceProviders?: string[]
   timingCoverage?: 'observed' | 'partial' | 'unavailable'
+  timingCalls?: number
 }
 
 function matchingRoutes(row: EnrichableModel, routes: RouteTotals): string[] {
@@ -111,6 +112,10 @@ export function enrichModelsWithObservedPerformance<T extends EnrichableModel>(m
       ...model,
       activeDurationMs: timing.activeDurationMs,
       activeGeneratedTokens: timing.activeGeneratedTokens,
+      // Sample count behind the speed: a tok/s from 2% of a model's output
+      // must not read as authoritative as one from 100%. Carried alongside
+      // the sums so accounting/presentation can surface coverage honestly.
+      timingCalls: timing.timingCalls,
       timingCoverage: 'observed' as const,
     }
   })
