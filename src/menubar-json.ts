@@ -28,9 +28,9 @@ export type PeriodData = {
   /// Token fields are add-only for compatibility with older PeriodData fixtures
   /// and producers. Durable day-backed producers populate all four; callers must
   /// treat their absence as unavailable detail, never as zero usage.
-  /// Timing fields are also optional: they come only from surviving source
-  /// sessions whose collector exposes active-generation timing. They never make
-  /// historical cost/call/token totals less durable.
+  /// Timing fields (durations, timed tokens, timed-call counts) are also
+  /// optional: surviving source sessions with active-generation timing only.
+  /// They never make historical cost/call/token totals less durable.
   models: Array<{
     name: string
     cost: number
@@ -48,7 +48,7 @@ export type PeriodData = {
     /// Collector/tool names that contributed to this model row.
     sourceProviders?: string[]
     activeDurationMs?: number
-    activeGeneratedTokens?: number
+    activeGeneratedTokens?: number; timingCalls?: number
     timingCoverage?: 'observed' | 'partial' | 'unavailable'
   }>
   /// Models with usage in the period whose pricing lookup fails against the

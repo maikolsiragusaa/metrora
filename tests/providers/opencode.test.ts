@@ -903,6 +903,37 @@ skipUnlessSqlite('opencode provider - session parsing', () => {
     expect(calls[0]!.deduplicationKey).toBe('opencode:sess-1:session-level')
   })
 
+  it('bills session-level reasoning tokens at the output rate in the fallback', async () => {
+    // The session-row fallback reports reasoningTokens on the yielded call, so
+    // it must price them exactly like the per-message path (reasoning bills at
+    // the output rate). Pricing output alone while showing the thinking tokens
+    // silently underbills sessions that only survive as a session row.
+    const { calculateCost } = await import('../../src/models.js')
+    const dbPath = createTestDb(tmpDir)
+    withTestDb(dbPath, (db) => {
+      db.exec(`ALTER TABLE session ADD COLUMN cost REAL`)
+      db.exec(`ALTER TABLE session ADD COLUMN tokens_input INTEGER`)
+      db.exec(`ALTER TABLE session ADD COLUMN tokens_output INTEGER`)
+      db.exec(`ALTER TABLE session ADD COLUMN tokens_reasoning INTEGER`)
+      db.exec(`ALTER TABLE session ADD COLUMN tokens_cache_read INTEGER`)
+      db.exec(`ALTER TABLE session ADD COLUMN tokens_cache_write INTEGER`)
+      db.exec(`ALTER TABLE session ADD COLUMN model_id TEXT`)
+
+      insertSession(db, 'sess-1')
+      db.prepare(`UPDATE session SET cost = 0, tokens_input = 1000, tokens_output = 2000, tokens_reasoning = 500, tokens_cache_read = 0, tokens_cache_write = 0, model_id = 'claude-sonnet-4-20250514' WHERE id = 'sess-1'`).run()
+
+      insertMessage(db, 'msg-1', 'sess-1', 1700000001000, {
+        role: 'assistant', modelID: 'claude-sonnet-4-20250514',
+      })
+    })
+
+    const calls = await collectCalls(createOpenCodeProvider(tmpDir), dbPath, 'sess-1')
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.reasoningTokens).toBe(500)
+    expect(calls[0]!.costUSD).toBe(calculateCost('claude-sonnet-4-20250514', 1000, 2500, 0, 0, 0))
+    expect(calls[0]!.costUSD).toBeGreaterThan(calculateCost('claude-sonnet-4-20250514', 1000, 2000, 0, 0, 0))
+  })
+
   it('accepts role "model" as equivalent to "assistant"', async () => {
     const dbPath = createTestDb(tmpDir)
     withTestDb(dbPath, (db) => {
