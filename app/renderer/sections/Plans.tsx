@@ -1,35 +1,18 @@
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 
-import { CliErrorPanel } from '../components/CliErrorPanel'
 import { ConnectAffordance } from '../components/ConnectAffordance'
 import { Panel } from '../components/Panel'
+import { ProviderLogo } from '../components/ProviderLogo'
 import { SectionSkeleton } from '../components/Skeleton'
 import type { Section } from '../components/Sidebar'
 import { StaleBanner } from '../components/StaleBanner'
 import { usePolled } from '../hooks/usePolled'
-import { formatConverted } from '../lib/format'
 import { metrora } from '../lib/ipc'
 import { motionClass } from '../lib/motion'
 import { quotaProviderName, quotaProviderOwner, quotaSourceLabel } from '../lib/quota-providers'
-import type { JsonPlanSummary, Period, PlanId, PlanProvider, QuotaProvider, QuotaWindow, StatusJson } from '../lib/types'
+import type { Period, QuotaProvider, QuotaWindow, StatusJson } from '../lib/types'
+import { BudgetPlansSection } from './BudgetPlans'
 import type { SettingsPane } from './Settings'
-
-const PROVIDER_ORDER: PlanProvider[] = ['all', 'claude', 'codex', 'cursor', 'grok']
-
-const PLAN_NAMES: Record<PlanId, string> = {
-  'claude-pro': 'Claude Pro',
-  'claude-max': 'Claude Max',
-  'claude-max-5x': 'Claude Max 5x',
-  'cursor-pro': 'Cursor Pro',
-  supergrok: 'SuperGrok',
-  'supergrok-heavy': 'SuperGrok Heavy',
-  custom: 'Custom plan',
-  none: 'API usage',
-}
-
-function fmtPct(n: number): string {
-  return Number.isInteger(n) ? `${n}%` : `${n.toFixed(1)}%`
-}
 
 /** Honest copy for a 429 backoff window (the upstream quota endpoint rate
  *  limited us), replacing the generic "waiting" note. */
@@ -41,42 +24,47 @@ function isRateLimited(quota: QuotaProvider): boolean {
   return quota.rateLimit.state === 'backoff'
 }
 
-function cycleEndDate(plan: JsonPlanSummary): Date | null {
-  const date = new Date(plan.periodEnd)
-  if (Number.isNaN(date.getTime())) return null
-  date.setDate(date.getDate() - 1)
-  return date
+/** A provider counts as quota-bearing when the source reported windows,
+ *  a credit balance, or a plan label — the same facts the inspector shows. */
+function hasQuotaFacts(quota: QuotaProvider): boolean {
+  return quota.windows.length > 0 || quota.credits !== null || quota.planLabel !== null
 }
 
-function formatShortDate(value: string | Date): string {
-  const date = value instanceof Date ? value : new Date(value)
-  if (Number.isNaN(date.getTime())) return 'unknown'
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-  }).format(date)
-}
+type CapacityRowStatus = 'connected' | 'stale' | 'unavailable' | 'loading'
 
-function planSummaries(status: StatusJson): JsonPlanSummary[] {
-  const plans = status.plans
-  if (plans) {
-    const ordered = PROVIDER_ORDER.flatMap(provider => {
-      const plan = plans[provider]
-      return plan ? [plan] : []
-    })
-    if (ordered.length > 0) return ordered
+function rowStatus(quota: QuotaProvider): { status: CapacityRowStatus; label: string } {
+  if (quota.connection === 'loading') return { status: 'loading', label: 'Loading' }
+  if (quota.rateLimit.state === 'backoff') return { status: 'stale', label: 'Rate limited' }
+  if (quota.connection === 'connected' && quota.freshness === 'fresh') return { status: 'connected', label: 'Connected' }
+  if (quota.freshness === 'stale' || quota.connection === 'stale' || quota.connection === 'transientFailure') {
+    return { status: 'stale', label: quota.connection === 'transientFailure' ? 'Waiting' : 'Stale' }
   }
-  return status.plan ? [status.plan] : []
+  if (quota.connection === 'disconnected') return { status: 'unavailable', label: 'Disconnected' }
+  if (quota.connection === 'accessDenied') return { status: 'unavailable', label: 'Locked' }
+  return { status: 'unavailable', label: 'Unavailable' }
 }
 
-function manualPlanSummaries(status: StatusJson): JsonPlanSummary[] {
-  return planSummaries(status).filter(plan => plan.provider !== 'claude' && plan.provider !== 'codex')
+function rowSublabel(quota: QuotaProvider): string {
+  if (quota.freshness !== 'unavailable' && quota.planLabel) return quota.planLabel
+  return quotaProviderOwner(quota.provider)
+}
+
+function formatLastUpdated(observedAt: string | null): string | null {
+  if (!observedAt) return null
+  const observed = Date.parse(observedAt)
+  if (!Number.isFinite(observed)) return null
+  const minutes = Math.floor((Date.now() - observed) / 60_000)
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes} min ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' }).format(new Date(observed))
 }
 
 export function Plans({ period, refreshToken = 0, onNavigate, onOpenCode, onRefresh, refreshing = false, ready = true }: { period: Period; refreshToken?: number; onNavigate?: (section: Section, pane?: SettingsPane) => void; onOpenCode?: () => void; onRefresh?: () => void; refreshing?: boolean; ready?: boolean }) {
   // Force a fresh fetch (bypassing QuotaService's 5-min cache, and its keychain
   // guard) when the user hits ⌘R or clicks Refresh in the Connect affordance;
-  // the steady 30s poll keeps serving cached quota.
+  // the steady poll keeps serving cached quota.
   const [reconnectNonce, setReconnectNonce] = useState(0)
   const lastForced = useRef(`${refreshToken}:${reconnectNonce}`)
   const quota = usePolled<QuotaProvider[]>(() => {
@@ -87,13 +75,23 @@ export function Plans({ period, refreshToken = 0, onNavigate, onOpenCode, onRefr
   }, [refreshToken, reconnectNonce])
   const reconnect = () => setReconnectNonce(value => value + 1)
   const budgetReport = usePolled<StatusJson>(() => metrora.getPlans(period), [period, refreshToken], { enabled: ready })
-  const manualPlans = budgetReport.data ? manualPlanSummaries(budgetReport.data) : []
+  const lastUpdated = useMemo(() => {
+    if (!quota.data) return null
+    const latest = quota.data
+      .map(entry => entry.observedAt)
+      .filter((value): value is string => value !== null)
+      .map(value => Date.parse(value))
+      .filter(value => Number.isFinite(value))
+    if (latest.length === 0) return null
+    return formatLastUpdated(new Date(Math.max(...latest)).toISOString())
+  }, [quota.data])
 
   return (
     <>
       <div className="bar">
         <div className="t">Plans</div>
         <div className="sp" />
+        {lastUpdated ? <span className="capacity-last-updated">Last updated {lastUpdated}</span> : null}
         {onOpenCode && <button type="button" className="btn btn-s open-code-button" onClick={onOpenCode}>Open Code <span aria-hidden="true">↗</span></button>}
         {onRefresh && <button type="button" className="btn btn-s refresh-button" onClick={onRefresh} disabled={refreshing} aria-label={refreshing ? 'Refreshing' : 'Refresh'}>{refreshing ? 'Refreshing…' : 'Refresh'}</button>}
         <button type="button" className="btn btn-s" onClick={() => onNavigate?.('settings', 'plans')}>
@@ -102,21 +100,60 @@ export function Plans({ period, refreshToken = 0, onNavigate, onOpenCode, onRefr
       </div>
       <div className={motionClass('body', 'section-fade')}>
         {budgetReport.data && budgetReport.error && <StaleBanner error={budgetReport.error} />}
-        <section className="capacity-section" aria-labelledby="capacity-heading">
-          <div className="capacity-section-head">
-            <h2 id="capacity-heading" className="plans-section-heading">Capacity</h2>
-            <span className="capacity-authority">Provider-reported</span>
-          </div>
-          <p className="capacity-intro">Quota and credits from each provider. Metrora usage and local budgets stay separate.</p>
-          {renderQuota(quota.data, quota.error, reconnect)}
+        <section className="capacity-page" aria-labelledby="capacity-heading">
+          <CapacityHeader />
+          <CapacityModeTabs />
+          {renderQuotaSurface(quota.data, quota.error, reconnect, onNavigate)}
         </section>
-        {renderBudgetPlans(budgetReport.data, budgetReport.error, manualPlans)}
+        <BudgetPlansSection data={budgetReport.data} error={budgetReport.error} />
       </div>
     </>
   )
 }
 
-function renderQuota(data: QuotaProvider[] | null, error: ReturnType<typeof usePolled<QuotaProvider[]>>['error'], onReconnect: () => void) {
+function CapacityHeader() {
+  return (
+    <div className="capacity-head">
+      <div className="capacity-title-row">
+        <h1 id="capacity-heading" className="capacity-title">Capacity</h1>
+      </div>
+      <p className="capacity-subtitle">Provider-reported quotas and credits for this workspace. Metrora usage and local budgets stay separate.</p>
+      <div className="capacity-scope-row" role="group" aria-label="Capacity scope">
+        <button type="button" className="capacity-scope-chip" disabled title="Workspace scopes are not connected yet">
+          <span className="capacity-scope-icon" aria-hidden="true">▦</span>This workspace
+        </button>
+        <button type="button" className="capacity-scope-chip is-active" aria-current="true" title="Showing your personal provider capacity">
+          <span className="capacity-scope-icon" aria-hidden="true">○</span>My personal
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function CapacityModeTabs() {
+  const [showWorkspacesBeta, setShowWorkspacesBeta] = useState(false)
+  return (
+    <>
+      <div className="capacity-tabs" role="tablist" aria-label="Capacity modes">
+        <button type="button" role="tab" aria-selected={!showWorkspacesBeta} className={`capacity-tab${showWorkspacesBeta ? '' : ' is-active'}`} onClick={() => setShowWorkspacesBeta(false)}>Providers</button>
+        <button type="button" role="tab" aria-selected={showWorkspacesBeta} className={`capacity-tab${showWorkspacesBeta ? ' is-active' : ''}`} onClick={() => setShowWorkspacesBeta(true)}>Workspaces <span className="capacity-beta">Beta</span></button>
+      </div>
+      {showWorkspacesBeta ? (
+        <div className="capacity-workspaces-beta">
+          <b>Workspaces are in beta.</b>
+          <span>Workspace teams are not connected yet, so provider quotas below stay personal. Nothing here is shared.</span>
+        </div>
+      ) : null}
+    </>
+  )
+}
+
+function renderQuotaSurface(
+  data: QuotaProvider[] | null,
+  error: ReturnType<typeof usePolled<QuotaProvider[]>>['error'],
+  onReconnect: () => void,
+  onNavigate: ((section: Section, pane?: SettingsPane) => void) | undefined,
+) {
   if (!data) {
     if (error) {
       return (
@@ -136,51 +173,167 @@ function renderQuota(data: QuotaProvider[] | null, error: ReturnType<typeof useP
     )
   }
 
-  return data.map(provider => <QuotaPanel key={provider.provider} quota={provider} onReconnect={onReconnect} />)
-}
-
-function renderBudgetPlans(data: StatusJson | null, error: ReturnType<typeof usePolled<StatusJson>>['error'], plans: JsonPlanSummary[]) {
-  if (!data && error) {
-    return (
-      <section className="budget-plans">
-        <h2 className="plans-section-heading">Budget plans</h2>
-        <CliErrorPanel error={error} subject="plan pacing" />
-      </section>
-    )
-  }
-  if (plans.length === 0) return null
-
   return (
-    <section className="budget-plans">
-      <h2 className="plans-section-heading">Budget plans</h2>
-      {plans.map(plan => <PlanPanel key={`${plan.provider}-${plan.id}`} plan={plan} />)}
-    </section>
+    <>
+      <CapacitySummary providers={data} />
+      <CapacityBrowser providers={data} onReconnect={onReconnect} onNavigate={onNavigate} />
+    </>
   )
 }
 
-function QuotaPanel({ quota, onReconnect }: { quota: QuotaProvider; onReconnect: () => void }) {
-  const providerName = quotaProviderName(quota.provider)
-  const planLabel = quota.freshness === 'unavailable' ? null : quota.planLabel
+function CapacitySummary({ providers }: { providers: QuotaProvider[] }) {
+  const connected = providers.filter(entry => rowStatus(entry).status === 'connected').length
+  const withFacts = providers.filter(hasQuotaFacts).length
+  const credited = providers.filter(entry => entry.credits !== null)
+  const pooledCents = credited.reduce((sum, entry) => sum + Math.round((entry.credits?.balance ?? 0) * 100), 0)
+  const [showInfo, setShowInfo] = useState(true)
   return (
-    <Panel
-      className="quota-card"
-      title={<span className="quota-title">{providerName}{planLabel ? <small>{planLabel}</small> : null}</span>}
-      right={<ConnectionIndicator connection={quota.connection} />}
-    >
-      <QuotaContent quota={quota} onReconnect={onReconnect} />
-    </Panel>
+    <div className="capacity-summary" role="list" aria-label="Capacity summary">
+      <div className="capacity-card" role="listitem">
+        <span className="capacity-card-icon" aria-hidden="true">▤</span>
+        <div><b>{providers.length}</b><span>Providers</span>
+          <small>{connected} connected · {providers.length - connected} unavailable</small></div>
+      </div>
+      <div className="capacity-card" role="listitem">
+        <span className="capacity-card-icon" aria-hidden="true">◔</span>
+        <div><b>{withFacts}</b><span>Using capacity</span>
+          <small>With provider-reported quotas</small></div>
+      </div>
+      <div className="capacity-card" role="listitem">
+        <span className="capacity-card-icon" aria-hidden="true">▭</span>
+        <div><b>{credited.length > 0 ? `$${(pooledCents / 100).toFixed(2)}` : '—'}</b><span>Pooled credits</span>
+          <small>{credited.length > 0 ? 'Provider-reported balances' : 'No provider credits reported'}</small></div>
+      </div>
+      {showInfo ? (
+        <div className="capacity-card capacity-info" role="listitem">
+          <span className="capacity-card-icon" aria-hidden="true">✦</span>
+          <div><b>Same data, new scope</b>
+            <small>This page shows provider-reported quotas. Personal and workspace usage stay separate.</small></div>
+          <button type="button" className="capacity-info-dismiss" aria-label="Dismiss" onClick={() => setShowInfo(false)}>×</button>
+        </div>
+      ) : null}
+    </div>
   )
 }
 
-function ConnectionIndicator({ connection }: { connection: QuotaProvider['connection'] }) {
-  const label = connection === 'transientFailure' ? 'waiting'
-    : connection === 'terminalFailure' ? 'error'
-    : connection === 'accessDenied' ? 'locked'
-    : connection
-  return <span className={`quota-connection quota-connection-${connection}`}><i />{label}</span>
+type StatusFilter = 'all' | 'connected' | 'stale' | 'not-connected'
+
+function CapacityBrowser({ providers, onReconnect, onNavigate }: { providers: QuotaProvider[]; onReconnect: () => void; onNavigate: ((section: Section, pane?: SettingsPane) => void) | undefined }) {
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<StatusFilter>('all')
+  const [selected, setSelected] = useState<string | null>(null)
+  const visible = providers.filter(entry => {
+    const status = rowStatus(entry).status
+    if (filter === 'connected' && status !== 'connected') return false
+    if (filter === 'stale' && status !== 'stale') return false
+    if (filter === 'not-connected' && status === 'connected') return false
+    const needle = query.trim().toLowerCase()
+    if (!needle) return true
+    const haystack = `${quotaProviderName(entry.provider)} ${rowSublabel(entry)} ${entry.provider}`.toLowerCase()
+    return haystack.includes(needle)
+  })
+  // Selection is client-side only: switching providers never triggers a scan.
+  const active = visible.find(entry => entry.provider === selected) ?? visible[0] ?? null
+  return (
+    <div className="capacity-main">
+      <div className="capacity-list-panel">
+        <div className="capacity-list-tools">
+          <label className="capacity-search">
+            <span aria-hidden="true">⌕</span>
+            <input type="search" value={query} placeholder="Search providers…" aria-label="Search providers" onChange={event => setQuery(event.target.value)} />
+          </label>
+          <label className="capacity-filter">
+            <span className="capacity-filter-sr">Filter by status</span>
+            <select value={filter} aria-label="Filter by status" onChange={event => setFilter(event.target.value as StatusFilter)}>
+              <option value="all">All statuses</option>
+              <option value="connected">Connected</option>
+              <option value="stale">Stale</option>
+              <option value="not-connected">Not connected</option>
+            </select>
+          </label>
+        </div>
+        {visible.length === 0 ? (
+          <p className="quota-connection-note">No providers match this filter.</p>
+        ) : (
+          <ul className="capacity-list" aria-label="Providers">
+            {visible.map(entry => {
+              const { status, label } = rowStatus(entry)
+              const isActive = active?.provider === entry.provider
+              return (
+                <li key={entry.provider}>
+                  <button
+                    type="button"
+                    className={`capacity-row${isActive ? ' is-active' : ''}`}
+                    aria-current={isActive}
+                    onClick={() => setSelected(entry.provider)}
+                  >
+                    <ProviderLogo provider={entry.provider} size={28} />
+                    <span className="capacity-row-text">
+                      <b>{quotaProviderName(entry.provider)}</b>
+                      <small>{rowSublabel(entry)}</small>
+                    </span>
+                    <span className={`capacity-dot capacity-dot-${status}`} aria-hidden="true" />
+                    <span className="capacity-row-status">{label}</span>
+                    <span className="capacity-row-chevron" aria-hidden="true">›</span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </div>
+      {active ? (
+        <CapacityInspector key={active.provider} quota={active} onReconnect={onReconnect} onNavigate={onNavigate} />
+      ) : null}
+    </div>
+  )
 }
 
-function QuotaContent({ quota, onReconnect }: { quota: QuotaProvider; onReconnect: () => void }) {
+type InspectorTab = 'capacity' | 'usage' | 'team'
+
+function CapacityInspector({ quota, onReconnect, onNavigate }: { quota: QuotaProvider; onReconnect: () => void; onNavigate: ((section: Section, pane?: SettingsPane) => void) | undefined }) {
+  const [tab, setTab] = useState<InspectorTab>('capacity')
+  const state = quotaStatus(quota)
+  return (
+    <div className="capacity-inspector" aria-label={`${quotaProviderName(quota.provider)} capacity details`}>
+      <div className="capacity-inspector-head">
+        <ProviderLogo provider={quota.provider} size={36} />
+        <div className="capacity-inspector-titles">
+          <b>{quotaProviderName(quota.provider)}</b>
+          <small>{rowSublabel(quota)}</small>
+        </div>
+        <span className={`capacity-badge capacity-badge-${state.tone}`} title={`Capacity status: ${state.label}`}><i />{state.label}</span>
+        <div className="capacity-inspector-actions">
+          <button type="button" className="btn btn-s" onClick={() => onNavigate?.('settings', 'plans')}>
+            <span aria-hidden="true">⚙</span> Open in Settings
+          </button>
+        </div>
+      </div>
+      <div className="capacity-inspector-tabs" role="tablist" aria-label="Provider detail">
+        <button type="button" role="tab" aria-selected={tab === 'capacity'} className={`capacity-tab${tab === 'capacity' ? ' is-active' : ''}`} onClick={() => setTab('capacity')}>Capacity</button>
+        <button type="button" role="tab" aria-selected={tab === 'usage'} className={`capacity-tab${tab === 'usage' ? ' is-active' : ''}`} onClick={() => setTab('usage')}>Usage</button>
+        <button type="button" role="tab" aria-selected={tab === 'team'} className={`capacity-tab${tab === 'team' ? ' is-active' : ''}`} onClick={() => setTab('team')}>Team access <span className="capacity-beta">Beta</span></button>
+      </div>
+      {tab === 'capacity' ? <InspectorCapacity quota={quota} onReconnect={onReconnect} /> : null}
+      {tab === 'usage' ? (
+        <div className="capacity-tab-pane">
+          <p className="quota-connection-note">Usage for {quotaProviderName(quota.provider)} lives with the rest of your Metrora data, not on this quota surface.</p>
+          <div className="capacity-tab-actions">
+            <button type="button" className="btn btn-s" onClick={() => onNavigate?.('models')}>Open Models</button>
+            <button type="button" className="btn btn-s" onClick={() => onNavigate?.('sessions')}>Open Sessions</button>
+          </div>
+        </div>
+      ) : null}
+      {tab === 'team' ? (
+        <div className="capacity-tab-pane">
+          <p className="quota-connection-note">Team access is in beta. Workspace teams are not connected yet, so there is nothing to show here.</p>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function InspectorCapacity({ quota, onReconnect }: { quota: QuotaProvider; onReconnect: () => void }) {
   const status = <QuotaStatus quota={quota} />
   if (quota.connection === 'disconnected' || quota.connection === 'accessDenied') {
     return (
@@ -230,10 +383,11 @@ function QuotaContent({ quota, onReconnect }: { quota: QuotaProvider; onReconnec
 
   return (
     <>
+      <p className="capacity-inspector-lede">Provider-reported quotas and credits for this workspace. Configuration and API keys are managed in Settings.</p>
       {status}
       {note ? <p className="quota-connection-note">{note}</p> : null}
       {hasWindows
-        ? <div className="quota-windows">{quota.windows.map(window => <QuotaMeter key={window.id} window={window} />)}</div>
+        ? <div className="quota-windows capacity-windows">{quota.windows.map(window => <QuotaMeter key={window.id} window={window} />)}</div>
         : <p className="quota-connection-note">The provider did not report quota windows.</p>}
       {quota.credits !== null ? <div className="quota-footer"><span>Credits remaining · ${quota.credits.balance.toFixed(2)}</span></div> : null}
       <QuotaDetails quota={quota} />
@@ -335,50 +489,4 @@ function formatResetTime(resetsAt: string | null): string | null {
   if (days > 0) return `resets in ${days}d${hours > 0 ? ` ${hours}h` : ''}`
   if (hours > 0) return `resets in ${hours}h${minutes > 0 ? ` ${minutes}m` : ''}`
   return `resets in ${minutes}m`
-}
-
-function PlanPanel({ plan }: { plan: JsonPlanSummary }) {
-  const hasBudget = plan.budget > 0
-  const displayPercent = Math.min(100, Math.max(0, plan.percentUsed))
-  const over = plan.status === 'over' || plan.percentUsed > 100
-  const trackClass = hasBudget ? (over ? 'over' : undefined) : 'mut'
-  const overage = Math.max(0, plan.spent - plan.budget)
-  const right = hasBudget
-    ? `${formatConverted(plan.spent)} · ${fmtPct(plan.percentUsed)}${overage > 0 ? ` · ${formatConverted(overage)} over` : ''}`
-    : `${formatConverted(plan.spent)} this cycle`
-  const detail = hasBudget ? `${formatConverted(plan.budget)} / month · ${plan.provider}` : `${plan.provider} · pay as you go, no plan`
-
-  return (
-    <Panel>
-      <div className="plrow">
-        <b>{PLAN_NAMES[plan.id]}</b>
-        <span>{detail}</span>
-        <span className="r">{right}</span>
-      </div>
-      <div className="track" data-testid={`plan-track-${plan.provider}`}>
-        <i className={trackClass} style={{ width: `${displayPercent}%` }} />
-      </div>
-      {hasBudget ? <PaceLine plan={plan} /> : null}
-    </Panel>
-  )
-}
-
-function PaceLine({ plan }: { plan: JsonPlanSummary }) {
-  const end = cycleEndDate(plan)
-  const endLabel = end ? formatShortDate(end) : 'unknown'
-  if (plan.status === 'over' || plan.projectedMonthEnd > plan.budget) {
-    return (
-      <div className="pace hot">
-        On pace to exceed; projected {formatConverted(plan.projectedMonthEnd)} by {endLabel}
-      </div>
-    )
-  }
-  if (plan.status === 'near') {
-    return (
-      <div className="pace hot">
-        {fmtPct(plan.percentUsed)} of budget used; projected {formatConverted(plan.projectedMonthEnd)} by {endLabel}
-      </div>
-    )
-  }
-  return <div className="pace ok">On track</div>
 }
