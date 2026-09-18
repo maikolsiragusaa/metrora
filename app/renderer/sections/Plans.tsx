@@ -108,7 +108,7 @@ function formatLastUpdated(observedAt: string | null): string | null {
   return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' }).format(new Date(observed))
 }
 
-export function Plans({ period, refreshToken = 0, onNavigate, onOpenCode, onRefresh, refreshing = false, ready = true }: { period: Period; refreshToken?: number; onNavigate?: (section: Section, pane?: SettingsPane) => void; onOpenCode?: () => void; onRefresh?: () => void; refreshing?: boolean; ready?: boolean }) {
+export function Plans({ period, refreshToken = 0, onNavigate, ready = true }: { period: Period; refreshToken?: number; onNavigate?: (section: Section, pane?: SettingsPane) => void; ready?: boolean }) {
   // Force a fresh fetch (bypassing QuotaService's 5-min cache, and its keychain
   // guard) when the user hits ⌘R or clicks Refresh in the Connect affordance;
   // the steady poll keeps serving cached quota.
@@ -135,20 +135,10 @@ export function Plans({ period, refreshToken = 0, onNavigate, onOpenCode, onRefr
 
   return (
     <>
-      <div className="bar">
-        <div className="t">Capacity</div>
-        <div className="sp" />
-        {lastUpdated ? <span className="capacity-last-updated">Last updated {lastUpdated}</span> : null}
-        {onOpenCode && <button type="button" className="btn btn-s open-code-button" onClick={onOpenCode}>Open Code <span aria-hidden="true">↗</span></button>}
-        {onRefresh && <button type="button" className="btn btn-s refresh-button" onClick={onRefresh} disabled={refreshing} aria-label={refreshing ? 'Refreshing' : 'Refresh'}>{refreshing ? 'Refreshing…' : 'Refresh'}</button>}
-        <button type="button" className="btn btn-s" onClick={() => onNavigate?.('settings', 'plans')}>
-          Add plan…
-        </button>
-      </div>
       <div className={motionClass('body', 'section-fade')}>
         {budgetReport.data && budgetReport.error && <StaleBanner error={budgetReport.error} />}
         <section className="capacity-page" aria-labelledby="capacity-heading">
-          <CapacityHeader />
+          <CapacityHeader lastUpdated={lastUpdated} />
           <CapacityModeTabs />
           {renderQuotaSurface(quota.data, quota.error, reconnect, onNavigate)}
         </section>
@@ -158,7 +148,7 @@ export function Plans({ period, refreshToken = 0, onNavigate, onOpenCode, onRefr
   )
 }
 
-function CapacityHeader() {
+function CapacityHeader({ lastUpdated }: { lastUpdated: string | null }) {
   return (
     <div className="capacity-head">
       <div className="capacity-title-row">
@@ -172,6 +162,7 @@ function CapacityHeader() {
         <button type="button" className="capacity-scope-chip is-active" aria-current="true" title="Showing your personal provider capacity">
           <span className="capacity-scope-icon" aria-hidden="true">○</span>My personal
         </button>
+        {lastUpdated ? <span className="capacity-last-updated">Last updated {lastUpdated}</span> : null}
       </div>
     </div>
   )

@@ -272,6 +272,23 @@ describe('App shortcuts', () => {
     expect(within(bar as HTMLElement).getByRole('button', { name: 'Refresh' })).toBeInTheDocument()
   })
 
+  it('keeps Capacity on the shared top shell with one content heading', async () => {
+    render(<App />)
+
+    fireEvent.keyDown(document, { key: '6', metaKey: true })
+    expect(await screen.findByRole('heading', { name: 'Capacity' })).toBeInTheDocument()
+
+    const bar = document.querySelector('.ct-plans .bar')
+    expect(bar).not.toBeNull()
+    // The shared shell carries search + refresh; the section noun lives once
+    // in the content heading, never duplicated in the toolbar.
+    expect(within(bar as HTMLElement).getByRole('button', { name: /Search Metrora sections/ })).toBeInTheDocument()
+    expect(within(bar as HTMLElement).queryByText('Capacity')).not.toBeInTheDocument()
+    expect(within(bar as HTMLElement).queryByRole('button', { name: 'Open Code' })).not.toBeInTheDocument()
+    expect(within(bar as HTMLElement).queryByText('Add plan…')).not.toBeInTheDocument()
+    expect(within(bar as HTMLElement).getByRole('button', { name: 'Refresh' })).toBeInTheDocument()
+  })
+
   it('uses the visible Refresh control for fresh Overview data and re-fetches section snapshots after publication', async () => {
     render(<App />)
 

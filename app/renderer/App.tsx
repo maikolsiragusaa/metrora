@@ -208,7 +208,32 @@ function AppMain() {
         ) : section === 'bench' ? (
           <Bench />
         ) : section === 'plans' ? (
-          <Plans period={period} refreshToken={refreshToken} onNavigate={navigate} onOpenCode={openCode} onRefresh={refreshVisible} refreshing={overview.loading} ready={ready} />
+          <>
+            <TopBar
+              title={null}
+              scope={undefined}
+              period={period}
+              onPeriodChange={onPeriodChange}
+              customRange={customRange}
+              onRangeSelect={onRangeSelect}
+              provider={provider}
+              providerLabel={providerLabel}
+              providerOptions={providerOptions}
+              onProviderSelect={onProviderSelect}
+              claudeConfigs={claudeConfigs}
+              configSource={claudeConfigSource}
+              onConfigSelect={onConfigSelect}
+              projectOptions={projectScope?.options.map(option => ({ id: option.id, name: option.name }))}
+              projectScopeId={metroraProjectId}
+              onProjectScopeSelect={onProjectScopeSelect}
+              capabilities={sectionCapabilities}
+              onRefresh={refreshVisible}
+              refreshing={overview.loading}
+            />
+            <div className={motionClass('body', 'section-fade')}>
+              <Plans period={period} refreshToken={refreshToken} onNavigate={navigate} ready={ready} />
+            </div>
+          </>
         ) : section === 'settings' ? (
           <Settings period={period} refreshToken={refreshToken} onNavigate={navigate} initialPane={settingsPane} claudeConfigs={claudeConfigs} claudeConfigSource={claudeConfigSource} onConfigMutated={onConfigMutated} onRefresh={refreshVisible} refreshing={overview.loading} />
         ) : (

@@ -509,7 +509,7 @@ describe('Plans', () => {
     expect(screen.getByText('permission denied; grant Full Disk Access')).toHaveStyle({ color: 'var(--warn)' })
   })
 
-  it('expands the Connect affordance and forces a keychain refresh from Refresh', async () => {
+  it('expands the Connect affordance from the provider inspector', async () => {
     getPlans.mockResolvedValue(statusWithPlans)
 
     render(<Plans period="30days" />)
@@ -519,10 +519,6 @@ describe('Plans', () => {
     expect(screen.getByText('Not connected. Log in with the Codex CLI.')).toBeInTheDocument()
     fireEvent.click(connect)
     expect(screen.getByText('codex login')).toBeInTheDocument()
-
-    getQuota.mockClear()
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
-    await waitFor(() => expect(getQuota).toHaveBeenCalledWith(true))
   })
 
   it('renders the honest rate-limited note on a 429 backoff, per provider owner', async () => {

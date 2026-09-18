@@ -20,6 +20,8 @@
 }
 
 .capacity-last-updated {
+  margin-left: auto;
+  align-self: center;
   color: var(--mut);
   font-size: var(--fs-label);
   white-space: nowrap;
@@ -27,23 +29,24 @@
 
 .capacity-head {
   display: grid;
-  gap: 4px;
+  gap: 3px;
   flex: none;
 }
 
 .capacity-title-row {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 12px;
   flex-wrap: wrap;
 }
 
 .capacity-title {
   margin: 0;
-  font-size: 22px;
-  line-height: 1.2;
-  letter-spacing: -0.01em;
   color: var(--ink);
+  font-size: 29px;
+  font-weight: 700;
+  letter-spacing: -.04em;
+  line-height: 1.1;
 }
 
 .capacity-subtitle {
@@ -54,8 +57,9 @@
 
 .capacity-scope-row {
   display: flex;
+  align-items: center;
   gap: 8px;
-  margin-top: 2px;
+  margin-top: 1px;
 }
 
 .capacity-scope-chip {
@@ -155,7 +159,7 @@
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--capacity-surface);
-  padding: 10px 14px;
+  padding: 9px 12px;
   min-width: 0;
 }
 
@@ -243,6 +247,7 @@
    * when providers or quota windows overflow, the page itself does not. */
   flex: 1 1 auto;
   min-height: 0;
+}
 }
 
 .capacity-list-panel {
