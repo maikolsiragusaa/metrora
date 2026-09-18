@@ -196,14 +196,42 @@ describe('Plans', () => {
     expect(screen.queryByText('Team members')).not.toBeInTheDocument()
   })
 
-  it('sums real provider credit balances in the pooled credits card', async () => {
+  it('counts credit-reporting providers without pooling their balances', async () => {
     getPlans.mockResolvedValue(baseStatus)
     getQuota.mockResolvedValue([quota('codex', { planLabel: 'Plus', credits: { balance: 3.5, currency: 'USD' } })])
 
     render(<Plans period="30days" />)
 
-    expect(await screen.findByText('$3.50')).toBeInTheDocument()
-    expect(screen.getByText('Available from 1 provider')).toBeInTheDocument()
+    const summary = await screen.findByRole('list', { name: 'Capacity summary' })
+    expect(within(summary).getByText('1 provider reports a balance')).toBeInTheDocument()
+    // No cross-provider monetary total: different providers' credits are not
+    // fungible. The exact balance lives in the provider inspector.
+    expect(within(summary).queryByText('$3.50')).not.toBeInTheDocument()
+    expect(screen.getByText('Credits remaining · $3.50')).toBeInTheDocument()
+  })
+
+  it('counts several credit-reporting providers without pooling their balances', async () => {    getPlans.mockResolvedValue(baseStatus)
+    getQuota.mockResolvedValue([
+      quota('codex', { planLabel: 'Plus', credits: { balance: 3.5, currency: 'USD' } }),
+      quota('claude', { planLabel: 'Pro', credits: { balance: 5, currency: 'USD' } }),
+    ])
+
+    render(<Plans period="30days" />)
+
+    const summary = await screen.findByRole('list', { name: 'Capacity summary' })
+    expect(within(summary).getByText('2 providers report balances')).toBeInTheDocument()
+    expect(within(summary).queryByText('$8.50')).not.toBeInTheDocument()
+  })
+
+  it('never presents live Personal content as Workspace-scoped', async () => {
+    getPlans.mockResolvedValue(baseStatus)
+
+    render(<Plans period="30days" />)
+
+    await screen.findByRole('button', { name: /Claude/ })
+    // Both the page subtitle and the inspector lede use scope-neutral copy.
+    expect(screen.getAllByText(/quotas and credits for this scope/)).toHaveLength(2)
+    expect(screen.queryByText(/quotas and credits for this workspace/)).not.toBeInTheDocument()
   })
 
   it('offers honest Usage and Team access inspector tabs without fake content', async () => {

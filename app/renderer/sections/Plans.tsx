@@ -132,7 +132,7 @@ function CapacityHeader() {
       <div className="capacity-title-row">
         <h1 id="capacity-heading" className="capacity-title">Capacity</h1>
       </div>
-      <p className="capacity-subtitle">Provider-reported quotas and credits for this workspace. Metrora usage and local budgets stay separate.</p>
+      <p className="capacity-subtitle">Provider-reported quotas and credits for this scope. Metrora usage and local budgets stay separate.</p>
       <div className="capacity-scope-row" role="group" aria-label="Capacity scope">
         <button type="button" className="capacity-scope-chip" disabled title="Workspace scopes are not connected yet">
           <span className="capacity-scope-icon" aria-hidden="true">▦</span>This workspace
@@ -212,8 +212,10 @@ function CapacitySummary({ providers }: { providers: QuotaProvider[] }) {
   if (loading > 0) breakdown.push(`${loading} loading`)
   if (unavailable > 0) breakdown.push(`${unavailable} unavailable`)
   const withFacts = providers.filter(hasQuotaFacts).length
+  // Credit balances are provider facts, never a fungible pool: different
+  // providers' credits are not additive, so the summary counts reporting
+  // providers and leaves exact balances to each provider inspector.
   const credited = providers.filter(entry => entry.credits !== null)
-  const pooledCents = credited.reduce((sum, entry) => sum + Math.round((entry.credits?.balance ?? 0) * 100), 0)
   const [showInfo, setShowInfo] = useState(true)
   return (
     <div className="capacity-summary" role="list" aria-label="Capacity summary">
@@ -229,8 +231,8 @@ function CapacitySummary({ providers }: { providers: QuotaProvider[] }) {
       </div>
       <div className="capacity-card" role="listitem">
         <span className="capacity-card-icon" aria-hidden="true">▭</span>
-        <div><b>{credited.length > 0 ? `$${(pooledCents / 100).toFixed(2)}` : '—'}</b><span>Provider credits</span>
-          <small>{credited.length > 0 ? `Available from ${credited.length} provider${credited.length === 1 ? '' : 's'}` : 'No provider credits reported'}</small></div>
+        <div><b>{credited.length > 0 ? `${credited.length}` : '—'}</b><span>Provider credits</span>
+          <small>{credited.length === 0 ? 'No provider credits reported' : credited.length === 1 ? '1 provider reports a balance' : `${credited.length} providers report balances`}</small></div>
       </div>
       {showInfo ? (
         <p className="capacity-info-strip" role="note">
@@ -414,7 +416,7 @@ function InspectorCapacity({ quota, onReconnect }: { quota: QuotaProvider; onRec
 
   return (
     <>
-      <p className="capacity-inspector-lede">Provider-reported quotas and credits for this workspace. Configuration and API keys are managed in Settings.</p>
+      <p className="capacity-inspector-lede">Provider-reported quotas and credits for this scope. Configuration and API keys are managed in Settings.</p>
       {status}
       {note ? <p className="quota-connection-note">{note}</p> : null}
       {hasWindows
