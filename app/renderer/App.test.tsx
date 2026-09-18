@@ -289,6 +289,30 @@ describe('App shortcuts', () => {
     expect(within(bar as HTMLElement).getByRole('button', { name: 'Refresh' })).toBeInTheDocument()
   })
 
+  it('hides the project scope selector on Capacity while other sections keep it', async () => {
+    // Provider quota has no project dimension (getQuota takes no project
+    // argument), so the selector must not suggest otherwise on Capacity.
+    const payload = overviewPayload()
+    payload.projectScope = {
+      selectedId: 'all',
+      options: [{ id: 'p1', name: 'Website', icon: 'grid', color: 'cyan', sourceProjectCount: 2 }],
+      sourceProjects: [],
+      registry: { status: 'valid', writable: true },
+    }
+    mocks.getOverview.mockResolvedValue(payload)
+    render(<App />)
+
+    fireEvent.keyDown(document, { key: '1', metaKey: true })
+    const homeBar = await screen.findByLabelText('Metrora Projects')
+    expect(homeBar).toBeInTheDocument()
+
+    fireEvent.keyDown(document, { key: '6', metaKey: true })
+    expect(await screen.findByRole('heading', { name: 'Capacity' })).toBeInTheDocument()
+    const bar = document.querySelector('.ct-plans .bar')
+    expect(bar).not.toBeNull()
+    expect(within(bar as HTMLElement).queryByLabelText('Metrora Projects')).not.toBeInTheDocument()
+  })
+
   it('uses the visible Refresh control for fresh Overview data and re-fetches section snapshots after publication', async () => {
     render(<App />)
 

@@ -223,9 +223,6 @@ function AppMain() {
               claudeConfigs={claudeConfigs}
               configSource={claudeConfigSource}
               onConfigSelect={onConfigSelect}
-              projectOptions={projectScope?.options.map(option => ({ id: option.id, name: option.name }))}
-              projectScopeId={metroraProjectId}
-              onProjectScopeSelect={onProjectScopeSelect}
               capabilities={sectionCapabilities}
               onRefresh={refreshVisible}
               refreshing={overview.loading}

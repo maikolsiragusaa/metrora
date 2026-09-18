@@ -19,14 +19,6 @@
   --capacity-surface-raised: color-mix(in srgb, var(--panel) 90%, #e9e5ff);
 }
 
-.capacity-last-updated {
-  margin-left: auto;
-  align-self: center;
-  color: var(--mut);
-  font-size: var(--fs-label);
-  white-space: nowrap;
-}
-
 .capacity-head {
   display: grid;
   gap: 3px;

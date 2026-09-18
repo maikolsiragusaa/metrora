@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 
 import { ConnectAffordance } from '../components/ConnectAffordance'
 import { Panel } from '../components/Panel'
@@ -96,18 +96,6 @@ function rowSublabel(quota: QuotaProvider): string {
   return quotaProviderOwner(quota.provider)
 }
 
-function formatLastUpdated(observedAt: string | null): string | null {
-  if (!observedAt) return null
-  const observed = Date.parse(observedAt)
-  if (!Number.isFinite(observed)) return null
-  const minutes = Math.floor((Date.now() - observed) / 60_000)
-  if (minutes < 1) return 'just now'
-  if (minutes < 60) return `${minutes} min ago`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h ago`
-  return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' }).format(new Date(observed))
-}
-
 export function Plans({ period, refreshToken = 0, onNavigate, ready = true }: { period: Period; refreshToken?: number; onNavigate?: (section: Section, pane?: SettingsPane) => void; ready?: boolean }) {
   // Force a fresh fetch (bypassing QuotaService's 5-min cache, and its keychain
   // guard) when the user hits ⌘R or clicks Refresh in the Connect affordance;
@@ -122,23 +110,13 @@ export function Plans({ period, refreshToken = 0, onNavigate, ready = true }: { 
   }, [refreshToken, reconnectNonce])
   const reconnect = () => setReconnectNonce(value => value + 1)
   const budgetReport = usePolled<StatusJson>(() => metrora.getPlans(period), [period, refreshToken], { enabled: ready })
-  const lastUpdated = useMemo(() => {
-    if (!quota.data) return null
-    const latest = quota.data
-      .map(entry => entry.observedAt)
-      .filter((value): value is string => value !== null)
-      .map(value => Date.parse(value))
-      .filter(value => Number.isFinite(value))
-    if (latest.length === 0) return null
-    return formatLastUpdated(new Date(Math.max(...latest)).toISOString())
-  }, [quota.data])
 
   return (
     <>
       <div className={motionClass('body', 'section-fade')}>
         {budgetReport.data && budgetReport.error && <StaleBanner error={budgetReport.error} />}
         <section className="capacity-page" aria-labelledby="capacity-heading">
-          <CapacityHeader lastUpdated={lastUpdated} />
+          <CapacityHeader />
           <CapacityModeTabs />
           {renderQuotaSurface(quota.data, quota.error, reconnect, onNavigate)}
         </section>
@@ -148,7 +126,7 @@ export function Plans({ period, refreshToken = 0, onNavigate, ready = true }: { 
   )
 }
 
-function CapacityHeader({ lastUpdated }: { lastUpdated: string | null }) {
+function CapacityHeader() {
   return (
     <div className="capacity-head">
       <div className="capacity-title-row">
@@ -162,7 +140,6 @@ function CapacityHeader({ lastUpdated }: { lastUpdated: string | null }) {
         <button type="button" className="capacity-scope-chip is-active" aria-current="true" title="Showing your personal provider capacity">
           <span className="capacity-scope-icon" aria-hidden="true">○</span>My personal
         </button>
-        {lastUpdated ? <span className="capacity-last-updated">Last updated {lastUpdated}</span> : null}
       </div>
     </div>
   )

@@ -246,12 +246,16 @@ describe('Plans', () => {
     expect(screen.queryByText(/\$\d/)).not.toBeInTheDocument()
   })
 
-  it('reports the last provider observation without claiming a fresh refresh', async () => {
+  it('leaves refresh status to the shared shell and observed evidence to the inspector', async () => {
     getPlans.mockResolvedValue(baseStatus)
 
     render(<Plans period="30days" />)
 
-    expect(await screen.findByText(/Last updated/)).toBeInTheDocument()
+    await screen.findByRole('button', { name: /Claude/ })
+    // No page-level duplicate of the shell refresh clock…
+    expect(screen.queryByText(/Last updated/)).not.toBeInTheDocument()
+    // …while provider-specific observation evidence stays factual.
+    expect(screen.getByText(/Observed Jul 12, 2026/)).toBeInTheDocument()
   })
 
   it('agrees on one canonical status across summary, list, and inspector', async () => {
