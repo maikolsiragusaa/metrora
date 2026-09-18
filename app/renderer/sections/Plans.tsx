@@ -27,21 +27,68 @@ function isRateLimited(quota: QuotaProvider): boolean {
 /** A provider counts as quota-bearing when the source reported windows,
  *  a credit balance, or a plan label — the same facts the inspector shows. */
 function hasQuotaFacts(quota: QuotaProvider): boolean {
-  return quota.windows.length > 0 || quota.credits !== null || quota.planLabel !== null
+  return quota.windows.length > 0
+    || quota.credits !== null
+    || (typeof quota.planLabel === 'string' && quota.planLabel.trim().length > 0)
 }
 
-type CapacityRowStatus = 'connected' | 'stale' | 'unavailable' | 'loading'
+/**
+ * ONE canonical Capacity presence mapping for a provider snapshot.
+ *
+ * Summary counts, the provider-list badge and the inspector badge all derive
+ * from this function, so the three surfaces can never disagree about the same
+ * provider again. It reads only the canonical contract fields (connection,
+ * freshness, availability evidence) — never a parallel interpretation:
+ *
+ * - fresh factual quota evidence → connected;
+ * - valid stale last-good evidence (retained facts) → stale;
+ * - collection actually in progress → loading;
+ * - explicit factual zero → still connected/stale by its freshness (zero is
+ *   evidence, never unavailable);
+ * - anything without evidence (including a failed collection with no
+ *   retained facts) → unavailable. "Waiting" is reserved for genuinely
+ *   pending collection; a failed read with nothing retained is unavailable.
+ */
+type CapacityPresence = 'connected' | 'stale' | 'loading' | 'unavailable'
 
-function rowStatus(quota: QuotaProvider): { status: CapacityRowStatus; label: string } {
-  if (quota.connection === 'loading') return { status: 'loading', label: 'Loading' }
-  if (quota.rateLimit.state === 'backoff') return { status: 'stale', label: 'Rate limited' }
-  if (quota.connection === 'connected' && quota.freshness === 'fresh') return { status: 'connected', label: 'Connected' }
-  if (quota.freshness === 'stale' || quota.connection === 'stale' || quota.connection === 'transientFailure') {
-    return { status: 'stale', label: quota.connection === 'transientFailure' ? 'Waiting' : 'Stale' }
+function capacityPresence(quota: QuotaProvider): {
+  presence: CapacityPresence
+  label: string
+  tone: 'fresh' | 'stale' | 'warn' | 'bad' | 'muted'
+} {
+  if (quota.connection === 'loading') return { presence: 'loading', label: 'Loading', tone: 'muted' }
+  if (quota.connection === 'connected' && quota.freshness === 'fresh') {
+    return { presence: 'connected', label: 'Connected', tone: 'fresh' }
   }
-  if (quota.connection === 'disconnected') return { status: 'unavailable', label: 'Disconnected' }
-  if (quota.connection === 'accessDenied') return { status: 'unavailable', label: 'Locked' }
-  return { status: 'unavailable', label: 'Unavailable' }
+  if (quota.connection === 'disconnected') return { presence: 'unavailable', label: 'Disconnected', tone: 'muted' }
+  if (quota.connection === 'accessDenied') return { presence: 'unavailable', label: 'Locked', tone: 'warn' }
+  if (quota.connection === 'terminalFailure') return { presence: 'unavailable', label: 'Unavailable', tone: 'bad' }
+  if (quota.freshness === 'stale') return { presence: 'stale', label: 'Stale', tone: 'stale' }
+  return { presence: 'unavailable', label: 'Unavailable', tone: 'muted' }
+}
+
+/** Rank a provider for default selection without reordering the list. */
+function selectionRank(quota: QuotaProvider): number {
+  if (quota.freshness === 'fresh' && hasQuotaFacts(quota)) return 0
+  if (quota.freshness === 'stale' && hasQuotaFacts(quota)) return 1
+  if (quota.connection === 'connected') return 2
+  return 3
+}
+
+/** First provider with fresh renderable evidence, then stale last-good, then
+ *  a genuinely connected provider, then the first provider — existing order
+ *  wins every tie. Never triggers a scan; it only picks from live data. */
+function pickDefaultProvider(providers: QuotaProvider[]): QuotaProvider | null {
+  let best: QuotaProvider | null = null
+  let bestRank = Number.POSITIVE_INFINITY
+  for (const entry of providers) {
+    const rank = selectionRank(entry)
+    if (rank < bestRank) {
+      best = entry
+      bestRank = rank
+    }
+  }
+  return best
 }
 
 function rowSublabel(quota: QuotaProvider): string {
@@ -89,7 +136,7 @@ export function Plans({ period, refreshToken = 0, onNavigate, onOpenCode, onRefr
   return (
     <>
       <div className="bar">
-        <div className="t">Plans</div>
+        <div className="t">Capacity</div>
         <div className="sp" />
         {lastUpdated ? <span className="capacity-last-updated">Last updated {lastUpdated}</span> : null}
         {onOpenCode && <button type="button" className="btn btn-s open-code-button" onClick={onOpenCode}>Open Code <span aria-hidden="true">↗</span></button>}
@@ -141,7 +188,12 @@ function CapacityModeTabs() {
       {showWorkspacesBeta ? (
         <div className="capacity-workspaces-beta">
           <b>Workspaces are in beta.</b>
-          <span>Workspace teams are not connected yet, so provider quotas below stay personal. Nothing here is shared.</span>
+          <span>
+            Workspace Capacity will scope provider capacity to the selected collaboration scope — provider quotas
+            within the workspace, shared or pooled capacity where the provider actually supports it, member-aware
+            context, policy and budget context, and the Projects under that workspace. None of this is live yet:
+            quotas below stay personal and nothing here is shared.
+          </span>
         </div>
       ) : null}
     </>
@@ -182,7 +234,15 @@ function renderQuotaSurface(
 }
 
 function CapacitySummary({ providers }: { providers: QuotaProvider[] }) {
-  const connected = providers.filter(entry => rowStatus(entry).status === 'connected').length
+  const presence = providers.map(capacityPresence)
+  const connected = presence.filter(entry => entry.presence === 'connected').length
+  const stale = presence.filter(entry => entry.presence === 'stale').length
+  const loading = presence.filter(entry => entry.presence === 'loading').length
+  const unavailable = providers.length - connected - stale - loading
+  const breakdown = [`${connected} connected`]
+  if (stale > 0) breakdown.push(`${stale} stale`)
+  if (loading > 0) breakdown.push(`${loading} loading`)
+  if (unavailable > 0) breakdown.push(`${unavailable} unavailable`)
   const withFacts = providers.filter(hasQuotaFacts).length
   const credited = providers.filter(entry => entry.credits !== null)
   const pooledCents = credited.reduce((sum, entry) => sum + Math.round((entry.credits?.balance ?? 0) * 100), 0)
@@ -192,7 +252,7 @@ function CapacitySummary({ providers }: { providers: QuotaProvider[] }) {
       <div className="capacity-card" role="listitem">
         <span className="capacity-card-icon" aria-hidden="true">▤</span>
         <div><b>{providers.length}</b><span>Providers</span>
-          <small>{connected} connected · {providers.length - connected} unavailable</small></div>
+          <small>{breakdown.join(' · ')}</small></div>
       </div>
       <div className="capacity-card" role="listitem">
         <span className="capacity-card-icon" aria-hidden="true">◔</span>
@@ -201,39 +261,41 @@ function CapacitySummary({ providers }: { providers: QuotaProvider[] }) {
       </div>
       <div className="capacity-card" role="listitem">
         <span className="capacity-card-icon" aria-hidden="true">▭</span>
-        <div><b>{credited.length > 0 ? `$${(pooledCents / 100).toFixed(2)}` : '—'}</b><span>Pooled credits</span>
-          <small>{credited.length > 0 ? 'Provider-reported balances' : 'No provider credits reported'}</small></div>
+        <div><b>{credited.length > 0 ? `$${(pooledCents / 100).toFixed(2)}` : '—'}</b><span>Provider credits</span>
+          <small>{credited.length > 0 ? `Available from ${credited.length} provider${credited.length === 1 ? '' : 's'}` : 'No provider credits reported'}</small></div>
       </div>
       {showInfo ? (
-        <div className="capacity-card capacity-info" role="listitem">
-          <span className="capacity-card-icon" aria-hidden="true">✦</span>
-          <div><b>Same data, new scope</b>
-            <small>This page shows provider-reported quotas. Personal and workspace usage stay separate.</small></div>
+        <p className="capacity-info-strip" role="note">
+          <span aria-hidden="true">✦</span>
+          <span><b>Same data, new scope</b> — provider quotas can be scoped to Personal or a Workspace.</span>
           <button type="button" className="capacity-info-dismiss" aria-label="Dismiss" onClick={() => setShowInfo(false)}>×</button>
-        </div>
+        </p>
       ) : null}
     </div>
   )
 }
 
-type StatusFilter = 'all' | 'connected' | 'stale' | 'not-connected'
+type StatusFilter = 'all' | 'connected' | 'stale' | 'loading' | 'unavailable'
 
 function CapacityBrowser({ providers, onReconnect, onNavigate }: { providers: QuotaProvider[]; onReconnect: () => void; onNavigate: ((section: Section, pane?: SettingsPane) => void) | undefined }) {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<StatusFilter>('all')
   const [selected, setSelected] = useState<string | null>(null)
   const visible = providers.filter(entry => {
-    const status = rowStatus(entry).status
-    if (filter === 'connected' && status !== 'connected') return false
-    if (filter === 'stale' && status !== 'stale') return false
-    if (filter === 'not-connected' && status === 'connected') return false
+    const presence = capacityPresence(entry).presence
+    if (filter !== 'all' && presence !== filter) return false
     const needle = query.trim().toLowerCase()
     if (!needle) return true
     const haystack = `${quotaProviderName(entry.provider)} ${rowSublabel(entry)} ${entry.provider}`.toLowerCase()
     return haystack.includes(needle)
   })
   // Selection is client-side only: switching providers never triggers a scan.
-  const active = visible.find(entry => entry.provider === selected) ?? visible[0] ?? null
+  // A manual selection sticks while its provider remains visible; otherwise
+  // the ranking prefers fresh evidence without reordering the list.
+  const active = visible.find(entry => entry.provider === selected)
+    ?? pickDefaultProvider(visible)
+    ?? visible[0]
+    ?? null
   return (
     <div className="capacity-main">
       <div className="capacity-list-panel">
@@ -248,7 +310,8 @@ function CapacityBrowser({ providers, onReconnect, onNavigate }: { providers: Qu
               <option value="all">All statuses</option>
               <option value="connected">Connected</option>
               <option value="stale">Stale</option>
-              <option value="not-connected">Not connected</option>
+              <option value="loading">Loading</option>
+              <option value="unavailable">Unavailable</option>
             </select>
           </label>
         </div>
@@ -257,7 +320,7 @@ function CapacityBrowser({ providers, onReconnect, onNavigate }: { providers: Qu
         ) : (
           <ul className="capacity-list" aria-label="Providers">
             {visible.map(entry => {
-              const { status, label } = rowStatus(entry)
+              const { presence, label } = capacityPresence(entry)
               const isActive = active?.provider === entry.provider
               return (
                 <li key={entry.provider}>
@@ -272,7 +335,7 @@ function CapacityBrowser({ providers, onReconnect, onNavigate }: { providers: Qu
                       <b>{quotaProviderName(entry.provider)}</b>
                       <small>{rowSublabel(entry)}</small>
                     </span>
-                    <span className={`capacity-dot capacity-dot-${status}`} aria-hidden="true" />
+                    <span className={`capacity-dot capacity-dot-${presence}`} aria-hidden="true" />
                     <span className="capacity-row-status">{label}</span>
                     <span className="capacity-row-chevron" aria-hidden="true">›</span>
                   </button>
@@ -293,7 +356,7 @@ type InspectorTab = 'capacity' | 'usage' | 'team'
 
 function CapacityInspector({ quota, onReconnect, onNavigate }: { quota: QuotaProvider; onReconnect: () => void; onNavigate: ((section: Section, pane?: SettingsPane) => void) | undefined }) {
   const [tab, setTab] = useState<InspectorTab>('capacity')
-  const state = quotaStatus(quota)
+  const state = capacityPresence(quota)
   return (
     <div className="capacity-inspector" aria-label={`${quotaProviderName(quota.provider)} capacity details`}>
       <div className="capacity-inspector-head">
@@ -396,7 +459,7 @@ function InspectorCapacity({ quota, onReconnect }: { quota: QuotaProvider; onRec
 }
 
 function QuotaStatus({ quota }: { quota: QuotaProvider }) {
-  const state = quotaStatus(quota)
+  const state = capacityPresence(quota)
   const observed = quota.freshness === 'unavailable' ? null : formatObservedAt(quota.observedAt)
   const observation = observed
     ? `${quota.freshness === 'stale' ? 'Last observed' : 'Observed'} ${observed}`
@@ -407,19 +470,6 @@ function QuotaStatus({ quota }: { quota: QuotaProvider }) {
       {observation ? <span className="quota-status-observed">{observation}</span> : null}
     </div>
   )
-}
-
-function quotaStatus(quota: QuotaProvider): { label: string; tone: 'fresh' | 'stale' | 'warn' | 'bad' | 'muted' } {
-  if (quota.rateLimit.state === 'backoff') return { label: 'Rate limited', tone: 'warn' }
-  if (quota.connection === 'disconnected') return { label: 'Disconnected', tone: 'muted' }
-  if (quota.connection === 'accessDenied') return { label: 'Access needed', tone: 'warn' }
-  if (quota.connection === 'loading') return { label: 'Loading', tone: 'muted' }
-  if (quota.connection === 'terminalFailure') return { label: 'Unavailable', tone: 'bad' }
-  if (quota.freshness === 'stale' || (quota.connection === 'stale' && quota.freshness !== 'unavailable')) {
-    return { label: 'Stale', tone: 'stale' }
-  }
-  if (quota.freshness === 'fresh' && quota.connection === 'connected') return { label: 'Fresh', tone: 'fresh' }
-  return { label: 'Unavailable', tone: 'muted' }
 }
 
 function freshnessLabel(quota: QuotaProvider): string {
@@ -436,7 +486,7 @@ function QuotaDetails({ quota }: { quota: QuotaProvider }) {
       <summary>Provider details</summary>
       <div className="quota-detail-grid">
         <span>Source</span><span>{quotaSourceLabel(quota.source)}</span>
-        <span>Status</span><span>{quotaStatus(quota).label}</span>
+        <span>Status</span><span>{capacityPresence(quota).label}</span>
         <span>Freshness</span><span>{freshnessLabel(quota)}</span>
         <span>Observed</span><span>{observed ?? 'Not available'}</span>
         {retryAt ? <><span>Retry after</span><span>{retryAt}</span></> : null}

@@ -43,7 +43,7 @@ export const DESKTOP_NAVIGATION_ITEMS: Record<Section, DesktopNavigationItem> = 
   compare: { id: 'compare', label: 'Compare', title: 'Compare', shortcut: '' },
   code: { id: 'code', label: 'Code', title: 'Code', shortcut: '' },
   bench: { id: 'bench', label: 'Bench', title: 'Local Bench', shortcut: '5' },
-  plans: { id: 'plans', label: 'Capacity', title: 'Provider plans', shortcut: '6' },
+  plans: { id: 'plans', label: 'Capacity', title: 'Provider capacity', shortcut: '6' },
   workspace: { id: 'workspace', label: 'Workspace', title: 'Personal workspace', shortcut: '7' },
   companion: { id: 'companion', label: 'Companion', title: 'Metrora Companion', shortcut: '' },
   settings: { id: 'settings', label: 'Settings', title: 'Settings', shortcut: ',' },

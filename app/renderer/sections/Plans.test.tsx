@@ -118,7 +118,7 @@ describe('Plans', () => {
 
     expect((await screen.findAllByText('Max 20x')).length).toBeGreaterThan(0)
     expect(screen.getByRole('heading', { name: 'Capacity' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Capacity status: Fresh')).toBeInTheDocument()
+    expect(screen.getByLabelText('Capacity status: Connected')).toBeInTheDocument()
     expect(screen.getByText('25% used · 75% remaining · resets in 2h 29m')).toBeInTheDocument()
     expect(screen.getByText('92% used · 8% remaining · resets in 3d 14h')).toBeInTheDocument()
     expect(container.querySelector('[data-testid="quota-track-five_hour"] i')).toHaveClass('accent')
@@ -156,7 +156,7 @@ describe('Plans', () => {
     expect(screen.getByRole('button', { name: /Codex/ })).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('Search providers'), { target: { value: '' } })
     // Status filter narrows the list without a new fetch.
-    fireEvent.change(screen.getByLabelText('Filter by status'), { target: { value: 'not-connected' } })
+    fireEvent.change(screen.getByLabelText('Filter by status'), { target: { value: 'unavailable' } })
     expect(screen.queryByRole('button', { name: /Claude/ })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Codex/ })).toBeInTheDocument()
     expect(getQuota).toHaveBeenCalledTimes(1)
@@ -186,8 +186,9 @@ describe('Plans', () => {
     expect(within(summary).getByText('Providers')).toBeInTheDocument()
     expect(screen.getByText('1 connected · 1 unavailable')).toBeInTheDocument()
     expect(screen.getByText('Using capacity')).toBeInTheDocument()
-    expect(screen.getByText('Pooled credits')).toBeInTheDocument()
+    expect(screen.getByText('Provider credits')).toBeInTheDocument()
     expect(screen.getByText('No provider credits reported')).toBeInTheDocument()
+    expect(screen.queryByText('Pooled credits')).not.toBeInTheDocument()
     // No single overall-remaining bar may be synthesized across providers.
     expect(container.querySelector('[role="progressbar"]')).not.toBeInTheDocument()
     // Team membership is workspace display language, not a product entity: with
@@ -202,7 +203,7 @@ describe('Plans', () => {
     render(<Plans period="30days" />)
 
     expect(await screen.findByText('$3.50')).toBeInTheDocument()
-    expect(screen.getByText('Provider-reported balances')).toBeInTheDocument()
+    expect(screen.getByText('Available from 1 provider')).toBeInTheDocument()
   })
 
   it('offers honest Usage and Team access inspector tabs without fake content', async () => {
@@ -238,7 +239,11 @@ describe('Plans', () => {
 
     await screen.findByRole('button', { name: /Claude/ })
     fireEvent.click(screen.getByRole('tab', { name: /Workspaces/ }))
-    expect(screen.getByText(/Workspace teams are not connected yet/)).toBeInTheDocument()
+    expect(screen.getByText(/None of this is live yet/)).toBeInTheDocument()
+    expect(screen.getByText(/will scope provider capacity to the selected collaboration scope/)).toBeInTheDocument()
+    // No invented numbers, pools, members, or policies anywhere.
+    expect(screen.queryByText(/12 members/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/\$\d/)).not.toBeInTheDocument()
   })
 
   it('reports the last provider observation without claiming a fresh refresh', async () => {
@@ -247,6 +252,54 @@ describe('Plans', () => {
     render(<Plans period="30days" />)
 
     expect(await screen.findByText(/Last updated/)).toBeInTheDocument()
+  })
+
+  it('agrees on one canonical status across summary, list, and inspector', async () => {
+    getPlans.mockResolvedValue(baseStatus)
+    // A failed collection with no retained facts is unavailable everywhere —
+    // never "Waiting" in one surface and "Unavailable" in another.
+    getQuota.mockResolvedValue([
+      quota('claude', { connection: 'transientFailure', availability: 'unavailable', freshness: 'unavailable', observedAt: null }),
+      quota('codex', {
+        planLabel: 'Plus',
+        windows: [{ id: 'secondary', label: 'Weekly', usedFraction: 0.1, resetsAt: null, windowSeconds: 604800 }],
+      }),
+    ])
+
+    render(<Plans period="30days" />)
+
+    expect(await screen.findByText('1 connected · 1 unavailable')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Claude.*Anthropic.*Unavailable/ })).toBeInTheDocument()
+    // The evidence-bearing provider is selected first, so the inspector shows
+    // the connected provider, not the unavailable one.
+    expect(screen.getByLabelText('Codex capacity details')).toBeInTheDocument()
+    expect(screen.getByLabelText('Capacity status: Connected')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Claude/ }))
+    expect(screen.getByLabelText('Claude capacity details')).toBeInTheDocument()
+    expect(screen.getByLabelText('Capacity status: Unavailable')).toBeInTheDocument()
+    expect(screen.queryByText('Waiting')).not.toBeInTheDocument()
+  })
+
+  it('selects the provider with fresh evidence first and keeps manual selection stable', async () => {
+    getPlans.mockResolvedValue(baseStatus)
+    getQuota.mockResolvedValue([
+      quota('claude', { connection: 'disconnected', availability: 'unavailable', freshness: 'unavailable', observedAt: null }),
+      quota('codex', {
+        planLabel: 'Plus',
+        windows: [{ id: 'secondary', label: 'Weekly', usedFraction: 0.1, resetsAt: null, windowSeconds: 604800 }],
+      }),
+    ])
+
+    const { rerender } = render(<Plans period="30days" refreshToken={0} />)
+
+    // Codex carries the only fresh evidence, so it is inspected first even
+    // though Claude orders first in the list.
+    expect(await screen.findByLabelText('Codex capacity details')).toBeInTheDocument()
+    // A manual selection sticks across refreshes while its provider is present.
+    fireEvent.click(screen.getByRole('button', { name: /Claude/ }))
+    expect(screen.getByLabelText('Claude capacity details')).toBeInTheDocument()
+    rerender(<Plans period="30days" refreshToken={1} />)
+    expect(await screen.findByLabelText('Claude capacity details')).toBeInTheDocument()
   })
 
   it('keeps provider provenance in a progressive details disclosure', async () => {
@@ -297,7 +350,7 @@ describe('Plans', () => {
     render(<Plans period="30days" />)
 
     expect(await screen.findByText('100% used · 0% remaining · reset passed')).toBeInTheDocument()
-    expect(screen.getByLabelText('Capacity status: Fresh')).toBeInTheDocument()
+    expect(screen.getByLabelText('Capacity status: Connected')).toBeInTheDocument()
     expect(screen.queryAllByTestId(/^quota-track-/)).toHaveLength(1)
     // The unavailable provider is one selection away in the list.
     fireEvent.click(screen.getByRole('button', { name: /Codex/ }))
@@ -510,7 +563,15 @@ describe('Plans', () => {
 
     render(<Plans period="30days" />)
 
-    expect(await screen.findByText('Credential access is needed. Grant access in the provider or operating-system prompt, then Refresh.')).toBeInTheDocument()
-    expect(screen.getByText('Locked')).toBeInTheDocument()
+    // The evidence-bearing provider is inspected first; the locked provider
+    // is one selection away.
+    expect(await screen.findByLabelText('Codex capacity details')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Claude/ }))
+    expect(screen.getByText('Credential access is needed. Grant access in the provider or operating-system prompt, then Refresh.')).toBeInTheDocument()
+    // List row, inspector badge, status block and details grid all agree on
+    // the one canonical status — never "Waiting" here, never a second label.
+    expect(screen.getAllByText('Locked').length).toBeGreaterThanOrEqual(2)
+    expect(screen.queryByText('Waiting')).not.toBeInTheDocument()
+    expect(screen.queryByText('Access needed')).not.toBeInTheDocument()
   })
 })

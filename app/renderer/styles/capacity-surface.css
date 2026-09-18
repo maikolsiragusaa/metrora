@@ -186,8 +186,28 @@
   font-size: 17px;
 }
 
-.capacity-info small {
-  white-space: normal;
+.capacity-info-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: transparent;
+  padding: 7px 12px;
+  color: var(--mut);
+  font-size: var(--fs-label);
+  grid-column: 1 / -1;
+}
+
+.capacity-info-strip b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.capacity-info-strip > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
 }
 
 .capacity-info-dismiss {
