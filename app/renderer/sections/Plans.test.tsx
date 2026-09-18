@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { setActiveCurrency } from '../lib/format'
@@ -116,13 +116,16 @@ describe('Plans', () => {
 
     const { container } = render(<Plans period="30days" />)
 
-    expect(await screen.findByText('Max 20x')).toBeInTheDocument()
+    expect((await screen.findAllByText('Max 20x')).length).toBeGreaterThan(0)
     expect(screen.getByRole('heading', { name: 'Capacity' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Capacity status: Fresh')).toBeInTheDocument()
+    expect(screen.getByLabelText('Capacity status: Connected')).toBeInTheDocument()
     expect(screen.getByText('25% used · 75% remaining · resets in 2h 29m')).toBeInTheDocument()
     expect(screen.getByText('92% used · 8% remaining · resets in 3d 14h')).toBeInTheDocument()
     expect(container.querySelector('[data-testid="quota-track-five_hour"] i')).toHaveClass('accent')
     expect(container.querySelector('[data-testid="quota-track-seven_day"] i')).toHaveClass('bad')
+    // The disconnected provider is a list row; its recovery copy lives in the
+    // inspector once selected.
+    fireEvent.click(screen.getByRole('button', { name: /Codex/ }))
     expect(screen.getByText('Not connected. Log in with the Codex CLI.')).toBeInTheDocument()
 
     expect(screen.getByRole('heading', { name: 'Budget plans' })).toBeInTheDocument()
@@ -135,6 +138,217 @@ describe('Plans', () => {
     expect(screen.getByText('On track')).toHaveClass('pace', 'ok')
     expect(screen.queryByText('Claude Max')).not.toBeInTheDocument()
     expect(screen.queryByText('API usage')).not.toBeInTheDocument()
+  })
+
+  it('shows the provider list with search, status filter, and a detail inspector', async () => {
+    getPlans.mockResolvedValue(baseStatus)
+
+    render(<Plans period="30days" />)
+
+    // List rows carry the provider name, plan sublabel, and status.
+    expect(await screen.findByRole('button', { name: /Claude.*Max 20x.*Connected/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Codex.*OpenAI.*Disconnected/ })).toBeInTheDocument()
+    // The first provider is inspected by default.
+    expect(screen.getByLabelText('Claude capacity details')).toBeInTheDocument()
+    // Search narrows the list without a new fetch.
+    fireEvent.change(screen.getByLabelText('Search providers'), { target: { value: 'codex' } })
+    expect(screen.queryByRole('button', { name: /Claude/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Codex/ })).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Search providers'), { target: { value: '' } })
+    // Status filter narrows the list without a new fetch.
+    fireEvent.change(screen.getByLabelText('Filter by status'), { target: { value: 'unavailable' } })
+    expect(screen.queryByRole('button', { name: /Claude/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Codex/ })).toBeInTheDocument()
+    expect(getQuota).toHaveBeenCalledTimes(1)
+  })
+
+  it('switches the inspector when another provider row is selected', async () => {
+    getPlans.mockResolvedValue(baseStatus)
+
+    render(<Plans period="30days" />)
+
+    expect(await screen.findByLabelText('Claude capacity details')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Codex/ }))
+    expect(screen.getByLabelText('Codex capacity details')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Claude capacity details')).not.toBeInTheDocument()
+    expect(screen.getByText('Not connected. Log in with the Codex CLI.')).toBeInTheDocument()
+    // Selecting rows is client-side: no additional quota fetch.
+    expect(getQuota).toHaveBeenCalledTimes(1)
+  })
+
+  it('summarizes factual counts without a fabricated overall capacity percentage', async () => {
+    getPlans.mockResolvedValue(baseStatus)
+
+    const { container } = render(<Plans period="30days" />)
+
+    await screen.findByRole('button', { name: /Claude/ })
+    const summary = screen.getByRole('list', { name: 'Capacity summary' })
+    expect(within(summary).getByText('Providers')).toBeInTheDocument()
+    expect(screen.getByText('1 connected · 1 unavailable')).toBeInTheDocument()
+    expect(screen.getByText('Using capacity')).toBeInTheDocument()
+    expect(screen.getByText('Provider credits')).toBeInTheDocument()
+    expect(screen.getByText('No provider credits reported')).toBeInTheDocument()
+    expect(screen.queryByText('Pooled credits')).not.toBeInTheDocument()
+    // No single overall-remaining bar may be synthesized across providers.
+    expect(container.querySelector('[role="progressbar"]')).not.toBeInTheDocument()
+    // Team membership is workspace display language, not a product entity: with
+    // no workspace context there is no team card and no invented headcount.
+    expect(screen.queryByText('Team members')).not.toBeInTheDocument()
+  })
+
+  it('counts credit-reporting providers without pooling their balances', async () => {
+    getPlans.mockResolvedValue(baseStatus)
+    getQuota.mockResolvedValue([quota('codex', { planLabel: 'Plus', credits: { balance: 3.5, currency: 'USD' } })])
+
+    render(<Plans period="30days" />)
+
+    const summary = await screen.findByRole('list', { name: 'Capacity summary' })
+    expect(within(summary).getByText('1 provider reports a balance')).toBeInTheDocument()
+    // No cross-provider monetary total: different providers' credits are not
+    // fungible. The exact balance lives in the provider inspector.
+    expect(within(summary).queryByText('$3.50')).not.toBeInTheDocument()
+    expect(screen.getByText('Credits remaining · $3.50')).toBeInTheDocument()
+  })
+
+  it('counts several credit-reporting providers without pooling their balances', async () => {    getPlans.mockResolvedValue(baseStatus)
+    getQuota.mockResolvedValue([
+      quota('codex', { planLabel: 'Plus', credits: { balance: 3.5, currency: 'USD' } }),
+      quota('claude', { planLabel: 'Pro', credits: { balance: 5, currency: 'USD' } }),
+    ])
+
+    render(<Plans period="30days" />)
+
+    const summary = await screen.findByRole('list', { name: 'Capacity summary' })
+    expect(within(summary).getByText('2 providers report balances')).toBeInTheDocument()
+    expect(within(summary).queryByText('$8.50')).not.toBeInTheDocument()
+  })
+
+  it('never presents live Personal content as Workspace-scoped', async () => {    getPlans.mockResolvedValue(baseStatus)
+
+    render(<Plans period="30days" />)
+
+    await screen.findByRole('button', { name: /Claude/ })
+    // Both the page subtitle and the inspector lede use scope-neutral copy.
+    expect(screen.getAllByText(/quotas and credits for this scope/)).toHaveLength(2)
+    expect(screen.queryByText(/quotas and credits for this workspace/)).not.toBeInTheDocument()
+  })
+
+  it('dismisses only the scope strip from its in-flow button', async () => {
+    getPlans.mockResolvedValue(baseStatus)
+
+    render(<Plans period="30days" />)
+
+    await screen.findByRole('button', { name: /Claude/ })
+    const strip = screen.getByText(/Same data, new scope/).closest('.capacity-info-strip')
+    expect(strip).not.toBeNull()
+    // The dismiss control lives inside the strip flow, not anchored elsewhere.
+    const dismiss = within(strip as HTMLElement).getByRole('button', { name: 'Dismiss' })
+    fireEvent.click(dismiss)
+    expect(screen.queryByText(/Same data, new scope/)).not.toBeInTheDocument()
+    // Everything else stays: summary, list, inspector.
+    expect(screen.getByRole('list', { name: 'Capacity summary' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Claude/ })).toBeInTheDocument()
+    expect(screen.getByLabelText('Claude capacity details')).toBeInTheDocument()
+  })
+
+  it('offers honest Usage and Team access inspector tabs without fake content', async () => {
+    getPlans.mockResolvedValue(baseStatus)
+    const onNavigate = vi.fn()
+
+    render(<Plans period="30days" onNavigate={onNavigate} />)
+
+    await screen.findByLabelText('Claude capacity details')
+    fireEvent.click(screen.getByRole('tab', { name: 'Usage' }))
+    expect(screen.getByText(/lives with the rest of your Metrora data/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Open Models' }))
+    expect(onNavigate).toHaveBeenCalledWith('models')
+    fireEvent.click(screen.getByRole('tab', { name: /Team access/ }))
+    expect(screen.getByText(/Workspace teams are not connected yet/)).toBeInTheDocument()
+  })
+
+  it('opens provider configuration in Settings from the inspector', async () => {
+    getPlans.mockResolvedValue(baseStatus)
+    const onNavigate = vi.fn()
+
+    render(<Plans period="30days" onNavigate={onNavigate} />)
+
+    await screen.findByLabelText('Claude capacity details')
+    fireEvent.click(screen.getByRole('button', { name: 'Open in Settings' }))
+    expect(onNavigate).toHaveBeenCalledWith('settings', 'plans')
+  })
+
+  it('shows the Workspaces beta placeholder without pretending live enterprise data', async () => {
+    getPlans.mockResolvedValue(baseStatus)
+
+    render(<Plans period="30days" />)
+
+    await screen.findByRole('button', { name: /Claude/ })
+    fireEvent.click(screen.getByRole('tab', { name: /Workspaces/ }))
+    expect(screen.getByText(/None of this is live yet/)).toBeInTheDocument()
+    expect(screen.getByText(/will scope provider capacity to the selected collaboration scope/)).toBeInTheDocument()
+    // No invented numbers, pools, members, or policies anywhere.
+    expect(screen.queryByText(/12 members/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/\$\d/)).not.toBeInTheDocument()
+  })
+
+  it('leaves refresh status to the shared shell and observed evidence to the inspector', async () => {
+    getPlans.mockResolvedValue(baseStatus)
+
+    render(<Plans period="30days" />)
+
+    await screen.findByRole('button', { name: /Claude/ })
+    // No page-level duplicate of the shell refresh clock…
+    expect(screen.queryByText(/Last updated/)).not.toBeInTheDocument()
+    // …while provider-specific observation evidence stays factual.
+    expect(screen.getByText(/Observed Jul 12, 2026/)).toBeInTheDocument()
+  })
+
+  it('agrees on one canonical status across summary, list, and inspector', async () => {
+    getPlans.mockResolvedValue(baseStatus)
+    // A failed collection with no retained facts is unavailable everywhere —
+    // never "Waiting" in one surface and "Unavailable" in another.
+    getQuota.mockResolvedValue([
+      quota('claude', { connection: 'transientFailure', availability: 'unavailable', freshness: 'unavailable', observedAt: null }),
+      quota('codex', {
+        planLabel: 'Plus',
+        windows: [{ id: 'secondary', label: 'Weekly', usedFraction: 0.1, resetsAt: null, windowSeconds: 604800 }],
+      }),
+    ])
+
+    render(<Plans period="30days" />)
+
+    expect(await screen.findByText('1 connected · 1 unavailable')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Claude.*Anthropic.*Unavailable/ })).toBeInTheDocument()
+    // The evidence-bearing provider is selected first, so the inspector shows
+    // the connected provider, not the unavailable one.
+    expect(screen.getByLabelText('Codex capacity details')).toBeInTheDocument()
+    expect(screen.getByLabelText('Capacity status: Connected')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Claude/ }))
+    expect(screen.getByLabelText('Claude capacity details')).toBeInTheDocument()
+    expect(screen.getByLabelText('Capacity status: Unavailable')).toBeInTheDocument()
+    expect(screen.queryByText('Waiting')).not.toBeInTheDocument()
+  })
+
+  it('selects the provider with fresh evidence first and keeps manual selection stable', async () => {
+    getPlans.mockResolvedValue(baseStatus)
+    getQuota.mockResolvedValue([
+      quota('claude', { connection: 'disconnected', availability: 'unavailable', freshness: 'unavailable', observedAt: null }),
+      quota('codex', {
+        planLabel: 'Plus',
+        windows: [{ id: 'secondary', label: 'Weekly', usedFraction: 0.1, resetsAt: null, windowSeconds: 604800 }],
+      }),
+    ])
+
+    const { rerender } = render(<Plans period="30days" refreshToken={0} />)
+
+    // Codex carries the only fresh evidence, so it is inspected first even
+    // though Claude orders first in the list.
+    expect(await screen.findByLabelText('Codex capacity details')).toBeInTheDocument()
+    // A manual selection sticks across refreshes while its provider is present.
+    fireEvent.click(screen.getByRole('button', { name: /Claude/ }))
+    expect(screen.getByLabelText('Claude capacity details')).toBeInTheDocument()
+    rerender(<Plans period="30days" refreshToken={1} />)
+    expect(await screen.findByLabelText('Claude capacity details')).toBeInTheDocument()
   })
 
   it('keeps provider provenance in a progressive details disclosure', async () => {
@@ -185,8 +399,11 @@ describe('Plans', () => {
     render(<Plans period="30days" />)
 
     expect(await screen.findByText('100% used · 0% remaining · reset passed')).toBeInTheDocument()
-    expect(screen.getByLabelText('Capacity status: Unavailable')).toBeInTheDocument()
+    expect(screen.getByLabelText('Capacity status: Connected')).toBeInTheDocument()
     expect(screen.queryAllByTestId(/^quota-track-/)).toHaveLength(1)
+    // The unavailable provider is one selection away in the list.
+    fireEvent.click(screen.getByRole('button', { name: /Codex/ }))
+    expect(screen.getByLabelText('Capacity status: Unavailable')).toBeInTheDocument()
   })
 
   it('renders stale credits-only last-good data with its original observation note', async () => {
@@ -290,7 +507,8 @@ describe('Plans', () => {
 
     render(<Plans period="month" />)
 
-    expect(await screen.findByText('Not connected. Log in with the Codex CLI.')).toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('button', { name: /Codex/ }))
+    expect(screen.getByText('Not connected. Log in with the Codex CLI.')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Budget plans' })).not.toBeInTheDocument()
   })
 
@@ -319,7 +537,7 @@ describe('Plans', () => {
     getPlans.mockResolvedValue(statusWithPlans)
 
     const { rerender } = render(<Plans period="30days" refreshToken={0} />)
-    await screen.findByText('Max 20x')
+    await screen.findAllByText('Max 20x')
     expect(getQuota).toHaveBeenCalledWith(false) // mount is a steady poll
     getQuota.mockClear()
 
@@ -340,19 +558,16 @@ describe('Plans', () => {
     expect(screen.getByText('permission denied; grant Full Disk Access')).toHaveStyle({ color: 'var(--warn)' })
   })
 
-  it('expands the Connect affordance and forces a keychain refresh from Refresh', async () => {
+  it('expands the Connect affordance from the provider inspector', async () => {
     getPlans.mockResolvedValue(statusWithPlans)
 
     render(<Plans period="30days" />)
 
-    const connect = await screen.findByRole('button', { name: 'Connect' })
+    fireEvent.click(await screen.findByRole('button', { name: /Codex/ }))
+    const connect = screen.getByRole('button', { name: 'Connect' })
     expect(screen.getByText('Not connected. Log in with the Codex CLI.')).toBeInTheDocument()
     fireEvent.click(connect)
     expect(screen.getByText('codex login')).toBeInTheDocument()
-
-    getQuota.mockClear()
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
-    await waitFor(() => expect(getQuota).toHaveBeenCalledWith(true))
   })
 
   it('renders the honest rate-limited note on a 429 backoff, per provider owner', async () => {
@@ -364,7 +579,9 @@ describe('Plans', () => {
 
     render(<Plans period="30days" />)
 
+    // Each provider's note renders in its own inspector selection.
     expect(await screen.findByText('Anthropic rate limited the quota endpoint, retrying in a few minutes')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Codex/ }))
     expect(screen.getByText('OpenAI rate limited the quota endpoint, retrying in a few minutes')).toBeInTheDocument()
     // The rate-limited note replaces the generic waiting copy.
     expect(screen.queryByText('waiting on the CLI…')).not.toBeInTheDocument()
@@ -391,7 +608,15 @@ describe('Plans', () => {
 
     render(<Plans period="30days" />)
 
-    expect(await screen.findByText('Credential access is needed. Grant access in the provider or operating-system prompt, then Refresh.')).toBeInTheDocument()
-    expect(screen.getByText('locked')).toBeInTheDocument()
+    // The evidence-bearing provider is inspected first; the locked provider
+    // is one selection away.
+    expect(await screen.findByLabelText('Codex capacity details')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Claude/ }))
+    expect(screen.getByText('Credential access is needed. Grant access in the provider or operating-system prompt, then Refresh.')).toBeInTheDocument()
+    // List row, inspector badge, status block and details grid all agree on
+    // the one canonical status — never "Waiting" here, never a second label.
+    expect(screen.getAllByText('Locked').length).toBeGreaterThanOrEqual(2)
+    expect(screen.queryByText('Waiting')).not.toBeInTheDocument()
+    expect(screen.queryByText('Access needed')).not.toBeInTheDocument()
   })
 })

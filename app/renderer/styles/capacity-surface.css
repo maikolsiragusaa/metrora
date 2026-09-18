@@ -1,0 +1,536 @@
+.capacity-page {
+  --capacity-surface: color-mix(in srgb, var(--panel) 90%, #080d16);
+  --capacity-surface-raised: color-mix(in srgb, var(--panel) 82%, #22243c);
+  --capacity-accent: #8b7cf6;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  /* Fill the visible section so entering Capacity never starts scrolled:
+   * the list + inspector below take the remaining height and scroll
+   * internally only if their own content overflows. */
+  flex: 1 0 auto;
+  height: 100%;
+  min-height: 0;
+  gap: 10px;
+}
+
+.metrora-light .capacity-page {
+  --capacity-surface: color-mix(in srgb, var(--panel) 96%, #f0edff);
+  --capacity-surface-raised: color-mix(in srgb, var(--panel) 90%, #e9e5ff);
+}
+
+.capacity-head {
+  display: grid;
+  gap: 3px;
+  flex: none;
+}
+
+.capacity-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.capacity-title {
+  margin: 0;
+  color: var(--ink);
+  font-size: 29px;
+  font-weight: 700;
+  letter-spacing: -.04em;
+  line-height: 1.1;
+}
+
+.capacity-subtitle {
+  margin: 0;
+  color: var(--mut);
+  font-size: var(--fs-body);
+}
+
+.capacity-scope-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 1px;
+}
+
+.capacity-scope-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: transparent;
+  padding: 5px 10px;
+  color: var(--mut);
+  font-size: var(--fs-label);
+  cursor: default;
+}
+
+.capacity-scope-chip.is-active {
+  border-color: color-mix(in srgb, var(--capacity-accent) 65%, var(--line));
+  background: color-mix(in srgb, var(--capacity-accent) 14%, transparent);
+  color: var(--ink);
+}
+
+.capacity-scope-chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.75;
+}
+
+.capacity-scope-icon {
+  font-size: 13px;
+}
+
+.capacity-tabs {
+  display: flex;
+  gap: 18px;
+  border-bottom: 1px solid var(--line);
+  flex: none;
+}
+
+.capacity-tab {
+  border: 0;
+  background: transparent;
+  padding: 6px 2px;
+  color: var(--mut);
+  font-size: var(--fs-body);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.capacity-tab.is-active {
+  color: var(--capacity-accent);
+  border-bottom-color: var(--capacity-accent);
+  font-weight: 600;
+}
+
+.capacity-beta {
+  display: inline-block;
+  margin-left: 6px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--capacity-accent) 22%, transparent);
+  padding: 1px 8px;
+  color: var(--capacity-accent);
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: 1px;
+}
+
+.capacity-workspaces-beta {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  border: 1px dashed color-mix(in srgb, var(--capacity-accent) 55%, var(--line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--capacity-accent) 7%, transparent);
+  padding: 8px 12px;
+  color: var(--mut);
+  font-size: var(--fs-body);
+  flex: none;
+}
+
+.capacity-workspaces-beta b {
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.capacity-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  flex: none;
+}
+
+.capacity-card {
+  position: relative;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--capacity-surface);
+  padding: 9px 12px;
+  min-width: 0;
+}
+
+.capacity-card > div {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.capacity-card b {
+  font-size: 18px;
+  line-height: 1.25;
+  color: var(--ink);
+}
+
+.capacity-card span {
+  color: var(--mut);
+  font-size: var(--fs-body);
+}
+
+.capacity-card small {
+  color: var(--mut2);
+  font-size: var(--fs-label);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.capacity-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--capacity-accent) 16%, transparent);
+  color: var(--capacity-accent);
+  font-size: 15px;
+}
+
+.capacity-info-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: transparent;
+  padding: 7px 12px;
+  color: var(--mut);
+  font-size: var(--fs-label);
+  grid-column: 1 / -1;
+}
+
+.capacity-info-strip b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.capacity-info-strip > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+
+.capacity-info-dismiss {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--mut2);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.capacity-main {
+  display: grid;
+  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  /* Take the remaining visible height: the two panels scroll internally
+   * when providers or quota windows overflow, the page itself does not. */
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.capacity-list-panel {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--capacity-surface);
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+.capacity-list-tools {
+  display: flex;
+  gap: 8px;
+}
+
+.capacity-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--capacity-surface-raised);
+  padding: 0 10px;
+  color: var(--mut2);
+}
+
+.capacity-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  padding: 7px 0;
+  color: var(--ink);
+  font-size: var(--fs-body);
+  outline: none;
+}
+
+.capacity-search input::placeholder {
+  color: var(--mut2);
+}
+
+.capacity-filter {
+  flex: none;
+}
+
+.capacity-filter-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.capacity-filter select {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--capacity-surface-raised);
+  padding: 7px 8px;
+  color: var(--ink);
+  font-size: var(--fs-body);
+}
+
+.capacity-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.capacity-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  padding: 7px 10px;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.capacity-row:hover {
+  background: color-mix(in srgb, var(--capacity-accent) 7%, transparent);
+}
+
+.capacity-row.is-active {
+  border-color: color-mix(in srgb, var(--capacity-accent) 60%, var(--line));
+  background: color-mix(in srgb, var(--capacity-accent) 13%, transparent);
+}
+
+.capacity-row-text {
+  display: grid;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+
+.capacity-row-text b {
+  font-size: var(--fs-body);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.capacity-row-text small {
+  color: var(--mut2);
+  font-size: var(--fs-label);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.capacity-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--mut2);
+}
+
+.capacity-dot-connected {
+  background: #34d399;
+}
+
+.capacity-dot-stale {
+  background: #fbbf24;
+}
+
+.capacity-dot-unavailable {
+  background: #f87171;
+}
+
+.capacity-dot-loading {
+  background: var(--mut2);
+}
+
+.capacity-row-status {
+  flex: none;
+  color: var(--mut);
+  font-size: var(--fs-label);
+}
+
+.capacity-row-chevron {
+  flex: none;
+  color: var(--mut2);
+  font-size: 16px;
+}
+
+.capacity-inspector {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--capacity-surface);
+  padding: 12px 14px;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  min-width: 0;
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+.capacity-inspector-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.capacity-inspector-titles {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.capacity-inspector-titles b {
+  font-size: 16px;
+  color: var(--ink);
+}
+
+.capacity-inspector-titles small {
+  color: var(--mut2);
+  font-size: var(--fs-label);
+}
+
+.capacity-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 20px;
+  padding: 3px 11px;
+  font-size: var(--fs-label);
+  font-weight: 600;
+  border: 1px solid var(--line);
+  color: var(--mut);
+}
+
+.capacity-badge i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.capacity-badge-fresh {
+  border-color: color-mix(in srgb, #34d399 55%, transparent);
+  background: color-mix(in srgb, #34d399 13%, transparent);
+  color: #34d399;
+}
+
+.capacity-badge-stale,
+.capacity-badge-warn {
+  border-color: color-mix(in srgb, #fbbf24 55%, transparent);
+  background: color-mix(in srgb, #fbbf24 12%, transparent);
+  color: #fbbf24;
+}
+
+.capacity-badge-bad {
+  border-color: color-mix(in srgb, #f87171 55%, transparent);
+  background: color-mix(in srgb, #f87171 12%, transparent);
+  color: #f87171;
+}
+
+.capacity-badge-muted {
+  color: var(--mut);
+}
+
+.capacity-inspector-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+
+.capacity-inspector-tabs {
+  display: flex;
+  gap: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.capacity-inspector-lede {
+  margin: 0;
+  color: var(--mut);
+  font-size: var(--fs-body);
+}
+
+.capacity-windows {
+  display: grid;
+  gap: 8px;
+}
+
+.capacity-windows .quota-window {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--capacity-surface-raised);
+  padding: 10px 12px;
+}
+
+.capacity-tab-pane {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.capacity-tab-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.capacity-inspector .quota-status,
+.capacity-inspector .quota-connection-note,
+.capacity-inspector .quota-footer,
+.capacity-inspector .quota-details {
+  margin: 0;
+}
+
+@media (max-width: 1100px) {
+  .capacity-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 920px) {
+  .capacity-main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
