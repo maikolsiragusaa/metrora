@@ -218,9 +218,7 @@
 }
 
 .capacity-info-dismiss {
-  position: absolute;
-  top: 6px;
-  right: 8px;
+  flex: none;
   border: 0;
   background: transparent;
   color: var(--mut2);

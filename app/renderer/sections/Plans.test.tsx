@@ -223,8 +223,7 @@ describe('Plans', () => {
     expect(within(summary).queryByText('$8.50')).not.toBeInTheDocument()
   })
 
-  it('never presents live Personal content as Workspace-scoped', async () => {
-    getPlans.mockResolvedValue(baseStatus)
+  it('never presents live Personal content as Workspace-scoped', async () => {    getPlans.mockResolvedValue(baseStatus)
 
     render(<Plans period="30days" />)
 
@@ -232,6 +231,24 @@ describe('Plans', () => {
     // Both the page subtitle and the inspector lede use scope-neutral copy.
     expect(screen.getAllByText(/quotas and credits for this scope/)).toHaveLength(2)
     expect(screen.queryByText(/quotas and credits for this workspace/)).not.toBeInTheDocument()
+  })
+
+  it('dismisses only the scope strip from its in-flow button', async () => {
+    getPlans.mockResolvedValue(baseStatus)
+
+    render(<Plans period="30days" />)
+
+    await screen.findByRole('button', { name: /Claude/ })
+    const strip = screen.getByText(/Same data, new scope/).closest('.capacity-info-strip')
+    expect(strip).not.toBeNull()
+    // The dismiss control lives inside the strip flow, not anchored elsewhere.
+    const dismiss = within(strip as HTMLElement).getByRole('button', { name: 'Dismiss' })
+    fireEvent.click(dismiss)
+    expect(screen.queryByText(/Same data, new scope/)).not.toBeInTheDocument()
+    // Everything else stays: summary, list, inspector.
+    expect(screen.getByRole('list', { name: 'Capacity summary' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Claude/ })).toBeInTheDocument()
+    expect(screen.getByLabelText('Claude capacity details')).toBeInTheDocument()
   })
 
   it('offers honest Usage and Team access inspector tabs without fake content', async () => {
