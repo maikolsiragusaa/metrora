@@ -233,7 +233,7 @@ describe('App shortcuts', () => {
     expect(await screen.findByRole('heading', { name: 'Sessions' })).toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: '3', metaKey: true })
-    expect(await screen.findByLabelText('Daily spend by model')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Spend' })).toBeInTheDocument()
 
     fireEvent.keyDown(document, { key: '4', metaKey: true })
     expect(await screen.findByRole('heading', { name: 'Models' })).toBeInTheDocument()
@@ -270,6 +270,22 @@ describe('App shortcuts', () => {
     expect(within(bar as HTMLElement).queryByText('Lifetime · All providers')).not.toBeInTheDocument()
     expect(within(bar as HTMLElement).queryByRole('button', { name: 'Open Code' })).not.toBeInTheDocument()
     expect(within(bar as HTMLElement).getByRole('button', { name: 'Refresh' })).toBeInTheDocument()
+  })
+
+  it('keeps Spend on the scope-only client shell without duplicate page chrome', async () => {
+    render(<App />)
+
+    fireEvent.keyDown(document, { key: '3', metaKey: true })
+    expect(await screen.findByRole('heading', { name: 'Spend' })).toBeInTheDocument()
+
+    const bar = document.querySelector('.ct-spend .bar')
+    expect(bar).not.toBeNull()
+    expect(within(bar as HTMLElement).queryByText('Spend')).not.toBeInTheDocument()
+    expect(within(bar as HTMLElement).queryByText(/Lifetime ·/)).not.toBeInTheDocument()
+    expect(within(bar as HTMLElement).getByText('All clients')).toBeInTheDocument()
+    expect(within(bar as HTMLElement).queryByRole('button', { name: 'Open Code' })).not.toBeInTheDocument()
+    expect(within(bar as HTMLElement).getByRole('button', { name: 'Refresh' })).toBeInTheDocument()
+    expect(within(bar as HTMLElement).getByRole('button', { name: 'Refresh' }).parentElement).toHaveClass('bar-refresh-icon-only')
   })
 
   it('keeps Capacity on the shared top shell with one content heading', async () => {
@@ -339,7 +355,7 @@ describe('App shortcuts', () => {
     render(<App />)
 
     fireEvent.keyDown(document, { key: '3', metaKey: true })
-    expect(await screen.findByText('Cost flow · model → project')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Spend' })).toBeInTheDocument()
 
     fireEvent.click(screen.getByText('Today'))
 
@@ -348,7 +364,7 @@ describe('App shortcuts', () => {
       expect(mocks.getSpendFlow).toHaveBeenCalledWith('today', 'all')
     })
 
-    fireEvent.click(screen.getByText('All providers'))
+    fireEvent.click(screen.getByText('All clients'))
     fireEvent.click(await screen.findByRole('option', { name: 'Claude' }))
 
     await waitFor(() => {
@@ -477,7 +493,7 @@ describe('App shortcuts', () => {
     render(<App />)
 
     fireEvent.keyDown(document, { key: '3', metaKey: true })
-    expect(await screen.findByLabelText('Daily spend by model')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Spend' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Choose date range' }))
 
     const to = new Date()

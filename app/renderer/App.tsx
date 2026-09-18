@@ -165,9 +165,12 @@ function AppMain() {
     ? claudeConfigs?.options.find(option => option.id === scopedClaudeConfigSource)?.label ?? null
     : null
   const scope = `${customRange ? rangeLabel(customRange) : PERIOD_LABELS[period]} · ${providerLabel}${activeConfigLabel ? ` · ${activeConfigLabel}` : ''}`
-  const modelsProviderOptions = section === 'models'
+  const compactScopeShell = section === 'sessions' || section === 'models' || section === 'spend'
+  const clientScopeShell = section === 'models' || section === 'spend'
+  const modelsProviderOptions = clientScopeShell
     ? providerOptions.map(option => option.value === 'all' ? { ...option, label: 'All clients' } : option)
     : providerOptions
+  const shellProviderLabel = clientScopeShell && provider === 'all' ? 'All clients' : providerLabel
   const projectScope = overview.data?.projectScope
   useEffect(() => {
     if (!projectScope || projectScope.options.some(option => option.id === metroraProjectId)) return
@@ -236,16 +239,16 @@ function AppMain() {
         ) : (
           <>
             <TopBar
-              title={section === 'sessions' || section === 'models' ? null : SECTION_TITLES[section]}
-              scope={section === 'sessions' || section === 'models' ? undefined : scope}
+              title={compactScopeShell ? null : SECTION_TITLES[section]}
+              scope={compactScopeShell ? undefined : scope}
               period={period}
               onPeriodChange={onPeriodChange}
               customRange={customRange}
               onRangeSelect={onRangeSelect}
               provider={provider}
-              providerLabel={providerLabel}
+              providerLabel={shellProviderLabel}
               providerOptions={modelsProviderOptions}
-              providerAriaLabel={section === 'models' ? 'Clients' : 'Providers'}
+              providerAriaLabel={clientScopeShell ? 'Clients' : 'Providers'}
               onProviderSelect={onProviderSelect}
               claudeConfigs={claudeConfigs}
               configSource={claudeConfigSource}
@@ -254,11 +257,11 @@ function AppMain() {
               projectScopeId={metroraProjectId}
               onProjectScopeSelect={onProjectScopeSelect}
               capabilities={sectionCapabilities}
-              onOpenCode={section === 'sessions' || section === 'models' ? undefined : openCode}
+              onOpenCode={compactScopeShell ? undefined : openCode}
               onRefresh={refreshVisible}
               refreshing={overview.loading}
               compactHome={section === 'overview'}
-              iconOnlyRefresh={section === 'sessions' || section === 'models'}
+              iconOnlyRefresh={compactScopeShell}
             />
             <div className={motionClass('body', 'section-fade')}>
               {section === 'overview' ? (
