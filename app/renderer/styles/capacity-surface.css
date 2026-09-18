@@ -2,9 +2,16 @@
   --capacity-surface: color-mix(in srgb, var(--panel) 90%, #080d16);
   --capacity-surface-raised: color-mix(in srgb, var(--panel) 82%, #22243c);
   --capacity-accent: #8b7cf6;
-  display: grid;
+  display: flex;
+  flex-direction: column;
   width: 100%;
-  gap: 14px;
+  /* Fill the visible section so entering Capacity never starts scrolled:
+   * the list + inspector below take the remaining height and scroll
+   * internally only if their own content overflows. */
+  flex: 1 0 auto;
+  height: 100%;
+  min-height: 0;
+  gap: 10px;
 }
 
 .metrora-light .capacity-page {
@@ -20,7 +27,8 @@
 
 .capacity-head {
   display: grid;
-  gap: 6px;
+  gap: 4px;
+  flex: none;
 }
 
 .capacity-title-row {
@@ -32,7 +40,7 @@
 
 .capacity-title {
   margin: 0;
-  font-size: 26px;
+  font-size: 22px;
   line-height: 1.2;
   letter-spacing: -0.01em;
   color: var(--ink);
@@ -47,7 +55,7 @@
 .capacity-scope-row {
   display: flex;
   gap: 8px;
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
 .capacity-scope-chip {
@@ -57,7 +65,7 @@
   border: 1px solid var(--line);
   border-radius: 9px;
   background: transparent;
-  padding: 6px 12px;
+  padding: 5px 10px;
   color: var(--mut);
   font-size: var(--fs-label);
   cursor: default;
@@ -82,12 +90,13 @@
   display: flex;
   gap: 18px;
   border-bottom: 1px solid var(--line);
+  flex: none;
 }
 
 .capacity-tab {
   border: 0;
   background: transparent;
-  padding: 8px 2px;
+  padding: 6px 2px;
   color: var(--mut);
   font-size: var(--fs-body);
   cursor: pointer;
@@ -120,9 +129,10 @@
   border: 1px dashed color-mix(in srgb, var(--capacity-accent) 55%, var(--line));
   border-radius: 10px;
   background: color-mix(in srgb, var(--capacity-accent) 7%, transparent);
-  padding: 10px 14px;
+  padding: 8px 12px;
   color: var(--mut);
   font-size: var(--fs-body);
+  flex: none;
 }
 
 .capacity-workspaces-beta b {
@@ -133,18 +143,19 @@
 .capacity-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  gap: 10px;
+  flex: none;
 }
 
 .capacity-card {
   position: relative;
   display: flex;
-  gap: 12px;
+  gap: 10px;
   align-items: flex-start;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--capacity-surface);
-  padding: 14px 16px;
+  padding: 10px 14px;
   min-width: 0;
 }
 
@@ -155,7 +166,7 @@
 }
 
 .capacity-card b {
-  font-size: 21px;
+  font-size: 18px;
   line-height: 1.25;
   color: var(--ink);
 }
@@ -177,13 +188,13 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   flex: none;
   border-radius: 50%;
   background: color-mix(in srgb, var(--capacity-accent) 16%, transparent);
   color: var(--capacity-accent);
-  font-size: 17px;
+  font-size: 15px;
 }
 
 .capacity-info-strip {
@@ -226,18 +237,25 @@
 .capacity-main {
   display: grid;
   grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
-  gap: 12px;
+  gap: 10px;
   align-items: start;
+  /* Take the remaining visible height: the two panels scroll internally
+   * when providers or quota windows overflow, the page itself does not. */
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .capacity-list-panel {
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--capacity-surface);
-  padding: 12px;
+  padding: 10px;
   display: grid;
-  gap: 10px;
+  gap: 8px;
   align-content: start;
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
 }
 
 .capacity-list-tools {
@@ -263,7 +281,7 @@
   min-width: 0;
   border: 0;
   background: transparent;
-  padding: 8px 0;
+  padding: 7px 0;
   color: var(--ink);
   font-size: var(--fs-body);
   outline: none;
@@ -289,7 +307,7 @@
   border: 1px solid var(--line);
   border-radius: 9px;
   background: var(--capacity-surface-raised);
-  padding: 8px 8px;
+  padding: 7px 8px;
   color: var(--ink);
   font-size: var(--fs-body);
 }
@@ -305,12 +323,12 @@
 .capacity-row {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 10px;
   width: 100%;
   border: 1px solid transparent;
   border-radius: 10px;
   background: transparent;
-  padding: 9px 10px;
+  padding: 7px 10px;
   color: var(--ink);
   text-align: left;
   cursor: pointer;
@@ -388,11 +406,14 @@
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--capacity-surface);
-  padding: 16px 18px;
+  padding: 12px 14px;
   display: grid;
-  gap: 12px;
+  gap: 10px;
   align-content: start;
   min-width: 0;
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
 }
 
 .capacity-inspector-head {
@@ -409,7 +430,7 @@
 }
 
 .capacity-inspector-titles b {
-  font-size: 18px;
+  font-size: 16px;
   color: var(--ink);
 }
 
@@ -480,14 +501,14 @@
 
 .capacity-windows {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .capacity-windows .quota-window {
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--capacity-surface-raised);
-  padding: 12px 14px;
+  padding: 10px 12px;
 }
 
 .capacity-tab-pane {
