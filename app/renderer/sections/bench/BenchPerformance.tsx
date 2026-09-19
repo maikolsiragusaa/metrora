@@ -162,13 +162,16 @@ export function BenchPerformance({
               </svg>
             </span>
             <div>
-              <h2 id="bench-perf-hardware">Hardware</h2>
-              <p>Observed hardware.</p>
+              <h2 id="bench-perf-hardware">Last observed hardware</h2>
+              <p>From latest retained run.</p>
             </div>
           </div>
           <div className="bench-setup-value" aria-live="polite">
-            {observedHardware ? (
-              <small>From latest retained run: {observedHardware}</small>
+            {observedHardware && latest ? (
+              <>
+                <small>From latest retained run: {observedHardware}</small>
+                <small>{formatTimestamp(latest.endedAt)}</small>
+              </>
             ) : (
               <small>No retained hardware evidence yet. Run Performance to record observed hardware.</small>
             )}
@@ -190,10 +193,10 @@ export function BenchPerformance({
             </svg>
           </span>
           <span>
-            <strong>Advanced configuration</strong>
-            <small>Configure repetitions, token counts, batch size, GPU layers, Flash Attention, and other runtime arguments.</small>
+            <strong>Benchmark configuration</strong>
+            <small>Inspect the fixed repetitions, token counts, batch size, GPU layers, Flash Attention and runtime settings used by this benchmark.</small>
           </span>
-          <span className="bench-optional-pill">Optional</span>
+          <span className="bench-fixed-pill">Fixed</span>
           <span aria-hidden="true">{showAdvancedConfig ? '▴' : '▾'}</span>
         </button>
         {showAdvancedConfig ? (

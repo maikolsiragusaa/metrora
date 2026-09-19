@@ -390,8 +390,102 @@ describe('Bench future previews are non-executable', () => {
     expect(screen.getByText('Harbor')).toBeInTheDocument()
     expect(screen.getByText('SWE-bench')).toBeInTheDocument()
     expect(screen.getByText('Terminal-Bench')).toBeInTheDocument()
-    expect(screen.getByText('Agent evaluations score the full system')).toBeInTheDocument()
+    expect(screen.getByText('Agent evaluations evaluate the full system')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Run/ })).not.toBeInTheDocument()
+  })
+})
+
+describe('Bench final polish copy', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    getBenchHistory.mockResolvedValue(defaultHistory())
+    getBenchModelDiscovery.mockResolvedValue({
+      schemaVersion: 'metrora.bench-model-discovery.v1',
+      runtime: { id: 'ollama-local', endpoint: 'http://127.0.0.1:11434' },
+      status: 'models-discovered',
+      models: ['qwen3:8b'],
+      detail: '1 local Ollama model discovered.',
+      checkedAt: '2026-08-24T10:00:00.000Z',
+    })
+    getBenchComparison.mockResolvedValue(compatibleComparison())
+    getPerformanceBenchHistory.mockResolvedValue(defaultPerformanceHistory())
+    getPerformanceBenchComparison.mockResolvedValue(compatiblePerformanceComparison())
+    runPerformanceBench.mockResolvedValue(performanceRecord('perf-c'))
+    chooseFile.mockResolvedValue('/tmp/model.gguf')
+  })
+
+  it('presents bounded Performance configuration as fixed and read-only', async () => {
+    render(<Bench />)
+    fireEvent.click(await screen.findByRole('button', { name: /Open Performance/ }))
+    await screen.findByText('Latest result')
+    expect(screen.getByText('Benchmark configuration')).toBeInTheDocument()
+    expect(screen.getByText('Fixed')).toBeInTheDocument()
+    expect(screen.queryByText('Advanced configuration')).not.toBeInTheDocument()
+    expect(screen.queryByText('Optional')).not.toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Inspect the fixed repetitions, token counts, batch size, GPU layers, Flash Attention and runtime settings used by this benchmark.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('labels retained hardware truthfully with its run timestamp', async () => {
+    render(<Bench />)
+    fireEvent.click(await screen.findByRole('button', { name: /Open Performance/ }))
+    await screen.findByText('Latest result')
+    expect(screen.getByRole('heading', { name: 'Last observed hardware' })).toBeInTheDocument()
+    expect(screen.getByText('From latest retained run: Test CPU')).toBeInTheDocument()
+  })
+
+  it('keeps model methodology free of coding benchmark examples', async () => {
+    render(<Bench />)
+    fireEvent.click(await screen.findByRole('button', { name: /Preview model evaluations/ }))
+    expect(await screen.findByRole('heading', { name: 'Model evaluations' })).toBeInTheDocument()
+    expect(screen.getByText(/e\.g\. MMLU, GPQA/)).toBeInTheDocument()
+    const methodology = screen.getByRole('heading', { name: 'Methodology' }).closest('section')!
+    expect(within(methodology).queryByText(/HumanEval/)).not.toBeInTheDocument()
+  })
+
+  it('uses intended language for coding evaluations without release promises', async () => {
+    render(<Bench />)
+    fireEvent.click(await screen.findByRole('button', { name: /Preview coding evaluations/ }))
+    expect(await screen.findByRole('heading', { name: 'Coding evaluations' })).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'This evaluation family is intended to measure how models solve programming tasks using established benchmarks and reproducible environments.',
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Coding evaluations are intended to provide standardized, reproducible results that are independent of your local hardware performance.',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/Metrora will evaluate/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Coding evaluations will provide/)).not.toBeInTheDocument()
+  })
+
+  it('keeps related coding benchmarks separated as name plus description', async () => {
+    render(<Bench />)
+    fireEvent.click(await screen.findByRole('button', { name: /Preview coding evaluations/ }))
+    expect(await screen.findByRole('heading', { name: 'Coding evaluations' })).toBeInTheDocument()
+    const humanEval = screen.getByText('HumanEval+')
+    const mbpp = screen.getByText('MBPP+')
+    expect(humanEval.nextElementSibling?.textContent).toMatch(/An extended version/)
+    expect(mbpp.nextElementSibling?.textContent).toMatch(/An improved version/)
+  })
+
+  it('frames agent evaluations without a universal score', async () => {
+    render(<Bench />)
+    fireEvent.click(await screen.findByRole('button', { name: /Preview agent evaluations/ }))
+    expect(await screen.findByRole('heading', { name: 'Agent evaluations' })).toBeInTheDocument()
+    expect(screen.getByText('Agent evaluations evaluate the full system')).toBeInTheDocument()
+    expect(screen.queryByText('Agent evaluations score the full system')).not.toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Candidate benchmark families include established software-engineering and terminal-task benchmarks.',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/We plan to support established agent benchmarks/)).not.toBeInTheDocument()
   })
 })
 

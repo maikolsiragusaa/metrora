@@ -113,7 +113,7 @@ export function BenchModelEvaluations({ onNavigate }: { onNavigate: (view: Bench
         <dl className="bench-definition-list">
           <div>
             <dt>Benchmark identity</dt>
-            <dd>We will clearly identify the benchmark or evaluation suite used (e.g., MMLU, GPQA, HumanEval).</dd>
+            <dd>We will clearly identify the benchmark or evaluation suite used (e.g. MMLU, GPQA).</dd>
           </div>
           <div>
             <dt>Dataset version</dt>

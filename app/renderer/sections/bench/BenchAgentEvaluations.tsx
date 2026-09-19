@@ -120,7 +120,7 @@ export function BenchAgentEvaluations({ onNavigate }: { onNavigate: (view: Bench
             </span>
           </div>
           <p className="bench-card-copy">
-            We plan to support established agent benchmarks, including real-world software and terminal tasks.
+            Candidate benchmark families include established software-engineering and terminal-task benchmarks.
           </p>
           <div className="bench-candidate">
             <div>
@@ -178,7 +178,7 @@ export function BenchAgentEvaluations({ onNavigate }: { onNavigate: (view: Bench
           </svg>
         </span>
         <div>
-          <strong>Agent evaluations score the full system</strong>
+          <strong>Agent evaluations evaluate the full system</strong>
           <p>
             These evaluations measure the end-to-end performance of the model, agent, tools, and environment
             working together. They should not be confused with raw model benchmarks, which only measure the

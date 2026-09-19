@@ -22,8 +22,8 @@ export function BenchCodingEvaluations({ onNavigate }: { onNavigate: (view: Benc
           </div>
           <p className="bench-headline">Test coding ability with real, reproducible task suites.</p>
           <p className="bench-subcopy">
-            Metrora will evaluate how well models can solve programming tasks using established benchmarks,
-            with reproducible environments and transparent evaluation methods.
+            This evaluation family is intended to measure how models solve programming tasks using established
+            benchmarks and reproducible environments.
           </p>
         </div>
         <div className="bench-notice-card" role="note">
@@ -102,7 +102,7 @@ export function BenchCodingEvaluations({ onNavigate }: { onNavigate: (view: Benc
           </div>
           <div className="bench-related">
             <p className="bench-related-title">Related benchmarks</p>
-            <ul className="bench-neutral-list">
+            <ul className="bench-neutral-list bench-neutral-list-titled">
               <li>
                 <strong>HumanEval+</strong>
                 <span>An extended version of HumanEval with more comprehensive test cases.</span>
@@ -172,7 +172,7 @@ export function BenchCodingEvaluations({ onNavigate }: { onNavigate: (view: Benc
             on your hardware. These are complementary and remain separate areas in Metrora.
           </p>
           <div className="bench-info-banner bench-info-banner-inline" role="note">
-            <p>Coding evaluations will provide standardized, reproducible results that are independent of your local hardware performance.</p>
+            <p>Coding evaluations are intended to provide standardized, reproducible results that are independent of your local hardware performance.</p>
           </div>
         </section>
       </div>
