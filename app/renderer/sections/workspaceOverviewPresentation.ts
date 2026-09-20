@@ -6,6 +6,7 @@ export type WorkspaceEvidenceSummaryTone = 'neutral' | 'good' | 'warning' | 'blo
 export type WorkspaceEvidenceSummary = {
   label: 'Verified' | 'Ready' | 'Read-only' | 'Needs attention' | 'Unavailable' | 'Checking'
   detail: string
+  shortDetail: string
   tone: WorkspaceEvidenceSummaryTone
 }
 
@@ -23,6 +24,7 @@ export function workspaceEvidenceSummary(
     return {
       label: 'Unavailable',
       detail: 'The local evidence check could not complete.',
+      shortDetail: 'Evidence check incomplete',
       tone: 'blocked',
     }
   }
@@ -31,6 +33,7 @@ export function workspaceEvidenceSummary(
     return {
       label: 'Checking',
       detail: 'Metrora is checking local evidence.',
+      shortDetail: 'Checking local evidence',
       tone: 'neutral',
     }
   }
@@ -39,6 +42,7 @@ export function workspaceEvidenceSummary(
     return {
       label: 'Unavailable',
       detail: 'The local evidence state is not available yet.',
+      shortDetail: 'Evidence state unavailable',
       tone: 'blocked',
     }
   }
@@ -47,6 +51,7 @@ export function workspaceEvidenceSummary(
     return {
       label: 'Unavailable',
       detail: 'Create a personal Workspace to enable local evidence.',
+      shortDetail: 'No Workspace yet',
       tone: 'neutral',
     }
   }
@@ -56,6 +61,7 @@ export function workspaceEvidenceSummary(
     return {
       label: 'Unavailable',
       detail: 'Local evidence has not been verified yet.',
+      shortDetail: 'Not verified yet',
       tone: 'neutral',
     }
   }
@@ -73,6 +79,9 @@ export function workspaceEvidenceSummary(
       detail: evidence.blockers.length > 0
         ? `${evidence.blockers.length} local condition${evidence.blockers.length === 1 ? '' : 's'} need review.`
         : 'The local evidence state needs review before signing or export.',
+      shortDetail: evidence.blockers.length > 0
+        ? `${evidence.blockers.length} condition${evidence.blockers.length === 1 ? '' : 's'} need review`
+        : 'Review needed before signing',
       tone: 'blocked',
     }
   }
@@ -80,7 +89,8 @@ export function workspaceEvidenceSummary(
   if (evidence.compatibility === 'historical-read-only' || evidence.compatibility === 'mixed') {
     return {
       label: 'Read-only',
-      detail: 'Verified evidence is readable, but signing and export are unavailable here.',
+      detail: 'Verified evidence is readable, but signing and export are unavailable for this evidence state.',
+      shortDetail: 'Verified evidence · signing/export unavailable',
       tone: 'warning',
     }
   }
@@ -89,6 +99,7 @@ export function workspaceEvidenceSummary(
     return {
       label: 'Ready',
       detail: 'Reviewed local evidence is ready for the next explicit action.',
+      shortDetail: 'Stored locally on this device',
       tone: 'good',
     }
   }
@@ -99,6 +110,9 @@ export function workspaceEvidenceSummary(
       detail: evidence.state === 'empty'
         ? 'Local evidence is verified; no reviewed activity is waiting.'
         : 'Local evidence has been verified on this device.',
+      shortDetail: evidence.state === 'empty'
+        ? 'Verified · nothing waiting'
+        : 'Verified on this device',
       tone: 'good',
     }
   }
@@ -106,6 +120,7 @@ export function workspaceEvidenceSummary(
   return {
     label: 'Unavailable',
     detail: 'The current local evidence state is not available for this view.',
+    shortDetail: 'State unavailable',
     tone: 'blocked',
   }
 }

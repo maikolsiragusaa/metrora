@@ -232,28 +232,133 @@ describe('Workspace desktop view', () => {
     expect(await screen.findByRole('heading', { name: 'Maikol Workspace' })).toBeInTheDocument()
     expect(screen.queryByRole('tab', { name: 'Overview' })).not.toBeInTheDocument()
     expect(screen.getByText('Personal')).toBeInTheDocument()
-    expect(screen.getByText('Local')).toBeInTheDocument()
+    expect(screen.getByText('Personal workspace')).toBeInTheDocument()
+    expect(screen.queryByText('Personal workspace · Local')).not.toBeInTheDocument()
+    expect(screen.getAllByText('Local').length).toBeGreaterThanOrEqual(2)
+    expect(screen.queryByText('Local (on this device)')).not.toBeInTheDocument()
     expect(screen.getByText('Private by default')).toBeInTheDocument()
     expect(await screen.findByText('metrora-dev')).toBeInTheDocument()
     expect(screen.getByTestId('workspace-summary-projects-value')).toHaveTextContent('2')
     expect(screen.getByTestId('workspace-summary-devices-value')).toHaveTextContent('1')
     expect(screen.getByTestId('workspace-summary-evidence-value')).toHaveTextContent('Ready')
+    expect(screen.getByText('Projects in your personal context')).toBeInTheDocument()
+    expect(screen.queryByText('Your projects in this workspace')).not.toBeInTheDocument()
+    expect(screen.getByText('1 device · Main PC')).toBeInTheDocument()
+    expect(screen.queryByText(/active device/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/Last active/i)).not.toBeInTheDocument()
     expect(screen.getAllByText('Main PC').length).toBeGreaterThan(0)
-    expect(screen.getByText('More devices coming soon')).toBeInTheDocument()
-    expect(screen.getByText('You (local)')).toBeInTheDocument()
-    expect(screen.getByText('Local (on this device)')).toBeInTheDocument()
-    expect(screen.getByText('Manual only')).toBeInTheDocument()
+    expect(screen.getByText('Main PC · Windows · x64')).toBeInTheDocument()
+    expect(screen.getByText('More devices')).toBeInTheDocument()
+    expect(screen.queryByText('More devices coming soon')).not.toBeInTheDocument()
+    expect(screen.getByText('Devices enrolled in this workspace.')).toBeInTheDocument()
+    expect(screen.queryByText(/Devices that can access/i)).not.toBeInTheDocument()
+    expect(screen.getByText('You')).toBeInTheDocument()
+    expect(screen.queryByText('You (local)')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Active now/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Online/i)).not.toBeInTheDocument()
+    expect(screen.getByText('Current')).toBeInTheDocument()
+    expect(screen.queryByText('Current →')).not.toBeInTheDocument()
+    expect(screen.queryByText('Evidence export')).not.toBeInTheDocument()
     expect(screen.queryByText(/Edit settings/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/Manage devices/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Manage local evidence/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/Created/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/Workspace path/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/Pixel/i)).not.toBeInTheDocument()
     expect(screen.getByText(/Prompts, responses, source code,? and secrets are excluded/i)).toBeInTheDocument()
-    expect(screen.getByText(/Organization workspaces/i)).toBeInTheDocument()
-    expect(screen.getAllByText('Coming soon').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Preview').length).toBeGreaterThan(0)
+    expect(screen.getByRole('heading', { name: 'Organization workspaces' })).toBeInTheDocument()
+    expect(screen.getByText(/Future organization workspaces will support/i)).toBeInTheDocument()
+    expect(screen.getAllByText('Coming soon').length).toBeGreaterThan(1)
+    expect(screen.queryByText('Preview')).not.toBeInTheDocument()
     expect(bridge.getProjects).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps evidence export concepts out of This workspace details', async () => {
+    bridge.getWorkspaceStatus.mockResolvedValue(readyAvailability(true, 'complete', batchedSnapshot()))
+    bridge.inspectWorkspaceStatus.mockResolvedValue(readyAvailability(true, 'complete', batchedSnapshot()))
+    bridge.getProjects.mockResolvedValue({
+      selectedId: 'all',
+      options: [{ id: 'mp_one', name: 'One', icon: 'grid', color: 'cyan', sourceProjectCount: 0 }],
+      sourceProjects: [],
+      registry: { status: 'valid', writable: true },
+    } satisfies ProjectScopePayload)
+
+    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
+
+    expect(await screen.findByRole('heading', { name: 'Maikol Workspace' })).toBeInTheDocument()
+    expect(screen.queryByText('Evidence export')).not.toBeInTheDocument()
+    expect(screen.queryByText('Manual only')).not.toBeInTheDocument()
+    expect(screen.getByTestId('workspace-summary-evidence-value')).toHaveTextContent('Ready')
+  })
+
+  it('presents historical read-only evidence as informational without error wording', async () => {
+    const historical = snapshot(true)
+    historical.evidence.state = 'ready'
+    historical.evidence.integrity = 'verified'
+    historical.evidence.compatibility = 'historical-read-only'
+    bridge.getWorkspaceStatus.mockResolvedValue(readyAvailability(true, 'complete', historical))
+    bridge.inspectWorkspaceStatus.mockResolvedValue(readyAvailability(true, 'complete', historical))
+    bridge.getProjects.mockResolvedValue({
+      selectedId: 'all',
+      options: [{ id: 'mp_one', name: 'One', icon: 'grid', color: 'cyan', sourceProjectCount: 0 }],
+      sourceProjects: [],
+      registry: { status: 'valid', writable: true },
+    } satisfies ProjectScopePayload)
+
+    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
+
+    expect(await screen.findByRole('heading', { name: 'Maikol Workspace' })).toBeInTheDocument()
+    expect(await screen.findByTestId('workspace-summary-evidence-value')).toHaveTextContent('Read-only')
+    expect(screen.getByText('Verified evidence · signing/export unavailable')).toBeInTheDocument()
+    expect(screen.getByText('Local evidence is read-only')).toBeInTheDocument()
+    expect(screen.queryByText('Local evidence needs attention')).not.toBeInTheDocument()
+    expect(screen.queryByText('Evidence export')).not.toBeInTheDocument()
+    expect(screen.queryByText('Manual only')).not.toBeInTheDocument()
+  })
+
+  it('keeps chevrons only on cards with real destinations', async () => {
+    bridge.getProjects.mockResolvedValue({
+      selectedId: 'all',
+      options: [{ id: 'mp_one', name: 'One', icon: 'grid', color: 'cyan', sourceProjectCount: 0 }],
+      sourceProjects: [],
+      registry: { status: 'valid', writable: true },
+    } satisfies ProjectScopePayload)
+    const onNavigate = vi.fn()
+
+    const { container, unmount } = render(
+      <WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" onNavigate={onNavigate} />,
+    )
+    expect(await screen.findByRole('heading', { name: 'Maikol Workspace' })).toBeInTheDocument()
+    expect(container.querySelectorAll('.workspace-summary-card-action').length).toBe(2)
+    unmount()
+
+    const second = render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
+    expect(await screen.findByRole('heading', { name: 'Maikol Workspace' })).toBeInTheDocument()
+    expect(second.container.querySelectorAll('.workspace-summary-card-action').length).toBe(1)
+    second.unmount()
+  })
+
+  it('refreshes Workspace snapshot and Project catalog read-only without mutations', async () => {
+    bridge.getProjects.mockResolvedValue({
+      selectedId: 'all',
+      options: [{ id: 'mp_one', name: 'One', icon: 'grid', color: 'cyan', sourceProjectCount: 0 }],
+      sourceProjects: [],
+      registry: { status: 'valid', writable: true },
+    } satisfies ProjectScopePayload)
+
+    const first = render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" refreshToken={0} />)
+    expect(await screen.findByRole('heading', { name: 'Maikol Workspace' })).toBeInTheDocument()
+    const inspections = bridge.inspectWorkspaceStatus.mock.calls.length
+    const catalogs = bridge.getProjects.mock.calls.length
+
+    first.rerender(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" refreshToken={1} />)
+    await waitFor(() => expect(bridge.inspectWorkspaceStatus.mock.calls.length).toBeGreaterThan(inspections))
+    await waitFor(() => expect(bridge.getProjects.mock.calls.length).toBeGreaterThan(catalogs))
+    expect(bridge.produceWorkspaceMeasurements).not.toHaveBeenCalled()
+    expect(bridge.createWorkspaceBatch).not.toHaveBeenCalled()
+    expect(bridge.exportWorkspaceEvidence).not.toHaveBeenCalled()
+    expect(bridge.recoverWorkspaceState).not.toHaveBeenCalled()
+    first.unmount()
   })
 
   it('shows truthful empty Project state without invented activity', async () => {
@@ -297,7 +402,7 @@ describe('Workspace desktop view', () => {
     expect(screen.getByText(/Local evidence needs attention/i)).toBeInTheDocument()
   })
 
-  it('navigates Manage local evidence internally without producing or exporting', async () => {
+  it('navigates Open local evidence internally without producing or exporting', async () => {
     bridge.getProjects.mockResolvedValue({
       selectedId: 'all',
       options: [{ id: 'mp_one', name: 'One', icon: 'grid', color: 'cyan', sourceProjectCount: 0 }],
@@ -307,7 +412,7 @@ describe('Workspace desktop view', () => {
 
     render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
 
-    fireEvent.click(await screen.findByRole('button', { name: /Manage local evidence/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /Open local evidence/i }))
     expect(await screen.findByRole('heading', { name: 'Local evidence' })).toBeInTheDocument()
     expect(bridge.produceWorkspaceMeasurements).not.toHaveBeenCalled()
     expect(bridge.createWorkspaceBatch).not.toHaveBeenCalled()

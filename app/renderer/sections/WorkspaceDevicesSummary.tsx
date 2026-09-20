@@ -16,7 +16,7 @@ export function WorkspaceDevicesSummary({
           <SurfaceIcon />
           <div>
             <h3 id="workspace-devices-title">Devices</h3>
-            <p>Devices that can access this workspace.</p>
+            <p>Devices enrolled in this workspace.</p>
           </div>
         </div>
       </div>
@@ -24,13 +24,13 @@ export function WorkspaceDevicesSummary({
         <span className="workspace-device-token" aria-hidden="true">
           <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="1.7" /><path d="M8 20h8M12 17v3" /></svg>
         </span>
-        <span className="workspace-device-copy"><b>{endpoint.displayName}</b><small>{workspacePlatformLabel(endpoint.os)} · {workspaceArchitectureLabel(endpoint.architecture)}{current ? ' · Active now' : ''}</small></span>
-        <span className="workspace-device-state"><i aria-hidden="true" />{current ? 'Current →' : endpoint.enrollmentState}</span>
+        <span className="workspace-device-copy"><b>{endpoint.displayName}</b><small>{workspacePlatformLabel(endpoint.os)} · {workspaceArchitectureLabel(endpoint.architecture)}</small></span>
+        <span className="workspace-current-pill">{current ? 'Current' : endpoint.enrollmentState}</span>
       </div>
       <div className="workspace-device-row workspace-device-preview">
         <span className="workspace-device-token workspace-device-token-muted" aria-hidden="true">+</span>
-        <span className="workspace-device-copy"><b>More devices coming soon</b></span>
-        <span className="workspace-preview-badge">Preview</span>
+        <span className="workspace-device-copy"><b>More devices</b></span>
+        <span className="workspace-preview-badge">Coming soon</span>
       </div>
     </section>
   )

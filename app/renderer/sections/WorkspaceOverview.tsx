@@ -64,10 +64,16 @@ export function WorkspaceOverview({
         />
       ) : (
         <>
-          <WorkspaceSummaryCards snapshot={snapshot} projects={projects} evidenceSummary={evidenceSummary} onOpenEvidence={onOpenEvidence} />
-          {evidenceSummary.tone === 'blocked' || evidenceSummary.tone === 'warning' ? (
-            <section className={`workspace-attention workspace-attention-${evidenceSummary.tone}`} role="status">
+          <WorkspaceSummaryCards snapshot={snapshot} projects={projects} evidenceSummary={evidenceSummary} onOpenEvidence={onOpenEvidence} onViewAllProjects={onViewAllProjects} />
+          {evidenceSummary.tone === 'blocked' ? (
+            <section className="workspace-attention workspace-attention-blocked" role="status">
               <div><b>Local evidence needs attention</b><span>{evidenceSummary.detail}</span></div>
+              <button type="button" className="workspace-card-cta" onClick={onOpenEvidence}>Open local evidence <span aria-hidden="true">→</span></button>
+            </section>
+          ) : null}
+          {evidenceSummary.tone === 'warning' ? (
+            <section className="workspace-attention workspace-attention-warning" role="status">
+              <div><b>Local evidence is read-only</b><span>{evidenceSummary.detail}</span></div>
               <button type="button" className="workspace-card-cta" onClick={onOpenEvidence}>Open local evidence <span aria-hidden="true">→</span></button>
             </section>
           ) : null}
@@ -89,35 +95,35 @@ function WorkspaceSummaryCards({
   projects,
   evidenceSummary,
   onOpenEvidence,
+  onViewAllProjects,
 }: {
   snapshot: DesktopWorkspaceSnapshot
   projects: WorkspaceProjectsState
   evidenceSummary: WorkspaceEvidenceSummary
   onOpenEvidence: () => void
+  onViewAllProjects?: () => void
 }) {
   const endpoint = snapshot.workspace?.endpoint
+  const enrolled = endpoint?.enrollmentState === 'active'
   const projectCount = projects.status === 'ready' ? String(projects.projects.length) : '—'
   const projectDetail = projects.status === 'error'
     ? 'Catalog unavailable'
     : projects.status === 'ready'
-      ? 'Your projects in this workspace'
+      ? 'Projects in your personal context'
       : 'Loading Project catalog'
-  const deviceDetail = endpoint?.enrollmentState === 'active'
-    ? '1 active device (this computer)'
-    : 'No active device'
-  const evidenceDetail = evidenceSummary.tone === 'good'
-    ? 'Stored locally on this device'
-    : evidenceSummary.detail
+  const deviceDetail = enrolled && endpoint
+    ? `1 device · ${endpoint.displayName}`
+    : 'No enrolled device'
 
   return (
     <section className="workspace-summary-cards" aria-label="Workspace summary">
-      <SummaryCard kind="projects" label="Projects" value={projectCount} detail={projectDetail} />
-      <SummaryCard kind="devices" label="Devices" value={endpoint?.enrollmentState === 'active' ? '1' : '0'} detail={deviceDetail} />
+      <SummaryCard kind="projects" label="Projects" value={projectCount} detail={projectDetail} onClick={onViewAllProjects} />
+      <SummaryCard kind="devices" label="Devices" value={enrolled ? '1' : '0'} detail={deviceDetail} />
       <SummaryCard
         kind="evidence"
         label="Local evidence"
         value={evidenceSummary.label}
-        detail={evidenceDetail}
+        detail={evidenceSummary.shortDetail}
         tone={evidenceSummary.tone}
         onClick={onOpenEvidence}
       />
@@ -172,11 +178,9 @@ function WorkspaceDetailsSummary({ workspace }: { workspace: NonNullable<Desktop
       </div>
       <dl className="workspace-details workspace-details-overview">
         <div><dt>Context</dt><dd>Personal</dd></div>
-        <div><dt>Owner</dt><dd>{workspace.ownerRole === 'owner' ? 'You (local)' : workspace.ownerRole}</dd></div>
-        <div><dt>Status</dt><dd><span className="workspace-inline-status"><i aria-hidden="true" />{workspace.status === 'active' ? 'Local (on this device)' : workspace.status}</span></dd></div>
-        <div><dt>Computer</dt><dd>{workspace.endpoint.displayName}</dd></div>
-        <div><dt>Platform</dt><dd>{workspacePlatformLabel(workspace.endpoint.os)} · {workspaceArchitectureLabel(workspace.endpoint.architecture)}</dd></div>
-        <div><dt>Evidence export</dt><dd>Manual only</dd></div>
+        <div><dt>Owner</dt><dd>{workspace.ownerRole === 'owner' ? 'You' : workspace.ownerRole}</dd></div>
+        <div><dt>Status</dt><dd><span className="workspace-inline-status"><i aria-hidden="true" />{workspace.status === 'active' ? 'Local' : workspace.status}</span></dd></div>
+        <div><dt>Device</dt><dd>{workspace.endpoint.displayName} · {workspacePlatformLabel(workspace.endpoint.os)} · {workspaceArchitectureLabel(workspace.endpoint.architecture)}</dd></div>
       </dl>
     </section>
   )
@@ -195,7 +199,7 @@ function WorkspacePrivacySummary({ snapshot, onOpenEvidence }: { snapshot: Deskt
           <span className="workspace-surface-icon workspace-surface-icon-violet" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v5.5c0 4.4-2.4 7.6-8 9.5-5.6-1.9-8-5.1-8-9.5V6z" /><path d="M8.5 12h7" /></svg></span>
           <div><h3 id="workspace-privacy-title">Local evidence &amp; privacy</h3><p>Verified usage evidence stays local on this device unless you explicitly export it.</p></div>
         </div>
-        <button type="button" className="workspace-card-cta" onClick={onOpenEvidence}>Manage local evidence <span aria-hidden="true">→</span></button>
+        <button type="button" className="workspace-card-cta" onClick={onOpenEvidence}>Open local evidence <span aria-hidden="true">→</span></button>
       </div>
       {contentExcluded ? <p className="workspace-privacy-summary-copy">Prompts, responses, source code, and secrets are excluded from evidence exports.</p> : null}
     </section>

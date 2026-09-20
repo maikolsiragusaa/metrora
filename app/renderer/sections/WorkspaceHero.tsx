@@ -15,7 +15,7 @@ export function WorkspaceHero({
       style={{ '--workspace-hero-image': `url(${workspaceHero})` } as CSSProperties}
     >
       <div className="workspace-hero-copy">
-        <div className="workspace-kicker">Personal workspace · Local</div>
+        <div className="workspace-kicker">Personal workspace</div>
         <h2>{snapshot.workspace?.displayName ?? 'Set up your personal workspace'}</h2>
         <p>{snapshot.workspace
           ? 'Your local Metrora workspace keeps projects, device identity, and verified usage evidence under your control. No Metrora account or server is required.'
