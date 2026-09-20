@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { setActiveCurrency } from '../lib/format'
@@ -232,8 +232,7 @@ describe('Workspace desktop view', () => {
     expect(await screen.findByRole('heading', { name: 'Maikol Workspace' })).toBeInTheDocument()
     expect(screen.queryByRole('tab', { name: 'Overview' })).not.toBeInTheDocument()
     expect(screen.getByText('Personal')).toBeInTheDocument()
-    expect(screen.getByText('Personal workspace')).toBeInTheDocument()
-    expect(screen.queryByText('Personal workspace · Local')).not.toBeInTheDocument()
+    expect(screen.getByText('Personal workspace · Local')).toBeInTheDocument()
     expect(screen.getAllByText('Local').length).toBeGreaterThanOrEqual(2)
     expect(screen.queryByText('Local (on this device)')).not.toBeInTheDocument()
     expect(screen.getByText('Private by default')).toBeInTheDocument()
@@ -329,13 +328,36 @@ describe('Workspace desktop view', () => {
       <WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" onNavigate={onNavigate} />,
     )
     expect(await screen.findByRole('heading', { name: 'Maikol Workspace' })).toBeInTheDocument()
-    expect(container.querySelectorAll('.workspace-summary-card-action').length).toBe(2)
+    const actions = container.querySelectorAll('.workspace-summary-card-action')
+    expect(actions.length).toBe(2)
+    for (const card of actions) expect(card.tagName).toBe('BUTTON')
     unmount()
 
     const second = render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
     expect(await screen.findByRole('heading', { name: 'Maikol Workspace' })).toBeInTheDocument()
-    expect(second.container.querySelectorAll('.workspace-summary-card-action').length).toBe(1)
+    const fallback = second.container.querySelectorAll('.workspace-summary-card-action')
+    expect(fallback.length).toBe(1)
+    for (const card of fallback) expect(card.tagName).toBe('BUTTON')
     second.unmount()
+  })
+
+  it('keeps future preview rows and chips non-interactive', async () => {
+    bridge.getProjects.mockResolvedValue({
+      selectedId: 'all',
+      options: [{ id: 'mp_one', name: 'One', icon: 'grid', color: 'cyan', sourceProjectCount: 0 }],
+      sourceProjects: [],
+      registry: { status: 'valid', writable: true },
+    } satisfies ProjectScopePayload)
+
+    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
+
+    expect(await screen.findByRole('heading', { name: 'Maikol Workspace' })).toBeInTheDocument()
+    const org = screen.getByRole('heading', { name: 'Organization workspaces' }).closest('section')!
+    expect(within(org).queryByRole('button')).not.toBeInTheDocument()
+    expect(within(org).queryByRole('link')).not.toBeInTheDocument()
+    const devices = screen.getByRole('heading', { name: 'Devices' }).closest('section')!
+    expect(devices.querySelector('.workspace-device-preview button')).toBeNull()
+    expect(screen.getAllByText('Coming soon').length).toBeGreaterThanOrEqual(2)
   })
 
   it('refreshes Workspace snapshot and Project catalog read-only without mutations', async () => {
@@ -402,7 +424,7 @@ describe('Workspace desktop view', () => {
     expect(screen.getByText(/Local evidence needs attention/i)).toBeInTheDocument()
   })
 
-  it('navigates Open local evidence internally without producing or exporting', async () => {
+  it('navigates Evidence & privacy internally without producing or exporting', async () => {
     bridge.getProjects.mockResolvedValue({
       selectedId: 'all',
       options: [{ id: 'mp_one', name: 'One', icon: 'grid', color: 'cyan', sourceProjectCount: 0 }],
@@ -412,11 +434,35 @@ describe('Workspace desktop view', () => {
 
     render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
 
-    fireEvent.click(await screen.findByRole('button', { name: /Open local evidence/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /Evidence & privacy/i }))
     expect(await screen.findByRole('heading', { name: 'Local evidence' })).toBeInTheDocument()
     expect(bridge.produceWorkspaceMeasurements).not.toHaveBeenCalled()
     expect(bridge.createWorkspaceBatch).not.toHaveBeenCalled()
     expect(bridge.exportWorkspaceEvidence).not.toHaveBeenCalled()
+    expect(bridge.recoverWorkspaceState).not.toHaveBeenCalled()
+  })
+
+  it('navigates from the read-only status strip to the same Local evidence view', async () => {
+    const historical = snapshot(true)
+    historical.evidence.state = 'ready'
+    historical.evidence.integrity = 'verified'
+    historical.evidence.compatibility = 'historical-read-only'
+    bridge.getWorkspaceStatus.mockResolvedValue(readyAvailability(true, 'complete', historical))
+    bridge.inspectWorkspaceStatus.mockResolvedValue(readyAvailability(true, 'complete', historical))
+    bridge.getProjects.mockResolvedValue({
+      selectedId: 'all',
+      options: [{ id: 'mp_one', name: 'One', icon: 'grid', color: 'cyan', sourceProjectCount: 0 }],
+      sourceProjects: [],
+      registry: { status: 'valid', writable: true },
+    } satisfies ProjectScopePayload)
+
+    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
+
+    expect(await screen.findByText('Local evidence is read-only')).toBeInTheDocument()
+    const strip = screen.getByText('Local evidence is read-only').closest('section')!
+    fireEvent.click(within(strip).getByRole('button', { name: /Open local evidence/i }))
+    expect(await screen.findByRole('heading', { name: 'Local evidence' })).toBeInTheDocument()
+    expect(bridge.produceWorkspaceMeasurements).not.toHaveBeenCalled()
     expect(bridge.recoverWorkspaceState).not.toHaveBeenCalled()
   })
 

@@ -78,10 +78,14 @@ export function WorkspaceOverview({
             </section>
           ) : null}
           <div className="workspace-overview-grid">
-            <WorkspaceProjectsSummary projects={projects} onViewAll={onViewAllProjects} />
-            <WorkspaceDetailsSummary workspace={workspace} />
-            <WorkspaceDevicesSummary workspace={workspace} />
-            <WorkspacePrivacySummary snapshot={snapshot} onOpenEvidence={onOpenEvidence} />
+            <div className="workspace-overview-column">
+              <WorkspaceProjectsSummary projects={projects} onViewAll={onViewAllProjects} />
+              <WorkspaceDevicesSummary workspace={workspace} />
+            </div>
+            <div className="workspace-overview-column">
+              <WorkspaceDetailsSummary workspace={workspace} />
+              <WorkspacePrivacySummary snapshot={snapshot} onOpenEvidence={onOpenEvidence} />
+            </div>
           </div>
           <WorkspaceOrganizationPreview />
         </>
@@ -199,7 +203,7 @@ function WorkspacePrivacySummary({ snapshot, onOpenEvidence }: { snapshot: Deskt
           <span className="workspace-surface-icon workspace-surface-icon-violet" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v5.5c0 4.4-2.4 7.6-8 9.5-5.6-1.9-8-5.1-8-9.5V6z" /><path d="M8.5 12h7" /></svg></span>
           <div><h3 id="workspace-privacy-title">Local evidence &amp; privacy</h3><p>Verified usage evidence stays local on this device unless you explicitly export it.</p></div>
         </div>
-        <button type="button" className="workspace-card-cta" onClick={onOpenEvidence}>Open local evidence <span aria-hidden="true">→</span></button>
+        <button type="button" className="workspace-card-cta" onClick={onOpenEvidence}>Evidence &amp; privacy <span aria-hidden="true">→</span></button>
       </div>
       {contentExcluded ? <p className="workspace-privacy-summary-copy">Prompts, responses, source code, and secrets are excluded from evidence exports.</p> : null}
     </section>
