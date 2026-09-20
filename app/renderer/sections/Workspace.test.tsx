@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { setActiveCurrency } from '../lib/format'
 import type { MenubarPayload } from '../lib/types'
+import type { ProjectScopePayload } from '../lib/project-bridge-types'
 import type { DesktopWorkspaceAvailability, DesktopWorkspaceSnapshot } from '../lib/workspace'
 import { WorkspaceContent, workspaceUsageFromOverview } from './Workspace'
 
@@ -18,6 +19,7 @@ const bridge = vi.hoisted(() => ({
   recoverWorkspaceState: vi.fn(),
   createWorkspaceBatch: vi.fn(),
   exportWorkspaceEvidence: vi.fn(),
+  getProjects: vi.fn(),
 }))
 
 vi.mock('../lib/ipc', () => ({ metrora: bridge }))
@@ -190,6 +192,7 @@ describe('Workspace desktop view', () => {
     bridge.recoverWorkspaceState.mockReset()
     bridge.createWorkspaceBatch.mockReset()
     bridge.exportWorkspaceEvidence.mockReset()
+    bridge.getProjects.mockReset()
     bridge.getWorkspaceStatus.mockResolvedValue(readyAvailability())
     bridge.retryWorkspaceStatus.mockResolvedValue(readyAvailability())
     bridge.inspectWorkspaceStatus.mockResolvedValue(readyAvailability())
@@ -210,10 +213,150 @@ describe('Workspace desktop view', () => {
     expect(workspaceUsageFromOverview(null)).toBeNull()
   })
 
-  it('renders canonical usage and never produces measurements while opening', async () => {
+  it('opens existing Workspace in Overview with factual Project, device and privacy context', async () => {
+    const projectCatalog: ProjectScopePayload = {
+      selectedId: 'all',
+      options: [
+        { id: 'all', name: 'All projects', icon: 'grid', color: 'cyan', sourceProjectCount: 4 },
+        { id: 'unassigned', name: 'Unassigned', icon: 'stack', color: 'violet', sourceProjectCount: 4 },
+        { id: 'mp_metrora', name: 'metrora-dev', icon: 'terminal', color: 'blue', sourceProjectCount: 3 },
+        { id: 'mp_research', name: 'research-eval', icon: 'spark', color: 'violet', sourceProjectCount: 1 },
+      ],
+      sourceProjects: [],
+      registry: { status: 'valid', writable: true },
+    }
+    bridge.getProjects.mockResolvedValue(projectCatalog)
+
     render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
 
     expect(await screen.findByRole('heading', { name: 'Maikol Workspace' })).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Overview' })).not.toBeInTheDocument()
+    expect(screen.getByText('Personal')).toBeInTheDocument()
+    expect(screen.getByText('Local')).toBeInTheDocument()
+    expect(screen.getByText('Private by default')).toBeInTheDocument()
+    expect(await screen.findByText('metrora-dev')).toBeInTheDocument()
+    expect(screen.getByTestId('workspace-summary-projects-value')).toHaveTextContent('2')
+    expect(screen.getByTestId('workspace-summary-devices-value')).toHaveTextContent('1')
+    expect(screen.getByTestId('workspace-summary-evidence-value')).toHaveTextContent('Ready')
+    expect(screen.queryByText(/Last active/i)).not.toBeInTheDocument()
+    expect(screen.getAllByText('Main PC').length).toBeGreaterThan(0)
+    expect(screen.getByText('More devices coming soon')).toBeInTheDocument()
+    expect(screen.getByText('You (local)')).toBeInTheDocument()
+    expect(screen.getByText('Local (on this device)')).toBeInTheDocument()
+    expect(screen.getByText('Manual only')).toBeInTheDocument()
+    expect(screen.queryByText(/Edit settings/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Manage devices/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Created/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Workspace path/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Pixel/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/Prompts, responses, source code,? and secrets are excluded/i)).toBeInTheDocument()
+    expect(screen.getByText(/Organization workspaces/i)).toBeInTheDocument()
+    expect(screen.getAllByText('Coming soon').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Preview').length).toBeGreaterThan(0)
+    expect(bridge.getProjects).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows truthful empty Project state without invented activity', async () => {
+    bridge.getProjects.mockResolvedValue({
+      selectedId: 'all',
+      options: [{ id: 'all', name: 'All projects', icon: 'grid', color: 'cyan', sourceProjectCount: 0 }],
+      sourceProjects: [],
+      registry: { status: 'valid', writable: true },
+    } satisfies ProjectScopePayload)
+
+    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
+
+    expect(await screen.findByRole('heading', { name: 'Maikol Workspace' })).toBeInTheDocument()
+    expect(await screen.findByText(/No Metrora Projects yet/i)).toBeInTheDocument()
+    expect(screen.getByTestId('workspace-summary-projects-value')).toHaveTextContent('0')
+    expect(screen.queryByText(/Last active/i)).not.toBeInTheDocument()
+  })
+
+  it('derives Overview evidence state from inspection without fake healthy labels', async () => {
+    const quarantined = snapshot(true)
+    quarantined.evidence.state = 'quarantined'
+    quarantined.evidence.integrity = 'quarantined'
+    quarantined.evidence.compatibility = 'quarantined'
+    quarantined.evidence.invalidEventCount = 2
+    quarantined.evidence.quarantinedEventCount = 1
+    bridge.getWorkspaceStatus.mockResolvedValue(readyAvailability(true, 'complete', quarantined))
+    bridge.inspectWorkspaceStatus.mockResolvedValue(readyAvailability(true, 'complete', quarantined))
+    bridge.getProjects.mockResolvedValue({
+      selectedId: 'all',
+      options: [{ id: 'mp_one', name: 'One', icon: 'grid', color: 'cyan', sourceProjectCount: 0 }],
+      sourceProjects: [],
+      registry: { status: 'valid', writable: true },
+    } satisfies ProjectScopePayload)
+
+    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
+
+    expect(await screen.findByRole('heading', { name: 'Maikol Workspace' })).toBeInTheDocument()
+    expect(await screen.findByTestId('workspace-summary-evidence-value')).toHaveTextContent('Needs attention')
+    expect(screen.queryByText('Available')).not.toBeInTheDocument()
+    expect(screen.queryByText('Healthy')).not.toBeInTheDocument()
+    expect(screen.getByText(/Local evidence needs attention/i)).toBeInTheDocument()
+  })
+
+  it('navigates Manage local evidence internally without producing or exporting', async () => {
+    bridge.getProjects.mockResolvedValue({
+      selectedId: 'all',
+      options: [{ id: 'mp_one', name: 'One', icon: 'grid', color: 'cyan', sourceProjectCount: 0 }],
+      sourceProjects: [],
+      registry: { status: 'valid', writable: true },
+    } satisfies ProjectScopePayload)
+
+    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /Manage local evidence/i }))
+    expect(await screen.findByRole('heading', { name: 'Local evidence' })).toBeInTheDocument()
+    expect(bridge.produceWorkspaceMeasurements).not.toHaveBeenCalled()
+    expect(bridge.createWorkspaceBatch).not.toHaveBeenCalled()
+    expect(bridge.exportWorkspaceEvidence).not.toHaveBeenCalled()
+    expect(bridge.recoverWorkspaceState).not.toHaveBeenCalled()
+  })
+
+  it('keeps Project catalog failure isolated from Workspace evidence', async () => {
+    bridge.getProjects.mockRejectedValue(new Error('registry unavailable'))
+
+    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
+
+    expect(await screen.findByText(/Project catalog is unavailable right now/i)).toBeInTheDocument()
+    expect(screen.getByTestId('workspace-summary-evidence-value')).toHaveTextContent('Ready')
+    fireEvent.click(screen.getByRole('button', { name: /Local evidence/ }))
+    expect(await screen.findByRole('button', { name: 'Check & recover' })).toBeEnabled()
+  })
+
+  it('routes View all projects to the existing Settings Project Management surface', async () => {
+    bridge.getProjects.mockResolvedValue({
+      selectedId: 'all',
+      options: [{ id: 'mp_one', name: 'One', icon: 'grid', color: 'cyan', sourceProjectCount: 0 }],
+      sourceProjects: [],
+      registry: { status: 'valid', writable: true },
+    } satisfies ProjectScopePayload)
+    const onNavigate = vi.fn()
+
+    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" onNavigate={onNavigate} />)
+    fireEvent.click(await screen.findByRole('button', { name: /View all projects/i }))
+
+    expect(onNavigate).toHaveBeenCalledWith('settings', 'projects')
+  })
+
+  it('does not fetch Projects or render fake summary data before explicit Workspace creation', async () => {
+    bridge.getWorkspaceStatus.mockResolvedValue(readyAvailability(false))
+
+    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
+
+    expect(await screen.findByRole('heading', { name: 'Set up your personal workspace' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Create local Workspace' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('Workspace summary')).not.toBeInTheDocument()
+    expect(screen.queryByText('This computer')).not.toBeInTheDocument()
+    expect(bridge.getProjects).not.toHaveBeenCalled()
+  })
+
+  it('renders canonical usage and never produces measurements while opening', async () => {
+     render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" initialView="evidence" />)
+
+    expect(await screen.findByText('Maikol Workspace')).toBeInTheDocument()
     expect(screen.getByText('Last 7 days · All providers')).toBeInTheDocument()
     expect(screen.getByTestId('workspace-cost')).toHaveTextContent('$12.34')
     expect(screen.getByTestId('workspace-calls')).toHaveTextContent('56')
@@ -238,7 +381,7 @@ describe('Workspace desktop view', () => {
       resolveInspection = resolve
     }))
 
-    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
+     render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" initialView="evidence" />)
 
     expect(await screen.findByTestId('workspace-evidence-inspection')).toHaveTextContent(
       'Checking local workspace data',
@@ -263,7 +406,7 @@ describe('Workspace desktop view', () => {
     bridge.getWorkspaceStatus.mockResolvedValue(readyAvailability(false))
     bridge.createWorkspace.mockResolvedValue({ outcome: 'created', snapshot: snapshot(true) })
 
-    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
+     render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" initialView="evidence" />)
 
     const workspaceInput = await screen.findByLabelText('Workspace name')
     const endpointInput = screen.getByLabelText('Endpoint name')
@@ -275,7 +418,7 @@ describe('Workspace desktop view', () => {
       displayName: 'Teamless Local',
       endpointDisplayName: 'Windows workstation',
     }))
-    expect(await screen.findByRole('heading', { name: 'Maikol Workspace' })).toBeInTheDocument()
+    expect(await screen.findByText('Maikol Workspace')).toBeInTheDocument()
   })
 
   it('produces only after an explicit zero-argument action and shows bounded counts', async () => {
@@ -297,7 +440,7 @@ describe('Workspace desktop view', () => {
       snapshot: afterProduction,
     })
 
-    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
+     render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" initialView="evidence" />)
     fireEvent.click(await screen.findByRole('button', { name: 'Produce reviewed measurements' }))
 
     await waitFor(() => expect(bridge.produceWorkspaceMeasurements).toHaveBeenCalledWith())
@@ -320,7 +463,7 @@ describe('Workspace desktop view', () => {
     bridge.pauseWorkspaceProduction.mockResolvedValue({ outcome: 'changed', snapshot: paused })
     bridge.resumeWorkspaceProduction.mockResolvedValue({ outcome: 'changed', snapshot: active })
 
-    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
+     render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" initialView="evidence" />)
     fireEvent.click(await screen.findByRole('button', { name: 'Pause production' }))
 
     await waitFor(() => expect(bridge.pauseWorkspaceProduction).toHaveBeenCalledWith())
@@ -334,7 +477,7 @@ describe('Workspace desktop view', () => {
   })
 
   it('requires reviewed events to enter a signed batch before export', async () => {
-    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
+     render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" initialView="evidence" />)
 
     const exportButton = await screen.findByRole('button', { name: 'Export signed data' })
     expect(exportButton).toBeDisabled()
@@ -372,7 +515,7 @@ describe('Workspace desktop view', () => {
       snapshot: afterBatch,
     })
 
-    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
+     render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" initialView="evidence" />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'Sign pending usage' }))
     await waitFor(() => expect(bridge.createWorkspaceBatch).toHaveBeenCalledTimes(1))
@@ -402,7 +545,7 @@ describe('Workspace desktop view', () => {
       snapshot: quarantined,
     })
 
-    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
+     render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" initialView="evidence" />)
 
     expect((await screen.findAllByText('Needs attention')).length).toBeGreaterThan(0)
     expect(screen.getByRole('button', { name: 'Produce reviewed measurements' })).toBeDisabled()
@@ -436,7 +579,7 @@ describe('Workspace desktop view', () => {
     bridge.getWorkspaceStatus.mockResolvedValue(readyAvailability(true, 'complete', historical))
     bridge.inspectWorkspaceStatus.mockResolvedValue(readyAvailability(true, 'complete', historical))
 
-    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
+     render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" initialView="evidence" />)
 
     expect((await screen.findAllByText('Verified · read-only')).length).toBeGreaterThan(0)
     expect(screen.getByRole('button', { name: 'Produce reviewed measurements' })).toBeDisabled()
@@ -453,7 +596,7 @@ describe('Workspace desktop view', () => {
   it('fails closed when the operating-system vault is unavailable', async () => {
     bridge.getWorkspaceStatus.mockResolvedValue({ availability: 'unavailable', reason: 'vault-unavailable' })
 
-    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
+     render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" initialView="evidence" />)
 
     expect(await screen.findByText(/will not open a plaintext fallback/i)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Create local Workspace' })).not.toBeInTheDocument()
@@ -464,7 +607,7 @@ describe('Workspace desktop view', () => {
   it('does not present a generic initialization failure as an OS-vault failure', async () => {
     bridge.getWorkspaceStatus.mockResolvedValue({ availability: 'unavailable', reason: 'initialization-failed' })
 
-    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
+     render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" initialView="evidence" />)
 
     expect(await screen.findByText(/secure Workspace runtime could not be initialized/i)).toBeInTheDocument()
     expect(screen.queryByText(/operating-system vault is unavailable/i)).not.toBeInTheDocument()
@@ -473,7 +616,7 @@ describe('Workspace desktop view', () => {
   it('explains that unreadable local state is preserved instead of replaced', async () => {
     bridge.getWorkspaceStatus.mockResolvedValue({ availability: 'unavailable', reason: 'local-state-unavailable' })
 
-    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" />)
+     render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days · All providers" initialView="evidence" />)
 
     expect(await screen.findByText(/existing encrypted Workspace state could not be read/i)).toBeInTheDocument()
     expect(screen.queryByText(/operating-system vault is unavailable/i)).not.toBeInTheDocument()
@@ -483,11 +626,11 @@ describe('Workspace desktop view', () => {
     bridge.getWorkspaceStatus.mockResolvedValue({ availability: 'unavailable', reason: 'initialization-failed' })
     bridge.retryWorkspaceStatus.mockResolvedValue(readyAvailability())
 
-    render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days Â· All providers" />)
+     render(<WorkspaceContent payload={overviewPayload()} scope="Last 7 days Â· All providers" initialView="evidence" />)
     fireEvent.click(await screen.findByRole('button', { name: 'Retry status' }))
 
     await waitFor(() => expect(bridge.retryWorkspaceStatus).toHaveBeenCalledTimes(1))
     expect(bridge.getWorkspaceStatus).toHaveBeenCalledTimes(1)
-    expect(await screen.findByRole('heading', { name: 'Maikol Workspace' })).toBeInTheDocument()
+    expect(await screen.findByText('Maikol Workspace')).toBeInTheDocument()
   })
 })

@@ -196,7 +196,7 @@ describe('Workspace recovery controls', () => {
       snapshot: reconciled,
     })
 
-    render(<WorkspaceContent payload={overview()} scope="Last 7 days · All providers" />)
+    render(<WorkspaceContent payload={overview()} scope="Last 7 days · All providers" initialView="evidence" />)
 
     const button = await screen.findByRole('button', { name: 'Check & recover' })
     expect(bridge.recoverWorkspaceState).not.toHaveBeenCalled()
@@ -239,7 +239,7 @@ describe('Workspace recovery controls', () => {
       snapshot: snapshot(),
     })
 
-    render(<WorkspaceContent payload={overview()} scope="Last 7 days · All providers" />)
+    render(<WorkspaceContent payload={overview()} scope="Last 7 days · All providers" initialView="evidence" />)
 
     expect(await screen.findByTestId('workspace-evidence-inspection-error')).toBeInTheDocument()
     const recover = screen.getByRole('button', { name: 'Check & recover' })
@@ -268,7 +268,7 @@ describe('Workspace recovery controls', () => {
       snapshot: quarantined,
     })
 
-    render(<WorkspaceContent payload={overview()} scope="Last 7 days · All providers" />)
+    render(<WorkspaceContent payload={overview()} scope="Last 7 days · All providers" initialView="evidence" />)
 
     const recover = await screen.findByRole('button', { name: 'Check & recover' })
     expect(recover).toBeEnabled()

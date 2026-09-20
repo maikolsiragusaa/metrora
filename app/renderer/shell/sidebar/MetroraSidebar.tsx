@@ -57,7 +57,7 @@ const NAV_ICONS: Record<Section, ReactNode> = {
     <svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2" /><line x1="2" y1="10" x2="22" y2="10" /></svg>
   ),
   workspace: (
-    <svg viewBox="0 0 24 24"><path d="M12 3 4.5 6v5.5c0 4.6 2.9 7.7 7.5 9.5 4.6-1.8 7.5-4.9 7.5-9.5V6L12 3z"/><path d="M8.5 12h7M12 8.5v7"/></svg>
+    <svg viewBox="0 0 24 24"><path d="M3 7.5h6l2 2h10v8.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 7.5v-1a2 2 0 0 1 2-2h4l2 3"/></svg>
   ),
   companion: (
     <svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="M10 5h4M11 18.5h2"/><path d="M4 10.5h2M18 10.5h2"/></svg>

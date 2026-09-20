@@ -199,7 +199,7 @@ function AppMain() {
       <div className={`ct ct-${section}`} data-metrora-section={section}>
         <div className={overview.switching ? 'switch-line on' : 'switch-line'} aria-hidden="true" />
         <UpdateBanner />
-        {section !== 'code' && section !== 'bench' && section !== 'companion' && <DailyBudgetBanner payload={overview.data ?? null} provider={provider} />}
+        {section !== 'code' && section !== 'bench' && section !== 'companion' && section !== 'workspace' && <DailyBudgetBanner payload={overview.data ?? null} provider={provider} />}
         <ErrorBoundary key={section}>
         {section === 'companion' ? (
           <Companion refreshToken={refreshToken} onRefresh={refreshVisible} refreshing={overview.loading} />
@@ -236,8 +236,8 @@ function AppMain() {
         ) : (
           <>
             <TopBar
-              title={section === 'sessions' || section === 'models' ? null : SECTION_TITLES[section]}
-              scope={section === 'sessions' || section === 'models' ? undefined : scope}
+              title={section === 'sessions' || section === 'models' || section === 'workspace' ? null : SECTION_TITLES[section]}
+              scope={section === 'sessions' || section === 'models' || section === 'workspace' ? undefined : scope}
               period={period}
               onPeriodChange={onPeriodChange}
               customRange={customRange}
@@ -250,11 +250,11 @@ function AppMain() {
               claudeConfigs={claudeConfigs}
               configSource={claudeConfigSource}
               onConfigSelect={onConfigSelect}
-              projectOptions={projectScope?.options.map(option => ({ id: option.id, name: option.name }))}
-              projectScopeId={metroraProjectId}
-              onProjectScopeSelect={onProjectScopeSelect}
+              projectOptions={section === 'workspace' ? undefined : projectScope?.options.map(option => ({ id: option.id, name: option.name }))}
+              projectScopeId={section === 'workspace' ? undefined : metroraProjectId}
+              onProjectScopeSelect={section === 'workspace' ? undefined : onProjectScopeSelect}
               capabilities={sectionCapabilities}
-              onOpenCode={section === 'sessions' || section === 'models' ? undefined : openCode}
+              onOpenCode={section === 'sessions' || section === 'models' || section === 'workspace' ? undefined : openCode}
               onRefresh={refreshVisible}
               refreshing={overview.loading}
               compactHome={section === 'overview'}
@@ -287,7 +287,7 @@ function AppMain() {
               ) : section === 'compare' ? (
                 <Compare period={period} provider={provider} range={customRange} refreshToken={refreshToken} ready={ready} />
               ) : section === 'workspace' ? (
-                <WorkspaceContent payload={overview.data ?? null} scope={scope} analyticsLoading={overview.loading} />
+                <WorkspaceContent payload={overview.data ?? null} scope={scope} analyticsLoading={overview.loading} refreshToken={refreshToken} onNavigate={navigate} />
               ) : (
                 <SectionPlaceholder title={SECTION_TITLES[section]} />
               )}
@@ -295,7 +295,7 @@ function AppMain() {
           </>
         )}
         </ErrorBoundary>
-        {section !== 'settings' && section !== 'code' && section !== 'bench' && section !== 'companion' && (
+        {section !== 'settings' && section !== 'code' && section !== 'bench' && section !== 'companion' && section !== 'workspace' && (
           <Hint
             items={[
               { k: shortcutRangeLabel('1', '7'), label: 'Navigate' },

@@ -1,7 +1,8 @@
-import { useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { EmptyNote } from '../components/EmptyState'
 import { Panel } from '../components/Panel'
+import type { Section } from '../components/Sidebar'
 import type { MenubarPayload } from '../lib/types'
 import type {
   DesktopReviewedProductionSummary,
@@ -9,27 +10,20 @@ import type {
   DesktopWorkspaceRecoverySummary,
   WorkspaceProductionMode,
 } from '../lib/workspace'
-import { WorkspaceCreationPanel } from './WorkspaceCreationPanel'
-import { WorkspaceEvidenceActionsPanel } from './WorkspaceEvidenceActionsPanel'
-import {
-  WorkspaceEvidencePanel,
-  workspaceEvidenceViewState,
-} from './WorkspaceEvidencePanel'
-import { WorkspaceGuidancePanel } from './WorkspaceGuidancePanel'
-import { WorkspaceHero } from './WorkspaceHero'
-import { WorkspaceIdentityPanel } from './WorkspaceIdentityPanel'
-import { WorkspacePrivacyPanel } from './WorkspacePrivacyPanel'
-import { WorkspaceProductionPanel } from './WorkspaceProductionPanel'
-import { WorkspaceUsagePanel } from './WorkspaceUsagePanel'
+import { workspaceEvidenceViewState } from './WorkspaceEvidencePanel'
+import { WorkspaceLocalEvidence } from './WorkspaceLocalEvidence'
+import { WorkspaceOverview } from './WorkspaceOverview'
+import type { SettingsPane } from './Settings'
+import { useWorkspaceProjects } from './useWorkspaceProjects'
 import { useWorkspaceController } from './useWorkspaceController'
 import type { WorkspaceAction } from './useWorkspaceStatus'
-import { workspaceGuidance } from './workspaceGuidance'
 import { workspaceUsageFromOverview, type WorkspaceUsage } from './workspaceUsage'
 
 export { workspaceUsageFromOverview } from './workspaceUsage'
 export type { WorkspaceUsage } from './workspaceUsage'
 
 type ReadyWorkspaceAvailability = Extract<DesktopWorkspaceAvailability, { availability: 'ready' }>
+export type WorkspaceView = 'overview' | 'evidence'
 
 function unavailableWorkspaceMessage(
   reason: Extract<DesktopWorkspaceAvailability, { availability: 'unavailable' }>['reason'],
@@ -50,10 +44,16 @@ export function WorkspaceContent({
   payload,
   scope,
   analyticsLoading = false,
+  onNavigate,
+  refreshToken = 0,
+  initialView = 'overview',
 }: {
   payload: MenubarPayload | null
   scope: string
   analyticsLoading?: boolean
+  onNavigate?: (section: Section, pane?: SettingsPane) => void
+  refreshToken?: number
+  initialView?: WorkspaceView
 }) {
   const {
     availability,
@@ -136,6 +136,9 @@ export function WorkspaceContent({
       onSetProductionMode={setProductionMode}
       onBatch={createBatch}
       onExport={exportEvidence}
+      onNavigate={onNavigate}
+      refreshToken={refreshToken}
+      initialView={initialView}
     />
   )
 }
@@ -160,6 +163,9 @@ function ReadyWorkspaceView({
   onSetProductionMode,
   onBatch,
   onExport,
+  onNavigate,
+  refreshToken,
+  initialView,
 }: {
   availability: ReadyWorkspaceAvailability
   usage: WorkspaceUsage | null
@@ -180,26 +186,36 @@ function ReadyWorkspaceView({
   onSetProductionMode: (mode: WorkspaceProductionMode) => Promise<void>
   onBatch: () => Promise<void>
   onExport: () => Promise<void>
+  onNavigate?: (section: Section, pane?: SettingsPane) => void
+  refreshToken: number
+  initialView: WorkspaceView
 }) {
-  const { snapshot } = availability
-  const workspace = snapshot.workspace
-  const evidence = snapshot.evidence
-  const lifecycle = workspace
-    ? (snapshot.productionLifecycle ?? { mode: 'active' as const, revision: 0, persisted: false, updatedAt: null })
-    : null
-  const productionPaused = lifecycle?.mode === 'paused'
+  const evidenceView = workspaceEvidenceViewState(availability.snapshot.evidence, availability.inspection, inspectionError)
+  const [view, setView] = useState<WorkspaceView>(initialView)
   const busy = action !== null
-  const evidenceView = workspaceEvidenceViewState(evidence, availability.inspection, inspectionError)
-  const guidance = workspaceGuidance({ snapshot, evidenceView })
+  const projectsEnabled = view === 'overview' && availability.snapshot.workspace !== null
+  const projects = useWorkspaceProjects(projectsEnabled)
+  const onRefresh = useCallback(async () => {
+    const tasks: Array<Promise<void>> = [onReload()]
+    if (projectsEnabled || projects.status !== 'idle') tasks.push(projects.reload())
+    await Promise.all(tasks)
+  }, [onReload, projects.reload, projects.status, projectsEnabled])
+  const lastRefreshToken = useRef(refreshToken)
+
+  useEffect(() => {
+    if (lastRefreshToken.current === refreshToken) return
+    lastRefreshToken.current = refreshToken
+    void onRefresh()
+  }, [onRefresh, refreshToken])
 
   return (
     <>
-      <WorkspaceHero workspace={workspace} evidenceView={evidenceView} />
-      <WorkspaceGuidancePanel guidance={guidance} />
-
-      {!workspace ? (
-        <WorkspaceCreationPanel
-          identity={snapshot.identity}
+      {view === 'overview' ? (
+        <WorkspaceOverview
+          availability={availability}
+          projects={projects}
+          evidenceView={evidenceView}
+          inspectionError={inspectionError}
           workspaceName={workspaceName}
           endpointName={endpointName}
           action={action}
@@ -207,44 +223,33 @@ function ReadyWorkspaceView({
           setWorkspaceName={setWorkspaceName}
           setEndpointName={setEndpointName}
           onCreate={onCreate}
+          onOpenEvidence={() => setView('evidence')}
+          onViewAllProjects={onNavigate ? () => onNavigate('settings', 'projects') : undefined}
         />
-      ) : null}
-
-      <WorkspaceUsagePanel usage={usage} scope={scope} analyticsLoading={analyticsLoading} />
-
-      {workspace ? (
-        <WorkspaceProductionPanel
-          productionPaused={productionPaused}
-          capabilities={snapshot.capabilities}
-          action={action}
-          busy={busy}
-          lastProduction={lastProduction}
-          onProduce={onProduce}
-          onSetProductionMode={onSetProductionMode}
-        />
-      ) : null}
-
-      {workspace ? (
-        <div className="workspace-grid">
-          <WorkspaceIdentityPanel workspace={workspace} />
-          <WorkspaceEvidencePanel evidence={evidence} view={evidenceView} inspectionError={inspectionError} />
-        </div>
-      ) : null}
-
-      <div className="workspace-grid">
-        <WorkspacePrivacyPanel />
-        <WorkspaceEvidenceActionsPanel
+      ) : (
+        <WorkspaceLocalEvidence
           availability={availability}
-          evidenceView={evidenceView}
+          usage={usage}
+          scope={scope}
+          analyticsLoading={analyticsLoading}
+          workspaceName={workspaceName}
+          endpointName={endpointName}
+          setWorkspaceName={setWorkspaceName}
+          setEndpointName={setEndpointName}
           action={action}
-          busy={busy}
+          inspectionError={inspectionError}
+          lastProduction={lastProduction}
           lastRecovery={lastRecovery}
-          onReload={onReload}
+          onReload={onRefresh}
+          onCreate={onCreate}
+          onProduce={onProduce}
           onRecover={onRecover}
+          onSetProductionMode={onSetProductionMode}
           onBatch={onBatch}
           onExport={onExport}
+          onBack={() => setView('overview')}
         />
-      </div>
+      )}
     </>
   )
 }
