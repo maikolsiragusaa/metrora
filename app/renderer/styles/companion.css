@@ -9,19 +9,16 @@
   overflow: hidden;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 24px;
   margin-top: 0;
-  padding: 18px 20px;
+  min-height: 182px;
+  padding: 20px 22px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background:
-    linear-gradient(90deg, rgba(7, 10, 19, .97) 0%, rgba(9, 13, 30, .93) 46%, rgba(12, 17, 42, .55) 78%, rgba(10, 12, 30, .3) 100%),
-    var(--panel);
+  background: var(--panel);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
 }
 
-.companion-hero-copy { min-width: 0; max-width: 640px; }
+.companion-hero-copy { position: relative; z-index: 1; min-width: 0; max-width: 560px; }
 .companion-kicker {
   color: #a68cff;
   font-size: 10px;
@@ -52,13 +49,8 @@
   line-height: 1.55;
 }
 .companion-hero-art {
-  flex: 0 0 360px;
-  max-width: 44%;
-  height: 196px;
-  overflow: hidden;
-  border-radius: 10px;
-  border: 1px solid rgba(160,175,255,.16);
-  box-shadow: 0 12px 32px rgba(0,0,0,.34);
+  position: absolute;
+  inset: 0;
 }
 .companion-hero-device {
   display: block;
@@ -66,6 +58,20 @@
   height: 100%;
   object-fit: cover;
   object-position: right center;
+}
+/* Scrim over the full-bleed artwork: hides the baked raster headline on the
+   left so only the live semantic copy reads, while laptop/phone stay visible
+   on the right like the mockup. Opaque panel on the left adapts to theme. */
+.companion-hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg,
+    var(--panel) 0%,
+    var(--panel) 36%,
+    color-mix(in srgb, var(--panel) 72%, transparent) 55%,
+    transparent 76%);
 }
 
 .companion-status-cards {
@@ -260,8 +266,14 @@
 }
 
 @media (max-width: 980px) {
-  .companion-hero { align-items: flex-start; }
-  .companion-hero-art { flex-basis: 260px; height: 160px; }
+  .companion-hero-copy { max-width: 480px; }
+  .companion-hero::after {
+    background: linear-gradient(90deg,
+      var(--panel) 0%,
+      var(--panel) 46%,
+      color-mix(in srgb, var(--panel) 72%, transparent) 64%,
+      transparent 84%);
+  }
   .companion-status-cards { grid-template-columns: 1fr 1fr; }
   .companion-status-card:last-child { grid-column: 1 / -1; }
   .companion-main { grid-template-columns: minmax(0, 1fr); }
@@ -269,8 +281,16 @@
 }
 
 @media (max-width: 680px) {
-  .companion-hero { flex-direction: column; }
-  .companion-hero-art { flex-basis: auto; max-width: 100%; width: 100%; height: 140px; }
+  .companion-hero { min-height: 0; }
+  .companion-hero-copy { max-width: 100%; }
+  .companion-hero-device { object-position: 68% center; }
+  .companion-hero::after {
+    background: linear-gradient(90deg,
+      var(--panel) 0%,
+      var(--panel) 30%,
+      color-mix(in srgb, var(--panel) 62%, transparent) 55%,
+      transparent 88%);
+  }
   .companion-status-cards { grid-template-columns: minmax(0, 1fr); }
   .companion-status-card:last-child { grid-column: auto; }
   .companion-pairing-actions { grid-template-columns: minmax(0, 1fr); }
