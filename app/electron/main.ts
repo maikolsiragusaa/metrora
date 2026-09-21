@@ -127,6 +127,67 @@ export function windowChromeOverlay(theme: 'dark' | 'light', mode: WindowChromeM
   } as const
 }
 
+/**
+ * Metrora product theme authority in the main process.
+ *
+ * Only Dark and Light exist; legacy `system` and anything else are rejected
+ * here so the trusted renderer stays the single place that migrates stored
+ * preferences. The accepted value is mirrored into Electron's official
+ * `nativeTheme.themeSource`, which propagates through Chromium's
+ * `prefers-color-scheme` to every WebContents — including the embedded
+ * OpenCode view when it uses its official System color scheme. Metrora never
+ * writes upstream appearance storage, injects CSS, or touches upstream DOM.
+ */
+export type MetroraThemeSource = 'dark' | 'light'
+
+export const DEFAULT_METRORA_THEME_SOURCE: MetroraThemeSource = 'dark'
+
+export function resolveMetroraThemeSource(value: unknown): MetroraThemeSource | null {
+  return value === 'dark' || value === 'light' ? value : null
+}
+
+export type NativeThemeLike = { themeSource: string }
+
+/** Mirror the Metrora selection into Electron's color-scheme authority. */
+export function applyMetroraNativeTheme(theme: MetroraThemeSource, target?: NativeThemeLike | null): void {
+  const store = target ?? (nativeTheme as unknown as NativeThemeLike | undefined)
+  try {
+    if (store && typeof store === 'object') store.themeSource = theme
+  } catch { /* test stubs or a detached runtime must not break startup */ }
+}
+
+export type WindowChromeThemeHandlerDeps = {
+  isTrustedRenderer: (event: { senderFrame?: { url?: string } | null }) => boolean
+  applyNativeTheme: (theme: MetroraThemeSource) => void
+  updateWindowChrome: (sender: unknown, theme: MetroraThemeSource) => boolean
+}
+
+/**
+ * Single trusted renderer theme operation: validates the product theme,
+ * mirrors it into `nativeTheme.themeSource`, and keeps the existing native
+ * window chrome treatment aligned. No second theme authority exists.
+ */
+export function createWindowChromeThemeHandler(deps: WindowChromeThemeHandlerDeps) {
+  return (event: { sender: unknown; senderFrame?: { url?: string } | null }, theme: unknown) => {
+    if (!deps.isTrustedRenderer(event)) {
+      return { ok: false, error: { kind: 'unauthorized', message: 'Trusted Metrora renderer required.' } }
+    }
+    const resolved = resolveMetroraThemeSource(theme)
+    if (!resolved) {
+      return { ok: false, error: { kind: 'bad-args', message: 'Invalid window chrome theme.' } }
+    }
+    deps.applyNativeTheme(resolved)
+    return { ok: true, value: deps.updateWindowChrome(event.sender, resolved) }
+  }
+}
+
+// A fresh process begins Dark before renderer authority arrives so the window
+// background, native title bar, and any OpenCode prewarm resolve through the
+// Dark color scheme even on a Light OS. A persisted Light selection is
+// renderer-owned and re-synchronizes immediately on boot through the trusted
+// bridge; no second disk persistence lives in the main process.
+applyMetroraNativeTheme(DEFAULT_METRORA_THEME_SOURCE)
+
 function broadcastProgress(event: unknown): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue
@@ -280,20 +341,18 @@ function registerHandlers(): void {
       return false
     }
   }
-  ipcMain.handle('metrora:setWindowChromeTheme', (event, theme: unknown) => {
-    if (!isTrustedRendererSender(event)) {
-      return { ok: false, error: { kind: 'unauthorized', message: 'Trusted Metrora renderer required.' } }
-    }
-    if (theme !== 'dark' && theme !== 'light') {
-      return { ok: false, error: { kind: 'bad-args', message: 'Invalid window chrome theme.' } }
-    }
-    const win = BrowserWindow.fromWebContents(event.sender)
-    if (!win || process.platform !== 'win32') return { ok: true, value: false }
-    const resolvedTheme = theme as 'dark' | 'light'
-    windowChromeThemes.set(win, resolvedTheme)
-    win.setTitleBarOverlay(windowChromeOverlay(resolvedTheme, windowChromeModes.get(win) ?? 'always'))
-    return { ok: true, value: true }
+  const handleWindowChromeTheme = createWindowChromeThemeHandler({
+    isTrustedRenderer: isTrustedRendererSender,
+    applyNativeTheme: theme => applyMetroraNativeTheme(theme),
+    updateWindowChrome: (sender, resolvedTheme) => {
+      const win = BrowserWindow.fromWebContents(sender as Parameters<typeof BrowserWindow.fromWebContents>[0])
+      if (!win || process.platform !== 'win32') return false
+      windowChromeThemes.set(win, resolvedTheme)
+      win.setTitleBarOverlay(windowChromeOverlay(resolvedTheme, windowChromeModes.get(win) ?? 'always'))
+      return true
+    },
   })
+  ipcMain.handle('metrora:setWindowChromeTheme', handleWindowChromeTheme)
   ipcMain.handle('metrora:setWindowChromeMode', (event, mode: unknown) => {
     if (!isTrustedRendererSender(event)) {
       return { ok: false, error: { kind: 'unauthorized', message: 'Trusted Metrora renderer required.' } }
@@ -305,7 +364,7 @@ function registerHandlers(): void {
     if (!win || process.platform !== 'win32') return { ok: true, value: false }
     const resolvedMode = mode as WindowChromeMode
     windowChromeModes.set(win, resolvedMode)
-    win.setTitleBarOverlay(windowChromeOverlay(windowChromeThemes.get(win) ?? (nativeTheme.shouldUseDarkColors ? 'dark' : 'light'), resolvedMode))
+    win.setTitleBarOverlay(windowChromeOverlay(windowChromeThemes.get(win) ?? DEFAULT_METRORA_THEME_SOURCE, resolvedMode))
     return { ok: true, value: true }
   })
   for (const [channel, handler] of Object.entries(handlers)) {
@@ -386,7 +445,10 @@ function installApplicationMenu(): void {
 }
 
 function createWindow(): BrowserWindow {
-  const initialChromeTheme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
+  // Dark-first default: renderer authority re-synchronizes a persisted Light
+  // selection immediately through the trusted bridge. The OS appearance is
+  // never consulted for the product theme.
+  const initialChromeTheme: MetroraThemeSource = DEFAULT_METRORA_THEME_SOURCE
   const win = new BrowserWindow({
     width: 1200,
     height: 820,

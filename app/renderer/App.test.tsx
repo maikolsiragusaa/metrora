@@ -39,6 +39,7 @@ const mocks = vi.hoisted(() => ({
   getAliases: vi.fn(),
   setCurrency: vi.fn(),
   resetCurrency: vi.fn(),
+  setWindowChromeTheme: vi.fn<(theme: 'dark' | 'light') => Promise<boolean>>(),
 }))
 
 vi.mock('./lib/ipc', async orig => {
@@ -174,6 +175,7 @@ function installDefaultMocks() {
       reachableCount: 1,
     },
   })
+  mocks.setWindowChromeTheme.mockResolvedValue(true)
   mocks.getPriceOverrides.mockResolvedValue({ overrides: [] })
   mocks.getAliases.mockResolvedValue([])
   mocks.setCurrency.mockResolvedValue({ ok: true, stdout: '', stderr: '' })
@@ -184,6 +186,7 @@ describe('App shortcuts', () => {
   beforeEach(() => {
     installDefaultMocks()
     localStorage.clear()
+    Reflect.deleteProperty(window, 'metrora')
     localStorage.setItem('metrora.onboarding.version', '1')
     // Pin the boot period so the provider/config tests below are independent of
     // the app-wide default ('today'); tests that exercise the default set it.
@@ -196,6 +199,33 @@ describe('App shortcuts', () => {
     render(<App />)
     await waitFor(() => expect(document.documentElement).toHaveAttribute('data-theme', 'dark'))
     expect(screen.queryByRole('heading', { name: 'General' })).not.toBeInTheDocument()
+  })
+
+  it('boots fresh installations into Dark and persists the default', async () => {
+    localStorage.removeItem('metrora.theme')
+    render(<App />)
+    await waitFor(() => expect(document.documentElement).toHaveAttribute('data-theme', 'dark'))
+    expect(localStorage.getItem('metrora.theme')).toBe('dark')
+  })
+
+  it('migrates a legacy system preference to Dark on boot', async () => {
+    localStorage.setItem('metrora.theme', 'system')
+    render(<App />)
+    await waitFor(() => expect(document.documentElement).toHaveAttribute('data-theme', 'dark'))
+    expect(localStorage.getItem('metrora.theme')).toBe('dark')
+  })
+
+  it('synchronizes the resolved boot theme through the trusted bridge', async () => {
+    const setWindowChromeTheme = vi.fn(async (_theme: 'dark' | 'light') => true)
+    ;(window as unknown as { metrora?: unknown }).metrora = { platform: 'test', setWindowChromeTheme }
+    try {
+      localStorage.setItem('metrora.theme', 'light')
+      render(<App />)
+      await waitFor(() => expect(setWindowChromeTheme).toHaveBeenCalledWith('light'))
+      expect(document.documentElement).toHaveAttribute('data-theme', 'light')
+    } finally {
+      Reflect.deleteProperty(window, 'metrora')
+    }
   })
 
   it('boots with the persisted default period from Settings', async () => {

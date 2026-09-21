@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
   resetPlan: vi.fn<(provider: string) => Promise<ActionResult>>(),
   chooseDirectory: vi.fn<() => Promise<string | null>>(),
   exportData: vi.fn<(format: string, provider: string, path: string) => Promise<ActionResult>>(),
+  setWindowChromeTheme: vi.fn<(theme: 'dark' | 'light') => Promise<boolean>>(),
 }))
 vi.mock('../lib/ipc', async orig => {
   const actual = await orig<typeof import('../lib/ipc')>()
@@ -84,6 +85,7 @@ describe('Settings', () => {
     mocks.resetPlan.mockResolvedValue(actionOk)
     mocks.chooseDirectory.mockResolvedValue('/Users/toruk/Exports')
     mocks.exportData.mockResolvedValue(actionOk)
+    mocks.setWindowChromeTheme.mockResolvedValue(true)
     localStorage.clear()
     document.documentElement.removeAttribute('data-theme')
   })
@@ -119,14 +121,23 @@ describe('Settings', () => {
     expect(mocks.startShare).toHaveBeenCalledWith(false)
   })
 
-  it('persists theme choices and applies forced themes to the root', async () => {
+  it('exposes only Dark and Light themes and synchronizes the trusted Electron theme', async () => {
     const user = userEvent.setup()
     render(<Settings period="month" />)
+    expect(screen.getByText('Choose the appearance used across Metrora.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Dark' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Light' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'System' })).not.toBeInTheDocument()
+
     await user.click(screen.getByRole('button', { name: 'Dark' }))
     expect(document.documentElement).toHaveAttribute('data-theme', 'dark')
     expect(localStorage.getItem('metrora.theme')).toBe('dark')
-    await user.click(screen.getByRole('button', { name: 'System' }))
-    expect(document.documentElement).not.toHaveAttribute('data-theme')
+    await waitFor(() => expect(mocks.setWindowChromeTheme).toHaveBeenCalledWith('dark'))
+
+    await user.click(screen.getByRole('button', { name: 'Light' }))
+    expect(document.documentElement).toHaveAttribute('data-theme', 'light')
+    expect(localStorage.getItem('metrora.theme')).toBe('light')
+    await waitFor(() => expect(mocks.setWindowChromeTheme).toHaveBeenCalledWith('light'))
   })
 
   it('persists the title-bar mode and broadcasts Auto hide to the shell', async () => {

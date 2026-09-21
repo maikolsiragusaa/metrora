@@ -11,6 +11,7 @@ vi.mock('electron', () => ({
   dialog: { showOpenDialog: vi.fn() },
   ipcMain: { handle: () => {} },
   Menu: { buildFromTemplate: (template: unknown) => template, setApplicationMenu: () => {} },
+  nativeTheme: { themeSource: 'system', shouldUseDarkColors: false },
   shell: { openExternal: vi.fn() },
 }))
 

@@ -11,6 +11,7 @@ import type { Section } from '../components/Sidebar'
 import { usePolled } from '../hooks/usePolled'
 import { version as appVersion } from '../../package.json'
 import { readDailyBudget } from '../lib/budget'
+import { persistMetroraTheme, readMetroraTheme, type MetroraTheme } from '../lib/appTheme'
 import { formatConverted, formatUsd } from '../lib/format'
 import { metrora } from '../lib/ipc'
 import { motionClass } from '../lib/motion'
@@ -25,7 +26,7 @@ import { ProjectManagement } from './ProjectManagement'
 
 export type SettingsPane = 'general' | 'projects' | 'providers' | 'aliases' | 'pricing' | 'plans' | 'devices' | 'export' | 'privacy'
 type Pane = SettingsPane
-type Theme = 'system' | 'light' | 'dark'
+type Theme = MetroraTheme
 type ConfigMutationHandler = (kind?: 'accounting' | 'display') => void
 
 type PlanPreset = { id: Exclude<PlanId, 'custom' | 'none'>; label: string; provider: Exclude<PlanProvider, 'all' | 'codex'> }
@@ -143,10 +144,7 @@ export function Settings({ period, refreshToken = 0, onNavigate, initialPane, cl
 function GeneralPane({ period, refreshToken, claudeConfigs, claudeConfigSource, onConfigMutated }: { period: Period; refreshToken: number; claudeConfigs?: ClaudeConfigSelector; claudeConfigSource: string | null; onConfigMutated?: ConfigMutationHandler }) {
   const [currencyNonce, setCurrencyNonce] = useState(0)
   const plans = usePolled<StatusJson>(() => metrora.getPlans(period), [period, refreshToken, currencyNonce])
-    const [theme, setTheme] = useState<Theme>(() => {
-      const saved = readSetting('metrora.theme')
-      return saved === 'light' || saved === 'dark' ? saved : 'system'
-    })
+    const [theme, setTheme] = useState<Theme>(() => readMetroraTheme())
     const [windowChromeMode, setWindowChromeMode] = useState<'always' | 'auto'>(() => (
       readSetting('windowControlsMode') === 'auto' ? 'auto' : 'always'
     ))
@@ -157,11 +155,11 @@ function GeneralPane({ period, refreshToken, claudeConfigs, claudeConfigSource, 
   const [budgetError, setBudgetError] = useState('')
 
   useEffect(() => {
-    if (theme === 'system') document.documentElement.removeAttribute('data-theme')
-    else document.documentElement.setAttribute('data-theme', theme)
-    const media = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-color-scheme: dark)') : null
-    const resolved = theme === 'system' ? (media?.matches ? 'dark' : 'light') : theme
-    if (metrora.setWindowChromeTheme) void metrora.setWindowChromeTheme(resolved).catch(() => {})
+    // The product theme is always explicit (Dark default); the trusted main
+    // process mirrors it into nativeTheme so `prefers-color-scheme`
+    // followers track Metrora.
+    persistMetroraTheme(theme)
+    if (metrora.setWindowChromeTheme) void metrora.setWindowChromeTheme(theme).catch(() => {})
   }, [theme])
 
   // Store on change; a positive finite amount persists, anything else clears the
@@ -177,7 +175,6 @@ function GeneralPane({ period, refreshToken, claudeConfigs, claudeConfigSource, 
 
     const chooseTheme = (next: Theme) => {
       setTheme(next)
-      writeSetting('metrora.theme', next)
     }
     const chooseWindowChromeMode = (next: 'always' | 'auto') => {
       setWindowChromeMode(next)
@@ -206,8 +203,8 @@ function GeneralPane({ period, refreshToken, claudeConfigs, claudeConfigSource, 
       <div className="card">
         <div className="about-sec">
           <div className="about-sec-h">Appearance</div>
-          <div className="about-row"><span className="tx">Theme<small>Match your system or force a mode</small></span><span className="r"><span className="seg">
-            {(['system', 'light', 'dark'] as Theme[]).map(value => <button key={value} className={theme === value ? 'on' : undefined} aria-pressed={theme === value} onClick={() => chooseTheme(value)}>{value[0]!.toUpperCase() + value.slice(1)}</button>)}
+          <div className="about-row"><span className="tx">Theme<small>Choose the appearance used across Metrora.</small></span><span className="r"><span className="seg">
+            {(['dark', 'light'] as Theme[]).map(value => <button key={value} className={theme === value ? 'on' : undefined} aria-pressed={theme === value} onClick={() => chooseTheme(value)}>{value[0]!.toUpperCase() + value.slice(1)}</button>)}
           </span></span></div>
         </div>
         {hasConfigs && (
