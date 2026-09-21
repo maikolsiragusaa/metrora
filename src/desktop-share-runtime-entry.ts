@@ -22,6 +22,8 @@ export type DesktopShareRuntimeV1 = {
   start(always: boolean): Promise<ShareStatus>
   stop(): Promise<ShareStatus>
   approve(id: string, approve: boolean): Promise<ShareStatus>
+  /** Read-only projection of the SAME canonical capability matrix served to Android. */
+  capabilities(): Promise<ReturnType<typeof buildCompanionCapabilities>>
 }
 
 /**
@@ -67,5 +69,9 @@ export async function createDesktopShareRuntime(
       share.resolvePending(id, approve)
       return share.status()
     },
+    // Read-only: resolves the same builder the share server uses for the
+    // authenticated Android capability route. Never starts sharing and never
+    // requires a peer. Carries no tokens, fingerprints, or private material.
+    capabilities: () => buildCompanionCapabilities(Boolean(options.getCapacity)),
   }
 }

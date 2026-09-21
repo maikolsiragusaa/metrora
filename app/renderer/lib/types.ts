@@ -423,6 +423,8 @@ export type OptimizeJsonReport = {
 export type PendingPairing = { id: string; name: string; code: string }
 export type ShareStatus = { sharing: boolean; name: string; port: number; host: string | null; addresses: string[]; connectPayload: string | null; networkWarning?: string; always: boolean; peers: number; pending: PendingPairing[] }
 
+export type { CompanionCapabilitiesV1, CompanionCapabilityId, CompanionCapabilityV1 } from './companion-capability-types'
+
 /** Public identity subset served by /api/identity (src/web-dashboard.ts:229). */
 export type Identity = {
   name: string

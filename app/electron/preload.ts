@@ -63,6 +63,7 @@ const bridge = {
   getDevices: (period: string) => invoke('metrora:getDevices', period),
   getDevicesScan: () => invoke('metrora:getDevicesScan'),
   getShareStatus: () => invoke('metrora:getShareStatus'),
+  getCompanionCapabilities: () => invoke('metrora:getCompanionCapabilities'),
   startShare: (always?: boolean) => invoke('metrora:startShare', always),
   stopShare: () => invoke('metrora:stopShare'),
   approvePairing: (id: string, approve: boolean) => invoke('metrora:approvePairing', id, approve),

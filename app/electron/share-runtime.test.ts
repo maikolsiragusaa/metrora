@@ -30,6 +30,12 @@ describe('desktop share runtime loader', () => {
       start: async () => status,
       stop: async () => status,
       approve: async () => status,
+      capabilities: async () => ({
+        kind: 'metrora.companion.capabilities' as const,
+        version: 1 as const,
+        generatedAt: '2026-09-21T00:00:00.000Z',
+        capabilities: [],
+      }),
       ...(port === 7777 ? {} : {}),
     }))
     const runtime = await loadDesktopShareRuntime(
@@ -48,6 +54,12 @@ describe('desktop share runtime loader', () => {
       start: async () => status,
       stop: async () => status,
       approve: async () => status,
+      capabilities: async () => ({
+        kind: 'metrora.companion.capabilities' as const,
+        version: 1 as const,
+        generatedAt: '2026-09-21T00:00:00.000Z',
+        capabilities: [],
+      }),
     }))
     await loadDesktopShareRuntime(
       { isPackaged: false, appPath: 'C:/metrora/app', resourcesPath: 'ignored' },

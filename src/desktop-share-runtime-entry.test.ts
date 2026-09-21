@@ -51,4 +51,29 @@ describe('desktop Activity share runtime', () => {
 
     expect(typeof mocks.constructorArgs[0]?.[8]).toBe('function')
   })
+
+  it('exposes the canonical capability matrix read-only without starting sharing', async () => {
+    const { createDesktopShareRuntime } = await import('./desktop-share-runtime-entry.js')
+    const { buildCompanionCapabilities } = await import('./sharing/share-run.js')
+
+    const withoutCapacity = await createDesktopShareRuntime(7777)
+    const expectedWithout = await buildCompanionCapabilities(false)
+    expect(await withoutCapacity.capabilities()).toEqual(expectedWithout)
+    expect(withoutCapacity.capabilities && typeof withoutCapacity.capabilities === 'function').toBe(true)
+
+    const withCapacity = await createDesktopShareRuntime(7777, { getCapacity: async () => [] })
+    const expectedWith = await buildCompanionCapabilities(true)
+    expect(await withCapacity.capabilities()).toEqual(expectedWith)
+
+    const matrix = await withCapacity.capabilities()
+    expect(matrix.kind).toBe('metrora.companion.capabilities')
+    expect(matrix.version).toBe(1)
+    expect(matrix.capabilities.find(entry => entry.id === 'home.capacity')?.availability).toBe('available')
+    const noCapacityMatrix = await withoutCapacity.capabilities()
+    expect(noCapacityMatrix.capabilities.find(entry => entry.id === 'home.capacity')?.availability).toBe('unavailable')
+    const workspace = matrix.capabilities.find(entry => entry.id === 'workspace')
+    expect(workspace?.availability).toBe('unavailable')
+    expect(workspace?.reason).toBe('no-authority')
+    expect(JSON.stringify(matrix)).not.toMatch(/token|fingerprint|secret|private|bearer|certificate/i)
+  })
 })

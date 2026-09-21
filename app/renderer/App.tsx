@@ -194,7 +194,7 @@ function AppMain() {
         {section !== 'code' && section !== 'bench' && section !== 'companion' && section !== 'workspace' && <DailyBudgetBanner payload={overview.data ?? null} provider={provider} />}
         <ErrorBoundary key={section}>
         {section === 'companion' ? (
-          <Companion refreshToken={refreshToken} onRefresh={refreshVisible} refreshing={overview.loading} />
+          <Companion />
         ) : section === 'code' ? (
           <Code />
         ) : section === 'bench' ? (

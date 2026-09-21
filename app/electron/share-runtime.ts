@@ -20,6 +20,25 @@ export type DesktopShareRuntime = {
   start(always: boolean): Promise<DesktopShareStatus>
   stop(): Promise<DesktopShareStatus>
   approve(id: string, approve: boolean): Promise<DesktopShareStatus>
+  /** Read-only canonical Companion capability matrix (no secrets, no peer required). */
+  capabilities(): Promise<DesktopCompanionCapabilities>
+}
+
+/** Renderer-safe mirror of CompanionCapabilitiesV1 (src/sharing/capability-contract.ts). */
+export type DesktopCompanionCapability = {
+  id: string
+  versions: number[]
+  availability: 'available' | 'unavailable'
+  freshness: 'live' | 'cached' | 'unknown'
+  scopes: { period: boolean; project: boolean; workspace: boolean }
+  reason?: 'not-implemented' | 'no-authority' | 'unsupported'
+}
+
+export type DesktopCompanionCapabilities = {
+  kind: 'metrora.companion.capabilities'
+  version: 1
+  generatedAt: string
+  capabilities: DesktopCompanionCapability[]
 }
 
 export type DesktopShareRuntimeModule = {
@@ -62,6 +81,7 @@ export function initializeDesktopShareRuntime(
     start: always => desktopShareRuntimePromise!.then(runtime => runtime.start(always)),
     stop: () => desktopShareRuntimePromise!.then(runtime => runtime.stop()),
     approve: (id, approve) => desktopShareRuntimePromise!.then(runtime => runtime.approve(id, approve)),
+    capabilities: () => desktopShareRuntimePromise!.then(runtime => runtime.capabilities()),
   }
 }
 

@@ -16,6 +16,7 @@ import './shell/metrora-shell.css'
 import './styles/control-center-home.css'
 import './styles/models-control-center.css'
 import './styles/capacity-surface.css'
+import './styles/companion.css'
 import './styles/onboarding.css'
 
 const root = document.getElementById('root')

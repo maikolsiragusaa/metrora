@@ -5,6 +5,7 @@ import type {
   AuditRow,
   CombinedUsage,
   CompareJsonReport,
+  CompanionCapabilitiesV1,
   DateRange,
   DeviceScanResult,
   Identity,
@@ -141,6 +142,7 @@ export interface MetroraBridge extends ProjectBridge {
   getDevices(period: Period): Promise<CombinedUsage>
   getDevicesScan(): Promise<DeviceScanResult>
   getShareStatus(): Promise<ShareStatus>
+  getCompanionCapabilities(): Promise<CompanionCapabilitiesV1>
   startShare(always?: boolean): Promise<ShareStatus>; stopShare(): Promise<ShareStatus>; approvePairing(id: string, approve: boolean): Promise<ShareStatus>
   getIdentity(): Promise<Identity>
   getAliases(): Promise<AliasRow[]>

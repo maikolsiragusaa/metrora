@@ -101,6 +101,7 @@ const CHANNELS = [
   'metrora:getDevices',
   'metrora:getDevicesScan',
   'metrora:getShareStatus',
+  'metrora:getCompanionCapabilities',
   'metrora:startShare',
   'metrora:stopShare',
   'metrora:approvePairing',
@@ -262,6 +263,12 @@ describe('createBridgeHandlers (channel → argv for all channels)', () => {
       start: vi.fn(async () => sharingStatus),
       stop: vi.fn(async () => status),
       approve: vi.fn(async () => sharingStatus),
+      capabilities: vi.fn(async () => ({
+        kind: 'metrora.companion.capabilities' as const,
+        version: 1 as const,
+        generatedAt: '2026-09-21T00:00:00.000Z',
+        capabilities: [],
+      })),
     }
     const { spawnCli } = fakeSpawn()
     const handlers = createBridgeHandlers(deps({ spawnCli, share }))
