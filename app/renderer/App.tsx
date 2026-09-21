@@ -15,13 +15,13 @@ import { useDesktopScope } from './hooks/useDesktopScope'
 import { useDesktopShortcuts } from './hooks/useDesktopShortcuts'
 import { useOverviewRuntime } from './hooks/useOverviewRuntime'
 import { usePolled } from './hooks/usePolled'
+import { initializeMetroraTheme } from './lib/appTheme'
 import { PERIOD_LABELS, SECTION_TITLES } from './lib/desktopSections'
 import { motionClass } from './lib/motion'
 import { completeOnboarding, shouldShowOnboarding } from './lib/onboardingState'
 import { metrora } from './lib/ipc'
 import { persistRefreshValue, readRefreshValue, refreshValueToMs, RefreshCadenceContext, type RefreshCadence } from './lib/refreshCadence'
 import { shortcutLabel, shortcutRangeLabel } from './lib/shortcuts'
-import { readStorage } from './lib/storage'
 import { OverviewContent } from './sections/Overview'
 import { OptimizeContent } from './sections/Optimize'
 import { Models } from './sections/Models'
@@ -115,22 +115,14 @@ function AppMain() {
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
-    const saved = readStorage('theme')
+    // Metrora owns the product theme (Dark default; legacy `system` migrates
+    // to Dark). The trusted main process mirrors it into nativeTheme so
+    // `prefers-color-scheme` followers track Metrora.
+    const theme = initializeMetroraTheme()
     const root = document.documentElement
     const bridge = (window as unknown as { metrora?: { platform?: string; setWindowChromeTheme?: (theme: 'dark' | 'light') => Promise<boolean> } }).metrora
     root.dataset.platform = bridge?.platform ?? root.dataset.platform ?? ''
-    const media = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-color-scheme: dark)') : null
-    const apply = () => {
-      const resolved = saved === 'light' || saved === 'dark' ? saved : media?.matches ? 'dark' : 'light'
-      if (saved === 'light' || saved === 'dark') root.setAttribute('data-theme', saved)
-      else root.removeAttribute('data-theme')
-      if (bridge?.setWindowChromeTheme) void bridge.setWindowChromeTheme(resolved).catch(() => {})
-    }
-    apply()
-    if (saved !== 'light' && saved !== 'dark' && media) {
-      media.addEventListener('change', apply)
-      return () => media.removeEventListener('change', apply)
-    }
+    if (bridge?.setWindowChromeTheme) void bridge.setWindowChromeTheme(theme).catch(() => {})
   }, [])
 
   useEffect(() => {
