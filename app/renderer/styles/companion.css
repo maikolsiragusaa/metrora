@@ -1,6 +1,6 @@
 .companion-page {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   width: 100%;
 }
 
@@ -9,16 +9,16 @@
   overflow: hidden;
   display: flex;
   align-items: center;
+  gap: 20px;
   margin-top: 0;
-  min-height: 182px;
-  padding: 20px 22px;
+  padding: 16px 20px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--panel);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
 }
 
-.companion-hero-copy { position: relative; z-index: 1; min-width: 0; max-width: 560px; }
+.companion-hero-copy { min-width: 0; flex: 1 1 auto; max-width: 600px; }
 .companion-kicker {
   color: #a68cff;
   font-size: 10px;
@@ -27,9 +27,9 @@
   text-transform: uppercase;
 }
 .companion-hero h1 {
-  margin: 4px 0 6px;
+  margin: 4px 0 8px;
   color: var(--ink);
-  font-size: 34px;
+  font-size: 38px;
   font-weight: 700;
   letter-spacing: -.03em;
   line-height: 1.08;
@@ -48,30 +48,23 @@
   font-size: 12.5px;
   line-height: 1.55;
 }
+/* Right art region ONLY: the approved artwork is clipped inside this box and
+   never extends underneath the live copy. The aggressive view-box crop drops
+   the baked raster headline/copy on the left ~55% of the asset and keeps
+   laptop + phone + handwritten note. Percentages scale responsively. */
 .companion-hero-art {
-  position: absolute;
-  inset: 0;
+  flex: 0 0 440px;
+  max-width: 46%;
+  height: 210px;
+  overflow: hidden;
 }
 .companion-hero-device {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-view-box: inset(5% 1% 6% 53%);
   object-position: right center;
-}
-/* Scrim over the full-bleed artwork: hides the baked raster headline on the
-   left so only the live semantic copy reads, while laptop/phone stay visible
-   on the right like the mockup. Opaque panel on the left adapts to theme. */
-.companion-hero::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: linear-gradient(90deg,
-    var(--panel) 0%,
-    var(--panel) 36%,
-    color-mix(in srgb, var(--panel) 72%, transparent) 55%,
-    transparent 76%);
 }
 
 .companion-status-cards {
@@ -103,18 +96,23 @@
 .companion-status-icon-green { background: rgba(52, 211, 153, .14); color: #4be0ac; }
 .companion-status-icon-blue { background: rgba(91,140,255,.14); color: #7fa5ff; }
 .companion-status-label { display: block; color: var(--mut); font-size: 10.5px; font-weight: 580; }
-.companion-status-value { display: block; margin-top: 1px; color: var(--ink); font-size: 20px; font-weight: 680; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.companion-status-value { display: block; margin-top: 1px; color: var(--ink); font-size: 22px; font-weight: 680; line-height: 1.1; font-variant-numeric: tabular-nums; }
 .companion-status-card small { display: block; margin-top: 2px; color: var(--mut2); font-size: 10px; line-height: 1.4; }
+.companion-status-card-green { border-color: rgba(52, 211, 153, .25); }
+.companion-status-card-blue { border-color: rgba(91, 140, 255, .28); }
+.companion-status-label-green { color: #4be0ac; }
 .companion-warning-text { color: var(--warn, #d9a441); }
 
 .companion-main {
   display: grid;
   grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr);
-  gap: 12px;
-  align-items: start;
+  gap: 10px;
+  align-items: stretch;
 }
 .companion-panel {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -136,19 +134,40 @@
 .companion-panel-head h2 { margin: 0; color: var(--ink); font-size: 13.5px; font-weight: 640; }
 .companion-panel-head p { margin: 3px 0 0; color: var(--mut); font-size: 11px; line-height: 1.5; }
 
-.companion-pairing { display: grid; gap: 10px; }
+.companion-pairing { display: flex; flex: 1 1 auto; flex-direction: column; gap: 10px; }
 .companion-pairing-state { display: grid; gap: 8px; align-content: start; }
+.companion-pairing-off { flex: 1 1 auto; }
+/* OFF-state middle block: intentional visual anchor so the panel reads as a
+   complete composition, not a missing QR. Factual lines only, decorative. */
+.companion-off-visual {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 10px 0;
+  padding: 16px 12px;
+  border: 1px dashed rgba(160,175,255,.28);
+  border-radius: 10px;
+  background: rgba(160,175,255,.03);
+  color: var(--mut);
+  font-size: 11px;
+  font-weight: 560;
+}
+.companion-off-visual svg { width: 30px; height: 30px; flex: 0 0 auto; color: #7fa5ff; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.companion-pairing-cta { margin-top: auto; padding-top: 10px; }
+.companion-pairing-cta .companion-btn { width: 100%; }
 .companion-pairing-lede { margin: 0; color: var(--ink); font-size: 12.5px; font-weight: 600; }
 .companion-pairing-sub { margin: 0; color: var(--mut); font-size: 11px; line-height: 1.55; }
-.companion-qr-wrap { display: flex; justify-content: center; margin-top: 4px; }
+.companion-qr-wrap { display: flex; justify-content: center; margin-top: 6px; }
 .companion-qr-wrap .set-share-qr {
-  width: 200px;
-  height: 200px;
-  min-width: 200px;
-  min-height: 200px;
+  width: 168px;
+  height: 168px;
+  min-width: 168px;
+  min-height: 168px;
   padding: 10px;
-  border-radius: 10px;
+  border-radius: 12px;
   background: #fff;
+  box-shadow: 0 0 0 1px rgba(139,124,246,.55), 0 0 28px rgba(139,124,246,.28);
 }
 .companion-qr-wrap .set-share-qr svg { display: block; width: 100%; height: 100%; }
 .companion-qr-wrap .set-share-qr-loading { color: #555; font-size: 11px; }
@@ -166,14 +185,19 @@
 }
 .companion-pairing-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
 .companion-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   border: 1px solid var(--line2);
   border-radius: 8px;
-  padding: 8px 12px;
-  font: 600 11.5px var(--sans);
+  padding: 11px 12px;
+  font: 600 12px var(--sans);
   cursor: pointer;
   background: rgba(160,175,255,.06);
   color: var(--ink);
 }
+.companion-btn svg { width: 15px; height: 15px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .companion-btn:hover:not(:disabled) { border-color: rgba(139,124,246,.5); }
 .companion-btn:disabled { opacity: .5; cursor: default; }
 .companion-btn:focus-visible { outline: 2px solid #7fa5ff; outline-offset: 2px; }
@@ -189,13 +213,13 @@
 .companion-pending-copy code { color: var(--ink); font-family: var(--mono); font-size: 13px; font-weight: 700; letter-spacing: .06em; }
 .companion-pending-actions { display: flex; gap: 6px; flex: 0 0 auto; }
 
-.companion-cap-list { display: grid; gap: 6px; margin: 12px 0 0; padding: 0; list-style: none; }
+.companion-cap-list { display: grid; gap: 6px; margin: 10px 0 0; padding: 0; list-style: none; }
 .companion-cap-row {
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) auto;
+  grid-template-columns: 28px 140px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
-  padding: 8px 10px;
+  padding: 8px 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(160,175,255,.025);
@@ -204,13 +228,13 @@
 .companion-cap-icon {
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   border-radius: 8px;
   background: rgba(160,175,255,.1);
   color: #9aa8ff;
 }
-.companion-cap-icon svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.companion-cap-icon svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .companion-cap-icon-home { background: rgba(91,140,255,.14); color: #7fa5ff; }
 .companion-cap-icon-activity { background: rgba(139,124,246,.16); color: #b7a5ff; }
 .companion-cap-icon-models { background: rgba(52, 211, 153, .13); color: #4be0ac; }
@@ -218,9 +242,8 @@
 .companion-cap-icon-spend { background: rgba(237, 137, 125, .14); color: #ed897d; }
 .companion-cap-icon-capacity { background: rgba(110, 189, 255, .14); color: #6ebdff; }
 .companion-cap-icon-workspace { background: rgba(160,175,255,.08); color: var(--mut); }
-.companion-cap-copy { display: grid; gap: 1px; min-width: 0; }
-.companion-cap-copy b { color: var(--ink); font-size: 12px; font-weight: 620; }
-.companion-cap-copy small { overflow: hidden; color: var(--mut); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+.companion-cap-name { min-width: 0; overflow: hidden; color: var(--ink); font-size: 12.5px; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
+.companion-cap-desc { min-width: 0; overflow: hidden; color: var(--mut); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
 .companion-badge {
   flex: 0 0 auto;
   border: 1px solid var(--line2);
@@ -236,7 +259,7 @@
 .companion-cap-note p { margin: 0 0 8px; }
 
 .companion-trust {
-  padding: 14px;
+  padding: 10px 14px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: rgba(15, 19, 32, .72);
@@ -255,7 +278,8 @@
 .companion-trust-icon svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .companion-trust-head h2 { margin: 0; color: var(--ink); font-size: 13.5px; }
 .companion-trust-head p { margin: 3px 0 0; color: var(--mut); font-size: 11px; }
-.companion-trust-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.companion-trust-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.companion-trust-grid > div + div { border-left: 1px solid var(--line); padding-left: 12px; }
 .companion-trust-grid b { display: flex; align-items: center; gap: 7px; color: var(--ink); font-size: 11.5px; }
 .companion-trust-grid b svg { width: 16px; height: 16px; flex: 0 0 auto; color: #7fa5ff; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .companion-trust-grid p { margin: 5px 0 0; color: var(--mut); font-size: 10.5px; line-height: 1.55; }
@@ -263,17 +287,13 @@
 @media (max-width: 1100px) {
   .companion-status-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .companion-main { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .companion-cap-row { grid-template-columns: 28px minmax(0, 1fr) auto; }
+  .companion-cap-desc { grid-column: 2 / -1; white-space: normal; }
 }
 
 @media (max-width: 980px) {
   .companion-hero-copy { max-width: 480px; }
-  .companion-hero::after {
-    background: linear-gradient(90deg,
-      var(--panel) 0%,
-      var(--panel) 46%,
-      color-mix(in srgb, var(--panel) 72%, transparent) 64%,
-      transparent 84%);
-  }
+  .companion-hero-art { flex-basis: 320px; height: 190px; }
   .companion-status-cards { grid-template-columns: 1fr 1fr; }
   .companion-status-card:last-child { grid-column: 1 / -1; }
   .companion-main { grid-template-columns: minmax(0, 1fr); }
@@ -297,5 +317,5 @@
   .companion-pending-row { align-items: flex-start; flex-direction: column; }
   .companion-pending-actions { align-self: stretch; }
   .companion-pending-actions .companion-btn { flex: 1; }
-  .companion-cap-copy small { white-space: normal; }
+  .companion-cap-desc { white-space: normal; }
 }

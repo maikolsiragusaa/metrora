@@ -149,13 +149,19 @@ export function ShareConnectSurface({
             </div>
           )
         ) : !data.sharing ? (
-          <div className="companion-pairing-state">
+          <div className="companion-pairing-state companion-pairing-off">
             <p className="companion-pairing-lede">Start local pairing to generate a connection QR for Metrora Android.</p>
             <p className="companion-pairing-sub">Your phone and this computer need to be on the same local network. No cloud relay is used.</p>
             {data.networkWarning && <p className="companion-warning" role="status">{data.networkWarning}</p>}
-            <button type="button" className="companion-btn companion-btn-primary" disabled={busy} onClick={() => void toggleSharing()}>
-              {busy ? 'Starting…' : 'Start pairing'}
-            </button>
+            <div className="companion-off-visual" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2" /><path d="M11 18.5h2" /><path d="M3.5 9v6M2 10.5v3M20.5 9v6M22 10.5v3" /></svg>
+              <span>Same local network · explicit approval on this device</span>
+            </div>
+            <div className="companion-pairing-cta">
+              <button type="button" className="companion-btn companion-btn-primary" disabled={busy} onClick={() => void toggleSharing()}>
+                {busy ? 'Starting…' : 'Start pairing'}
+              </button>
+            </div>
           </div>
         ) : (
           <div className="companion-pairing-live">
@@ -186,8 +192,8 @@ export function ShareConnectSurface({
                 <p className="companion-endpoint">{data.host ?? 'Local network'}:{data.port}</p>
                 {data.addresses.length > 1 && <p className="companion-pairing-sub">Other local addresses: {data.addresses.slice(1).join(', ')}</p>}
                 <div className="companion-pairing-actions">
-                  <button type="button" className="companion-btn companion-btn-secondary" onClick={() => void copyPayload()}>{copied ? 'Copied connection payload' : 'Copy connection payload'}</button>
-                  <button type="button" className="companion-btn companion-btn-danger" disabled={busy} onClick={() => void toggleSharing()}>{busy ? 'Updating…' : 'Stop sharing'}</button>
+                  <button type="button" className="companion-btn companion-btn-secondary" onClick={() => void copyPayload()}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" /></svg>{copied ? 'Copied connection payload' : 'Copy connection payload'}</button>
+                  <button type="button" className="companion-btn companion-btn-danger" disabled={busy} onClick={() => void toggleSharing()}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>{busy ? 'Updating…' : 'Stop sharing'}</button>
                 </div>
               </>
             ) : (

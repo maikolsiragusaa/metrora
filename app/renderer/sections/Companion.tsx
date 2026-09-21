@@ -89,9 +89,9 @@ export function Companion() {
                 <small>Devices paired with this Metrora instance.</small>
               </div>
             </div>
-            <div className="companion-status-card">
+            <div className="companion-status-card companion-status-card-green">
               <span className="companion-status-icon companion-status-icon-green" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 10a12 12 0 0 1 16 0M7.5 13.5a7 7 0 0 1 9 0M10.8 16.8a2.6 2.6 0 0 1 2.4 0" /><circle cx="12" cy="19.4" r="1.3" /></svg></span>
-              <div><span className="companion-status-label">Local sharing</span>
+              <div><span className="companion-status-label companion-status-label-green">Local sharing</span>
                 {!data && shareStatus.error ? (
                   <>
                     <strong className="companion-status-value">Unavailable</strong>
@@ -105,7 +105,7 @@ export function Companion() {
                 )}
               </div>
             </div>
-            <div className="companion-status-card">
+            <div className="companion-status-card companion-status-card-blue">
               <span className="companion-status-icon companion-status-icon-blue" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v5.5c0 4.4-2.4 7.6-8 9.5-5.6-1.9-8-5.1-8-9.5V6z" /></svg></span>
               <div><span className="companion-status-label">Connection</span>
                 {!data && shareStatus.error ? (
@@ -159,27 +159,33 @@ export function Companion() {
                 <ul className="companion-cap-list">
                   <li className="companion-cap-row">
                     <span className="companion-cap-icon companion-cap-icon-home" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7" /><path d="M6 9.5V20h12V9.5" /></svg></span>
-                    <span className="companion-cap-copy"><b>Home / Usage</b><small>Monitor your usage and activity overview.</small></span>
+                    <b className="companion-cap-name">Home / Usage</b>
+                    <span className="companion-cap-desc">Monitor your usage and activity overview.</span>
                   </li>
                   <li className="companion-cap-row">
                     <span className="companion-cap-icon companion-cap-icon-activity" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4" /></svg></span>
-                    <span className="companion-cap-copy"><b>Activity</b><small>View activity sessions and pull requests.</small></span>
+                    <b className="companion-cap-name">Activity</b>
+                    <span className="companion-cap-desc">View activity sessions and pull requests.</span>
                   </li>
                   <li className="companion-cap-row">
                     <span className="companion-cap-icon companion-cap-icon-models" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2.5l8 4.5v9l-8 4.5-8-4.5v-9z" /><path d="M12 11.5l8-4.5M12 11.5v9M12 11.5L4 7" /></svg></span>
-                    <span className="companion-cap-copy"><b>Models</b><small>Inspect model usage and economics.</small></span>
+                    <b className="companion-cap-name">Models</b>
+                    <span className="companion-cap-desc">Inspect model usage and economics.</span>
                   </li>
                   <li className="companion-cap-row">
                     <span className="companion-cap-icon companion-cap-icon-projects" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3.5 7.5h6l1.8 2h9.2v8.4a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" /></svg></span>
-                    <span className="companion-cap-copy"><b>Projects</b><small>Browse projects and change scope.</small></span>
+                    <b className="companion-cap-name">Projects</b>
+                    <span className="companion-cap-desc">Browse projects and change scope.</span>
                   </li>
                   <li className="companion-cap-row">
                     <span className="companion-cap-icon companion-cap-icon-spend" aria-hidden="true"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="5.5" rx="8" ry="2.8" /><path d="M4 5.5v6c0 1.5 3.6 2.8 8 2.8s8-1.3 8-2.8v-6" /><path d="M4 11.5v6c0 1.5 3.6 2.8 8 2.8s8-1.3 8-2.8v-6" /></svg></span>
-                    <span className="companion-cap-copy"><b>Spend</b><small>Monitor spend and costs.</small></span>
+                    <b className="companion-cap-name">Spend</b>
+                    <span className="companion-cap-desc">Monitor spend and costs.</span>
                   </li>
                   <li className="companion-cap-row">
                     <span className="companion-cap-icon companion-cap-icon-capacity" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 20v-7M10 20V6M15 20v-10M20 20V9" /></svg></span>
-                    <span className="companion-cap-copy"><b>Capacity</b><small>View capacity and availability.</small></span>
+                    <b className="companion-cap-name">Capacity</b>
+                    <span className="companion-cap-desc">View capacity and availability.</span>
                     {isAvailable(capacityCapability) ? (
                       <span className="companion-badge companion-badge-available">Available</span>
                     ) : (
@@ -188,7 +194,8 @@ export function Companion() {
                   </li>
                   <li className="companion-cap-row companion-cap-row-disabled" aria-disabled="true">
                     <span className="companion-cap-icon companion-cap-icon-workspace" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2" /><circle cx="17" cy="9.5" r="2.6" /><path d="M3.5 19c.6-3 2.8-4.5 5.5-4.5s4.9 1.5 5.5 4.5M14.5 15.2c2.3.2 4 1.5 4.5 3.8" /></svg></span>
-                    <span className="companion-cap-copy"><b>Workspace</b><small>Not available on Android.</small></span>
+                    <b className="companion-cap-name">Workspace</b>
+                    <span className="companion-cap-desc">Not available on Android.</span>
                     <span className="companion-badge">Desktop only</span>
                   </li>
                 </ul>

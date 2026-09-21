@@ -123,6 +123,14 @@ describe('Companion product surface', () => {
     // Live semantic copy stays real HTML; the raster headline is never
     // duplicated as a second visible heading.
     expect(screen.getAllByText(/Take Metrora/).length).toBe(1)
+    // Artwork lives in its own region beside the copy, never behind it:
+    // the copy container and the art container are siblings.
+    const heading = screen.getByRole('heading', { name: /Take Metrora with you\./ })
+    const copyRegion = heading.closest('.companion-hero-copy')!
+    expect(copyRegion).not.toBeNull()
+    expect(art!.contains(copyRegion)).toBe(false)
+    expect(copyRegion.contains(art!)).toBe(false)
+    expect(art!.parentElement).toBe(copyRegion.parentElement)
   })
 
   it('labels peer count as paired, never connected', async () => {
