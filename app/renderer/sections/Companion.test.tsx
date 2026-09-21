@@ -106,7 +106,8 @@ describe('Companion product surface', () => {
   it('renders the product hero', async () => {
     render(<Companion />)
     expect(await screen.findByRole('heading', { name: /Take Metrora with you\./ })).toBeInTheDocument()
-    expect(screen.getByText(/Desktop remains the authority; Companion receives only bounded mobile data\./)).toBeInTheDocument()
+    expect(screen.getByText(/Access key parts of your local control center from your Android device\./)).toBeInTheDocument()
+    expect(screen.getByText(/Same data\. Same privacy\. No cloud required\./)).toBeInTheDocument()
   })
 
   it('uses the approved hero artwork without duplicating raster text', async () => {
@@ -128,6 +129,7 @@ describe('Companion product surface', () => {
     render(<Companion />)
     expect(await screen.findByTestId('companion-paired-count')).toHaveTextContent('6')
     expect(screen.getByText('Paired devices')).toBeInTheDocument()
+    expect(screen.getByText('Devices paired with this Metrora instance.')).toBeInTheDocument()
     expect(screen.queryByText(/6 connected/)).not.toBeInTheDocument()
     expect(screen.queryByText(/connected/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/online/i)).not.toBeInTheDocument()
@@ -143,7 +145,7 @@ describe('Companion product surface', () => {
     __resetPolledMemo()
     bridge.getShareStatus.mockResolvedValue(shareStatus({ sharing: true, peers: 2, connectPayload: 'metrora://x' }))
     render(<Companion />)
-    expect(await screen.findByText('Ready for local pairing')).toBeInTheDocument()
+    expect(await screen.findByText('Accepting new device connections.')).toBeInTheDocument()
   })
 
   it('surfaces the local network warning instead of a healthy claim', async () => {
@@ -184,9 +186,9 @@ describe('Companion product surface', () => {
     }))
     const { container } = render(<Companion />)
     expect(await screen.findByText('Scan with Metrora Android')).toBeInTheDocument()
-    expect(await screen.findByText('Waiting for a device…')).toBeInTheDocument()
+    expect(await screen.findByText('Waiting for a device...')).toBeInTheDocument()
     expect(container.querySelector('[aria-label="Metrora connection QR code"]')).not.toBeNull()
-    expect(screen.getByText(/After scanning, a pairing request will appear here\./)).toBeInTheDocument()
+    expect(screen.getByText(/Once you scan the code from the app, a pairing request will appear here\./)).toBeInTheDocument()
   })
 
   it('never shows a six-digit code without a pending request', async () => {
@@ -197,7 +199,7 @@ describe('Companion product surface', () => {
       connectPayload: 'metrora://pair-qr-payload',
     }))
     render(<Companion />)
-    await screen.findByText('Waiting for a device…')
+    await screen.findByText('Waiting for a device...')
     expect(screen.queryByText(/Pairing request/)).not.toBeInTheDocument()
     // No bare six-digit SAS code in the QR-only state.
     expect(document.body.textContent).not.toMatch(/\b\d{6}\b/)
@@ -252,15 +254,23 @@ describe('Companion product surface', () => {
     render(<Companion />)
     expect(await screen.findByRole('heading', { name: 'Available on your Companion' })).toBeInTheDocument()
     expect(screen.getByText('Home / Usage')).toBeInTheDocument()
-    expect(screen.getByText('Monitor usage and the mobile overview.')).toBeInTheDocument()
+    expect(screen.getByText('Monitor your usage and activity overview.')).toBeInTheDocument()
     expect(screen.getByText('Activity')).toBeInTheDocument()
+    expect(screen.getByText('View activity sessions and pull requests.')).toBeInTheDocument()
     expect(screen.getByText('Models')).toBeInTheDocument()
     expect(screen.getByText('Inspect model usage and economics.')).toBeInTheDocument()
     expect(screen.getByText('Projects')).toBeInTheDocument()
-    expect(screen.getByText('Browse Projects and change scope.')).toBeInTheDocument()
+    expect(screen.getByText('Browse projects and change scope.')).toBeInTheDocument()
     expect(screen.getByText('Spend')).toBeInTheDocument()
+    expect(screen.getByText('Monitor spend and costs.')).toBeInTheDocument()
     expect(screen.getByText('Capacity')).toBeInTheDocument()
+    expect(screen.getByText('View capacity and availability.')).toBeInTheDocument()
     expect(screen.getByText('Workspace')).toBeInTheDocument()
+    // Mockup composition: only Capacity and Workspace carry badges.
+    const homeRow = screen.getByText('Home / Usage').closest('li')!
+    expect(homeRow.querySelector('.companion-badge')).toBeNull()
+    const capacityRow = screen.getByText('Capacity').closest('li')!
+    expect(capacityRow.querySelector('.companion-badge')).toHaveTextContent('Available')
   })
 
   it('follows canonical Capacity availability', async () => {
@@ -312,9 +322,13 @@ describe('Companion product surface', () => {
   it('explains Local by design without claiming no data leaves the computer', async () => {
     render(<Companion />)
     expect(await screen.findByRole('heading', { name: 'Local by design' })).toBeInTheDocument()
+    expect(screen.getByText('Your data stays under your control. Companion connects to your Metrora instance over an encrypted local connection.')).toBeInTheDocument()
     expect(screen.getByText('Desktop stays authoritative')).toBeInTheDocument()
-    expect(screen.getAllByText('Secure local pairing').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getAllByText('Bounded mobile data').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText('All sensitive operations, credentials and provider access remain on your machine.')).toBeInTheDocument()
+    expect(screen.getByText('Secure local pairing')).toBeInTheDocument()
+    expect(screen.getByText('Devices pair using end-to-end encryption and verification.')).toBeInTheDocument()
+    expect(screen.getByText('Bounded mobile data')).toBeInTheDocument()
+    expect(screen.getByText('Your Android device receives only the data needed for the Companion experience.')).toBeInTheDocument()
     expect(screen.queryByText(/no data leaves the computer/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/all your data stays on this machine/i)).not.toBeInTheDocument()
   })

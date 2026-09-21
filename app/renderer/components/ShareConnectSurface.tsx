@@ -180,8 +180,8 @@ export function ShareConnectSurface({
               <>
                 <p className="companion-pairing-lede">Scan with Metrora Android</p>
                 <div className="companion-qr-wrap"><ConnectionQr payload={data.connectPayload} /></div>
-                <p className="companion-waiting">Waiting for a device…</p>
-                <p className="companion-pairing-sub">After scanning, a pairing request will appear here. Compare the six-digit verification code on both devices before approving.</p>
+                <p className="companion-waiting">Waiting for a device...</p>
+                <p className="companion-pairing-sub">Once you scan the code from the app, a pairing request will appear here. Compare the six-digit verification code on both devices before approving.</p>
                 {data.networkWarning && <p className="companion-warning" role="status">{data.networkWarning}</p>}
                 <p className="companion-endpoint">{data.host ?? 'Local network'}:{data.port}</p>
                 {data.addresses.length > 1 && <p className="companion-pairing-sub">Other local addresses: {data.addresses.slice(1).join(', ')}</p>}

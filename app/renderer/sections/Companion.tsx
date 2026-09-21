@@ -56,15 +56,7 @@ export function Companion() {
   const data = shareStatus.data
   const peers = data?.peers ?? 0
 
-  const homeUsage = capabilityById(capabilities.data, 'home.usage')
-  const activitySessions = capabilityById(capabilities.data, 'activity.sessions')
-  const activityPullRequests = capabilityById(capabilities.data, 'activity.pullRequests')
-  const activityAvailable = isAvailable(activitySessions) && isAvailable(activityPullRequests)
-  const modelsCapability = capabilityById(capabilities.data, 'analyze.models')
-  const projectsCapability = capabilityById(capabilities.data, 'projects')
-  const spendCapability = capabilityById(capabilities.data, 'analyze.spend')
   const capacityCapability = capabilityById(capabilities.data, 'home.capacity')
-  const workspaceCapability = capabilityById(capabilities.data, 'workspace')
 
   return (
     <>
@@ -80,23 +72,9 @@ export function Companion() {
               <span className="companion-kicker">Metrora Companion</span>
               <h1 id="companion-hero-title">Take Metrora <em>with you</em>.</h1>
               <p className="companion-hero-lede">
-                Securely pair Metrora Android over your local network.
-                Desktop remains the authority; Companion receives only bounded mobile data.
+                Access key parts of your local control center from your Android device.
+                Same data. Same privacy. No cloud required.
               </p>
-              <ul className="companion-signals" aria-label="Companion facts">
-                <li>
-                  <span className="companion-signal-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 10a12 12 0 0 1 16 0M7.5 13.5a7 7 0 0 1 9 0M10.8 16.8a2.6 2.6 0 0 1 2.4 0" /><circle cx="12" cy="19.4" r="1.3" /></svg></span>
-                  <span><b>Local network</b><small>No cloud relay.</small></span>
-                </li>
-                <li>
-                  <span className="companion-signal-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg></span>
-                  <span><b>Secure pairing</b><small>Verified device approval.</small></span>
-                </li>
-                <li>
-                  <span className="companion-signal-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v5.5c0 4.4-2.4 7.6-8 9.5-5.6-1.9-8-5.1-8-9.5V6z" /><path d="m8.5 12 2.2 2.2 4.8-5" /></svg></span>
-                  <span><b>Bounded mobile data</b><small>Only approved projections.</small></span>
-                </li>
-              </ul>
             </div>
             <div className="companion-hero-art" aria-hidden="true">
               <img className="companion-hero-device" src={companionHero} alt="" />
@@ -108,7 +86,7 @@ export function Companion() {
               <span className="companion-status-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2" /><path d="M11 18.5h2" /></svg></span>
               <div><span className="companion-status-label">Paired devices</span>
                 <strong className="companion-status-value" data-testid="companion-paired-count">{peers}</strong>
-                <small>{peers === 1 ? 'Authorized Android companion' : 'Authorized Android companions'}</small>
+                <small>Devices paired with this Metrora instance.</small>
               </div>
             </div>
             <div className="companion-status-card">
@@ -122,7 +100,7 @@ export function Companion() {
                 ) : (
                   <>
                     <strong className="companion-status-value">{data?.sharing ? 'On' : 'Off'}</strong>
-                    <small>{data?.sharing ? 'Ready for local pairing' : 'Pairing service stopped'}</small>
+                    <small>{data?.sharing ? 'Accepting new device connections.' : 'Pairing service stopped'}</small>
                   </>
                 )}
               </div>
@@ -143,7 +121,7 @@ export function Companion() {
                 ) : (
                   <>
                     <strong className="companion-status-value">Local network</strong>
-                    <small>No cloud relay</small>
+                    <small>No cloud relay. Direct and encrypted.</small>
                   </>
                 )}
               </div>
@@ -181,32 +159,27 @@ export function Companion() {
                 <ul className="companion-cap-list">
                   <li className="companion-cap-row">
                     <span className="companion-cap-icon companion-cap-icon-home" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7" /><path d="M6 9.5V20h12V9.5" /></svg></span>
-                    <span className="companion-cap-copy"><b>Home / Usage</b><small>Monitor usage and the mobile overview.</small></span>
-                    <span className={isAvailable(homeUsage) ? 'companion-badge companion-badge-available' : 'companion-badge'}>{isAvailable(homeUsage) ? 'Available' : 'Unavailable'}</span>
+                    <span className="companion-cap-copy"><b>Home / Usage</b><small>Monitor your usage and activity overview.</small></span>
                   </li>
                   <li className="companion-cap-row">
                     <span className="companion-cap-icon companion-cap-icon-activity" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4" /></svg></span>
-                    <span className="companion-cap-copy"><b>Activity</b><small>Sessions and Pull Requests.</small></span>
-                    <span className={activityAvailable ? 'companion-badge companion-badge-available' : 'companion-badge'}>{activityAvailable ? 'Available' : 'Unavailable'}</span>
+                    <span className="companion-cap-copy"><b>Activity</b><small>View activity sessions and pull requests.</small></span>
                   </li>
                   <li className="companion-cap-row">
                     <span className="companion-cap-icon companion-cap-icon-models" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2.5l8 4.5v9l-8 4.5-8-4.5v-9z" /><path d="M12 11.5l8-4.5M12 11.5v9M12 11.5L4 7" /></svg></span>
                     <span className="companion-cap-copy"><b>Models</b><small>Inspect model usage and economics.</small></span>
-                    <span className={isAvailable(modelsCapability) ? 'companion-badge companion-badge-available' : 'companion-badge'}>{isAvailable(modelsCapability) ? 'Available' : 'Unavailable'}</span>
                   </li>
                   <li className="companion-cap-row">
                     <span className="companion-cap-icon companion-cap-icon-projects" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3.5 7.5h6l1.8 2h9.2v8.4a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" /></svg></span>
-                    <span className="companion-cap-copy"><b>Projects</b><small>Browse Projects and change scope.</small></span>
-                    <span className={isAvailable(projectsCapability) ? 'companion-badge companion-badge-available' : 'companion-badge'}>{isAvailable(projectsCapability) ? 'Available' : 'Unavailable'}</span>
+                    <span className="companion-cap-copy"><b>Projects</b><small>Browse projects and change scope.</small></span>
                   </li>
                   <li className="companion-cap-row">
                     <span className="companion-cap-icon companion-cap-icon-spend" aria-hidden="true"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="5.5" rx="8" ry="2.8" /><path d="M4 5.5v6c0 1.5 3.6 2.8 8 2.8s8-1.3 8-2.8v-6" /><path d="M4 11.5v6c0 1.5 3.6 2.8 8 2.8s8-1.3 8-2.8v-6" /></svg></span>
-                    <span className="companion-cap-copy"><b>Spend</b><small>Inspect spend and trend data.</small></span>
-                    <span className={isAvailable(spendCapability) ? 'companion-badge companion-badge-available' : 'companion-badge'}>{isAvailable(spendCapability) ? 'Available' : 'Unavailable'}</span>
+                    <span className="companion-cap-copy"><b>Spend</b><small>Monitor spend and costs.</small></span>
                   </li>
                   <li className="companion-cap-row">
                     <span className="companion-cap-icon companion-cap-icon-capacity" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 20v-7M10 20V6M15 20v-10M20 20V9" /></svg></span>
-                    <span className="companion-cap-copy"><b>Capacity</b><small>Inspect provider Capacity where Desktop authority is available.</small></span>
+                    <span className="companion-cap-copy"><b>Capacity</b><small>View capacity and availability.</small></span>
                     {isAvailable(capacityCapability) ? (
                       <span className="companion-badge companion-badge-available">Available</span>
                     ) : (
@@ -220,7 +193,6 @@ export function Companion() {
                   </li>
                 </ul>
               )}
-              <p className="companion-cap-foot">Capabilities come from the Desktop share authority. Workspace has no mobile authority.</p>
             </section>
           </div>
 
@@ -229,21 +201,21 @@ export function Companion() {
               <span className="companion-trust-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg></span>
               <div>
                 <h2 id="companion-trust-title">Local by design</h2>
-                <p>Your Companion connects to this Metrora instance over an encrypted local connection.</p>
+                <p>Your data stays under your control. Companion connects to your Metrora instance over an encrypted local connection.</p>
               </div>
             </div>
             <div className="companion-trust-grid">
               <div>
                 <b><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="12" rx="1.8" /><path d="M8 20h8M12 17v3" /></svg>Desktop stays authoritative</b>
-                <p>Desktop remains the source of truth for collection, accounting, Projects and related canonical facts.</p>
+                <p>All sensitive operations, credentials and provider access remain on your machine.</p>
               </div>
               <div>
                 <b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v5.5c0 4.4-2.4 7.6-8 9.5-5.6-1.9-8-5.1-8-9.5V6z" /></svg>Secure local pairing</b>
-                <p>Local authenticated connection with verified pairing and explicit approval.</p>
+                <p>Devices pair using end-to-end encryption and verification.</p>
               </div>
               <div>
                 <b><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2" /><path d="M11 18.5h2" /></svg>Bounded mobile data</b>
-                <p>Companion receives only bounded mobile projections. Prompts, responses, source code, patches, secrets, tool arguments and unrestricted paths are excluded.</p>
+                <p>Your Android device receives only the data needed for the Companion experience.</p>
               </div>
             </div>
           </section>
