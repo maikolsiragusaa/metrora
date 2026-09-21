@@ -18,6 +18,7 @@ describe('desktop section scope capabilities', () => {
       customRange: false,
       provider: false,
       claudeConfig: false,
+      globalRefresh: true,
     })
   })
 

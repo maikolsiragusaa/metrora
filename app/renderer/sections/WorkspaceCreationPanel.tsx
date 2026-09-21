@@ -27,8 +27,11 @@ export function WorkspaceCreationPanel({
   onCreate: () => Promise<void>
 }) {
   return (
-    <Panel title="Create the local Workspace" right="No account required">
+    <Panel title="Create your personal Workspace" right="Local · No account required">
       <div className="workspace-create-grid">
+        <p className="workspace-create-intro">
+          Your personal Workspace keeps Projects, device identity and verified usage evidence on this computer. Metrora reuses the existing protected endpoint identity; opening this page never creates one automatically.
+        </p>
         <label className="workspace-field">
           <span>Workspace name</span>
           <input value={workspaceName} maxLength={80} onChange={event => setWorkspaceName(event.target.value)} />
