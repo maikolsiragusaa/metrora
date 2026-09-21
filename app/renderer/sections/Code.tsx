@@ -57,13 +57,15 @@ export function Code() {
   return (
     <section className="code-section" aria-label="Code">
       <div className="code-section__header">
-        <div><span className="eyebrow">Code</span><strong>OpenCode workspace</strong></div>
+        <div className="code-section__title">
+          <h2 className="code-section__name">Code</h2>
+          <span className="code-section__attribution">Powered by OpenCode</span>
+        </div>
         <div className="code-section__tools">
           {importMessage ? <span className="code-import-status" role="status" aria-live="polite">{importMessage}</span> : null}
           <button className="code-import-button" type="button" onClick={() => { void importSessions() }} disabled={importing}>
-            {importing ? 'Importing…' : 'Import new OpenCode sessions'}
+            {importing ? 'Importing…' : 'Import OpenCode sessions'}
           </button>
-          <span>Powered by upstream OpenCode</span>
         </div>
       </div>
       <OpenCodeHost restartToken={restartToken} />
