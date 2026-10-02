@@ -215,18 +215,23 @@ describe('metrora status --format menubar-json', () => {
       await mkdir(join(work, 'projects', slug), { recursive: true })
       await mkdir(join(personal, 'projects', slug), { recursive: true })
 
+      // Relative timestamps: `--period all` only covers the last six calendar
+      // months, so fixed dates age out of the window as real time passes.
+      const { base } = completedUtcFixtureWindow(4)
+      const ts = (offsetMs: number) => new Date(base.getTime() + offsetMs).toISOString().replace(/\.\d+Z$/, 'Z')
+
       await writeFile(
         join(work, 'projects', slug, 'work.jsonl'),
         [
-          userLine('work', '2026-04-10T11:59:00Z'),
-          assistantLine('work', '2026-04-10T12:00:00Z', 'msg-work'),
+          userLine('work', ts(0)),
+          assistantLine('work', ts(60_000), 'msg-work'),
         ].join('\n'),
       )
       await writeFile(
         join(personal, 'projects', slug, 'personal.jsonl'),
         [
-          userLine('personal', '2026-04-10T12:59:00Z'),
-          assistantLine('personal', '2026-04-10T13:00:00Z', 'msg-personal'),
+          userLine('personal', ts(120_000)),
+          assistantLine('personal', ts(180_000), 'msg-personal'),
         ].join('\n'),
       )
 
@@ -393,17 +398,19 @@ describe('metrora status --format menubar-json', () => {
       const personal = join(home, 'claude-personal')
       await mkdir(join(work, 'projects', 'app'), { recursive: true })
       await mkdir(join(personal, 'projects', 'app'), { recursive: true })
+      const { base } = completedUtcFixtureWindow(6)
+      const ts = (offsetMs: number) => new Date(base.getTime() + offsetMs).toISOString().replace(/\.\d+Z$/, 'Z')
       await writeFile(join(work, 'projects', 'app', 'w.jsonl'),
-        [userLine('w', '2026-04-10T11:59:00Z'), assistantLine('w', '2026-04-10T12:00:00Z', 'mw')].join('\n'))
+        [userLine('w', ts(0)), assistantLine('w', ts(60_000), 'mw')].join('\n'))
       await writeFile(join(personal, 'projects', 'app', 'p.jsonl'),
-        [userLine('p', '2026-04-10T12:59:00Z'), assistantLine('p', '2026-04-10T13:00:00Z', 'mp')].join('\n'))
+        [userLine('p', ts(120_000)), assistantLine('p', ts(180_000), 'mp')].join('\n'))
 
       // A fake Claude Desktop sessions tree.
       const desktop = join(home, 'desktop-sessions')
       const dProj = join(desktop, 'appid', 'ws', 'local_s1', '.claude', 'projects', 'space')
       await mkdir(dProj, { recursive: true })
       await writeFile(join(dProj, 'd.jsonl'),
-        [userLine('d', '2026-04-10T13:59:00Z'), assistantLine('d', '2026-04-10T14:00:00Z', 'md')].join('\n'))
+        [userLine('d', ts(240_000)), assistantLine('d', ts(300_000), 'md')].join('\n'))
 
       const env = {
         CLAUDE_CONFIG_DIRS: [work, personal].join(pathDelimiter),
