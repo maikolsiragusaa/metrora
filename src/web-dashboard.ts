@@ -1,7 +1,8 @@
 import { createServer, type Server } from 'http'
 import { exec } from 'child_process'
-import { readFile } from 'fs/promises'
+import { mkdir, readFile, rename, rm, writeFile } from 'fs/promises'
 import { existsSync } from 'fs'
+import { randomBytes } from 'crypto'
 import { join, normalize, extname, dirname, sep } from 'path'
 import { fileURLToPath } from 'url'
 import { AddressInfo } from 'net'
@@ -12,6 +13,7 @@ import { loadPricing } from './models.js'
 import { buildMenubarPayloadForRange } from './usage-aggregator.js'
 import type { MenubarPayload } from './menubar-json.js'
 import { periodInfoFromQuery, UsageQueryError } from './cli-date.js'
+import { getMetroraCacheDir } from './product-paths.js'
 import { pullDevices, linkRemote } from './sharing/host.js'
 import { browse } from './sharing/discovery.js'
 import { loadOrCreateIdentity } from './sharing/identity.js'
@@ -39,9 +41,20 @@ function writeJsonError(res: import('http').ServerResponse, status: number, erro
   res.end(JSON.stringify({ error }))
 }
 
-// Cap on the cached local payload, matched to the parser's own session cache
-// (parser.ts) so the assembled payload is never staler than its source data.
+// How long a built local payload is considered fresh. A stale payload is still
+// served immediately (stale-while-revalidate) while a background rebuild runs;
+// the TTL only decides when that rebuild is triggered, never whether the
+// caller waits.
 const LOCAL_PAYLOAD_TTL_MS = 180_000
+// After a failed rebuild, wait before the next request may retry it. Only
+// applies when a last-good payload exists to serve meanwhile; a cold key (no
+// good payload yet) always builds on request so error semantics are unchanged.
+const REBUILD_FAILURE_BACKOFF_MS = 15_000
+// Bounds for the last-good payload store, in memory and on disk. Entries are
+// ~100-300KB each, so these caps keep both well under a few MB.
+const PAYLOAD_CACHE_MAX_ENTRIES = 24
+const LAST_GOOD_MAX_ENTRIES = 12
+const LAST_GOOD_FILE = 'web-last-good-payloads.v1.json'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 
@@ -112,22 +125,162 @@ export async function runWebDashboard(opts: {
   const share = new ShareController(shareGetUsage)
   if (await loadShareAlways()) await share.start(true).catch(() => {})
 
-  // The server is long-lived, so cache this machine's parsed payload (the CLI
-  // process cannot). Store the promise before any await so concurrent identical
-  // requests collapse into one parse instead of racing.
-  const localPayloadCache = new Map<string, { at: number; payload: Promise<MenubarPayload> }>()
-  const getLocalPayload = (period: string, provider: string, from?: string, to?: string): Promise<MenubarPayload> => {
-    const key = `${period}|${provider}|${from ?? ''}|${to ?? ''}`
-    const hit = localPayloadCache.get(key)
-    if (hit && Date.now() - hit.at < LOCAL_PAYLOAD_TTL_MS) return hit.payload
-    const periodInfo = periodInfoFromQuery({ period, from, to }, opts.period)
-    const payload = buildMenubarPayloadForRange(periodInfo, { provider, project: opts.project, exclude: opts.exclude, optimize: false })
-    const now = Date.now()
-    localPayloadCache.set(key, { at: now, payload })
-    for (const [k, v] of localPayloadCache) if (now - v.at >= LOCAL_PAYLOAD_TTL_MS) localPayloadCache.delete(k)
-    void payload.catch(() => localPayloadCache.delete(key))
-    return payload
+  // ── Local payload: stale-while-revalidate ─────────────────────────────
+  // The server is long-lived, so it keeps the last GOOD payload per query key
+  // and never makes a caller wait for a rebuild while one exists: a stale
+  // payload is served at once and a single background build refreshes it.
+  // Concurrent requests for the same key collapse into one build.
+  type SwrEntry = {
+    at: number
+    good: MenubarPayload | null
+    building: Promise<MenubarPayload> | null
+    failedAt: number
   }
+  const localPayloadCache = new Map<string, SwrEntry>()
+
+  // Last-good persistence: after each successful rebuild the payload is written
+  // (atomic temp+rename) so a future server process starts with real numbers.
+  // Best-effort — a failed write never affects serving.
+  const lastGoodFilePath = (): string => join(getMetroraCacheDir(), LAST_GOOD_FILE)
+
+  function readPersistedLastGood(): Promise<[string, { at: number; payload: MenubarPayload }][]> {
+    return (async () => {
+      try {
+        const raw = JSON.parse(await readFile(lastGoodFilePath(), 'utf8')) as {
+          version?: number
+          entries?: Record<string, { at?: number; payload?: MenubarPayload }>
+        }
+        if (raw.version !== 1 || !raw.entries || typeof raw.entries !== 'object') return []
+        const out: [string, { at: number; payload: MenubarPayload }][] = []
+        for (const [key, value] of Object.entries(raw.entries)) {
+          const at = value?.at
+          const payload = value?.payload
+          // Minimal shape gate: a corrupt entry would render one bad frame
+          // before the background rebuild replaces it; skip it instead.
+          if (typeof at !== 'number' || !Number.isFinite(at)) continue
+          if (!payload || typeof payload !== 'object' || typeof payload.current !== 'object' || payload.current === null) continue
+          out.push([key, { at, payload }])
+        }
+        out.sort((a, b) => b[1].at - a[1].at)
+        return out.slice(0, LAST_GOOD_MAX_ENTRIES)
+      } catch {
+        return []
+      }
+    })()
+  }
+
+  let persistPending = false
+  let persistChain: Promise<void> = Promise.resolve()
+  function scheduleLastGoodPersist(): void {
+    persistPending = true
+    persistChain = persistChain.then(async () => {
+      if (!persistPending) return
+      persistPending = false
+      try {
+        const newest = [...localPayloadCache.entries()]
+          .filter(([, e]) => e.good)
+          .sort((a, b) => b[1].at - a[1].at)
+          .slice(0, LAST_GOOD_MAX_ENTRIES)
+        const entries: Record<string, { at: number; payload: MenubarPayload }> = {}
+        for (const [key, e] of newest) entries[key] = { at: e.at, payload: e.good! }
+        const dir = getMetroraCacheDir()
+        await mkdir(dir, { recursive: true })
+        const finalPath = lastGoodFilePath()
+        const tempPath = `${finalPath}.${randomBytes(8).toString('hex')}.tmp`
+        await writeFile(tempPath, JSON.stringify({ version: 1, entries }), 'utf8')
+        // Windows can briefly hold a freshly written file (AV/indexer), so the
+        // rename retries the same way the session cache's save does.
+        let renamed = false
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            await rename(tempPath, finalPath)
+            renamed = true
+            break
+          } catch (err) {
+            const code = (err as NodeJS.ErrnoException).code
+            if ((code !== 'EPERM' && code !== 'EBUSY') || attempt === 2) break
+            await new Promise((resolve) => { setTimeout(resolve, 10 * (attempt + 1)) })
+          }
+        }
+        if (!renamed) await rm(tempPath, { force: true }).catch(() => {})
+      } catch {
+        /* best-effort persistence; serving never depends on it */
+      }
+    }).catch(() => { /* previous write failed; the next attempt retries */ })
+  }
+
+  // Restore last-good payloads persisted by previous runs so a freshly opened
+  // dashboard paints real numbers on its very first request instead of a
+  // multi-minute blank page after the session corpus has grown.
+  for (const [key, value] of await readPersistedLastGood()) {
+    localPayloadCache.set(key, { at: value.at, good: value.payload, building: null, failedAt: 0 })
+  }
+
+  const payloadKey = (period: string, provider: string, from?: string, to?: string): string =>
+    `${period}|${provider}|${from ?? ''}|${to ?? ''}`
+
+  const evictPayloadCache = (): void => {
+    if (localPayloadCache.size <= PAYLOAD_CACHE_MAX_ENTRIES) return
+    const byAge = [...localPayloadCache.entries()].sort((a, b) => a[1].at - b[1].at)
+    while (localPayloadCache.size > PAYLOAD_CACHE_MAX_ENTRIES && byAge.length > 0) {
+      const [oldestKey] = byAge.shift()!
+      localPayloadCache.delete(oldestKey)
+    }
+  }
+
+  const startPayloadBuild = (key: string, entry: SwrEntry, period: string, provider: string, from?: string, to?: string): Promise<MenubarPayload> => {
+    const periodInfo = periodInfoFromQuery({ period, from, to }, opts.period)
+    const build = buildMenubarPayloadForRange(periodInfo, { provider, project: opts.project, exclude: opts.exclude, optimize: false })
+    const tracked = (async () => {
+      try {
+        const payload = await build
+        entry.good = payload
+        entry.at = Date.now()
+        entry.failedAt = 0
+        scheduleLastGoodPersist()
+        return payload
+      } catch (err) {
+        entry.failedAt = Date.now()
+        throw err
+      } finally {
+        entry.building = null
+      }
+    })()
+    entry.building = tracked
+    evictPayloadCache()
+    // The stale-serve path returns the last-good payload without awaiting the
+    // rebuild, so a rejected build would surface as an unhandled rejection and
+    // kill the server. Handle it here; cold-key awaiters attach their own.
+    void tracked.catch(() => {})
+    return tracked
+  }
+
+  type ResolvedPayload = { payload: MenubarPayload; stale: boolean }
+  const resolveLocalPayload = async (period: string, provider: string, from?: string, to?: string): Promise<ResolvedPayload> => {
+    const key = payloadKey(period, provider, from, to)
+    let entry = localPayloadCache.get(key)
+    if (!entry) {
+      entry = { at: 0, good: null, building: null, failedAt: 0 }
+      localPayloadCache.set(key, entry)
+    }
+    if (entry.good) {
+      const fresh = Date.now() - entry.at < LOCAL_PAYLOAD_TTL_MS
+      if (!fresh && !entry.building) {
+        const inBackoff = entry.failedAt !== 0 && Date.now() - entry.failedAt < REBUILD_FAILURE_BACKOFF_MS
+        if (!inBackoff) startPayloadBuild(key, entry, period, provider, from, to)
+      }
+      return { payload: entry.good, stale: !fresh }
+    }
+    // No good payload yet (cold key): await the build so a rejection reaches
+    // the caller exactly as the old blocking path did (e.g. invalid period →
+    // UsageQueryError → HTTP 400).
+    if (!entry.building) startPayloadBuild(key, entry, period, provider, from, to)
+    const payload = await entry.building!
+    return { payload, stale: false }
+  }
+
+  const getLocalPayload = (period: string, provider: string, from?: string, to?: string): Promise<MenubarPayload> =>
+    resolveLocalPayload(period, provider, from, to).then((r) => r.payload)
 
   // Context trees re-read a whole transcript (up to 100MB), so cache each by
   // file version. Keyed on mtime: an active session invalidates itself.
@@ -152,16 +305,22 @@ export async function runWebDashboard(opts: {
     return tree
   }
 
-  // Embed this machine's prewarmed payload in index.html for an instant first
-  // paint with no data round-trip. Only the local device is inlined: no remote
-  // network wait, and paired devices stream in via the live fetch right after.
+  // Embed the machine's last-good payload in index.html for an instant first
+  // paint with no data round-trip. Served from the stale-while-revalidate cache
+  // without awaiting anything: the numbers may be from a previous run, and the
+  // live /api/devices fetch right after paint refreshes them (polling while
+  // stale). A cold server with no last-good yet omits the bootstrap entirely;
+  // the SPA paints its loading state and the first /api/devices response fills
+  // the page in. Only the local device is inlined: no remote network wait.
   const serveIndexHtml = async (res: import('http').ServerResponse, filePath: string): Promise<void> => {
     const html = await readFile(filePath, 'utf8')
-    const payload = await getLocalPayload(opts.period, opts.provider, opts.from, opts.to)
-    const devices = [{ id: 'local', name: hostname(), local: true, payload }]
+    const payload = localPayloadCache.get(payloadKey(opts.period, opts.provider, opts.from, opts.to))?.good ?? null
+    const devices = payload ? [{ id: 'local', name: hostname(), local: true, payload }] : []
     // Escape every '<' so a device/model/project name can't close the <script>.
     const json = JSON.stringify({ devices }).replace(/</g, String.fromCharCode(92) + 'u003c')
-    const injected = html.replace('<script type="module"', `<script>window.__METRORA_BOOTSTRAP__=${json}</script>\n    <script type="module"`)
+    const injected = payload
+      ? html.replace('<script type="module"', `<script>window.__METRORA_BOOTSTRAP__=${json}</script>\n    <script type="module"`)
+      : html
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
     res.end(injected)
   }
@@ -191,7 +350,7 @@ export async function runWebDashboard(opts: {
         const to = url.searchParams.get('to') ?? opts.to
         let payload
         try {
-          payload = await getLocalPayload(period, provider, from, to)
+          payload = (await resolveLocalPayload(period, provider, from, to)).payload
         } catch (err) {
           if (!(err instanceof UsageQueryError)) throw err
           writeJsonError(res, 400, err.message)
@@ -203,22 +362,28 @@ export async function runWebDashboard(opts: {
       }
 
       // This machine plus every paired device, each kept separate. Remote
-      // payloads arrive already sanitized (aggregate numbers only).
+      // payloads arrive already sanitized (aggregate numbers only). The local
+      // payload is served stale-while-revalidate, so the response is immediate
+      // whenever a last-good build exists; `stale` tells the SPA to poll until
+      // the background rebuild lands.
       if (url.pathname === '/api/devices') {
         const period = url.searchParams.get('period') ?? opts.period
         const provider = url.searchParams.get('provider') ?? opts.provider
         const from = url.searchParams.get('from') ?? opts.from
         const to = url.searchParams.get('to') ?? opts.to
         let results
+        let stale = false
         try {
-          results = await pullDevices(() => getLocalPayload(period, provider, from, to), { period, from, to }, hostname(), {})
+          const resolved = await resolveLocalPayload(period, provider, from, to)
+          stale = resolved.stale
+          results = await pullDevices(async () => resolved.payload, { period, from, to }, hostname(), {})
         } catch (err) {
           if (!(err instanceof UsageQueryError)) throw err
           writeJsonError(res, 400, err.message)
           return
         }
         res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
-        res.end(JSON.stringify({ devices: results }))
+        res.end(JSON.stringify({ devices: results, stale }))
         return
       }
 

@@ -83,7 +83,9 @@ export type DeviceUsage = {
 
 declare global {
   interface Window {
-    __METRORA_BOOTSTRAP__?: { devices: DeviceUsage[] }
+    // Inlined by the server from its last-good payload. Optional: a cold
+    // server with nothing built yet serves the page without it.
+    __METRORA_BOOTSTRAP__?: DevicesResponse
   }
 }
 
@@ -164,11 +166,18 @@ function normalizePayload(p?: Payload): Payload | undefined {
   }
 }
 
-export async function fetchDevices(period: Period, provider: string): Promise<{ devices: DeviceUsage[] }> {
+export type DevicesResponse = {
+  devices: DeviceUsage[]
+  // True when the local payload was served stale while the server rebuilds it
+  // in the background. The UI polls briefly until a fresh response arrives.
+  stale?: boolean
+}
+
+export async function fetchDevices(period: Period, provider: string): Promise<DevicesResponse> {
   const res = await fetch(`/api/devices?period=${encodeURIComponent(period)}&provider=${encodeURIComponent(provider)}`)
   if (!res.ok) throw new Error(`Request failed (${res.status})`)
-  const data = (await res.json()) as { devices: DeviceUsage[] }
-  return { devices: (data.devices ?? []).map((d) => ({ ...d, payload: normalizePayload(d.payload) })) }
+  const data = (await res.json()) as { devices: DeviceUsage[]; stale?: boolean }
+  return { devices: (data.devices ?? []).map((d) => ({ ...d, payload: normalizePayload(d.payload) })), stale: data.stale }
 }
 
 // Keys map 1:1 to the CLI's --period values (src/cli-date.ts). Period windows

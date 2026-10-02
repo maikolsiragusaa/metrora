@@ -399,7 +399,13 @@ export function App() {
     // When devices are paired, re-pull periodically so a device that briefly
     // dropped (asleep/network blip) reappears on its own instead of staying
     // gone until you switch tabs.
-    refetchInterval: (q) => ((q.state.data?.devices?.some((d) => !d.local) ?? false) ? 20000 : false),
+    refetchInterval: (q) => {
+      // The server answers instantly from its last-good payload while it
+      // rebuilds in the background (stale-while-revalidate): keep polling
+      // until it reports fresh data, then fall back to the pairing cadence.
+      if (q.state.data?.stale) return 2500
+      return q.state.data?.devices?.some((d) => !d.local) ? 20000 : false
+    },
   })
 
   const { data: shareInfo } = useQuery({
