@@ -10,6 +10,9 @@ const KNOWN_PROVIDER_LABELS: Record<string, string> = {
   cursor: 'Cursor',
   'cursor-agent': 'Cursor Agent',
   deepseek: 'DeepSeek',
+  dsh: 'DeepSeek Harness',
+  'deepseek-official': 'DeepSeek',
+  'deepseek-account': 'DeepSeek',
   google: 'Google',
   'open-router': 'OpenRouter',
   openrouter: 'OpenRouter',
@@ -60,5 +63,9 @@ export function providerLogoKey(value: string): string {
   if (normalizedValue.includes('orcarouter') || normalizedValue.includes('orca-router')) return 'orcarouter'
   if (normalizedValue.includes('nvidia') || normalizedValue.includes('nemotron')) return 'nvidia'
   if (normalizedValue.includes('bedrock')) return 'amazon-bedrock'
+  // DSH (DeepSeek Harness) records its route id — `deepseek-account` or
+  // `deepseek-official` — as the serving provider, so the collector id and
+  // those routes all share the DeepSeek house logo.
+  if (normalizedValue === 'dsh' || normalizedValue.includes('deepseek')) return 'deepseek'
   return value
 }

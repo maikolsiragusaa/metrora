@@ -34,7 +34,7 @@ export const CollectorInventoryEntryV1Schema = z.strictObject({
 export const CollectorInventoryV1Schema = z.strictObject({
   kind: z.literal(COLLECTOR_INVENTORY_KIND),
   version: z.literal(1),
-  entries: z.array(CollectorInventoryEntryV1Schema).length(39),
+  entries: z.array(CollectorInventoryEntryV1Schema).length(40),
 })
 
 export type CollectorInventoryEntryV1 = z.infer<typeof CollectorInventoryEntryV1Schema>
@@ -137,6 +137,7 @@ const entries = [
   pending('cursor-agent', 'src/providers/cursor-agent.ts', 'docs/providers/cursor-agent.md', 'lazy'),
   pending('devin', 'src/providers/devin.ts', 'docs/providers/devin.md', 'core'),
   pending('droid', 'src/providers/droid.ts', 'docs/providers/droid.md', 'core'),
+  pending('dsh', 'src/providers/dsh.ts', 'docs/providers/dsh.md', 'core'),
   pending('forge', 'src/providers/forge.ts', 'docs/providers/forge.md', 'lazy'),
   pending('goose', 'src/providers/goose.ts', 'docs/providers/goose.md', 'lazy'),
   pending('grok', 'src/providers/grok.ts', 'docs/providers/grok.md', 'core'),

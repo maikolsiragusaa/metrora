@@ -86,6 +86,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   pi: '#F472B6',
   kimi: '#B6E34A',
   kimicode: '#A3E635',
+  dsh: '#4D6BFE',
   all: '#FF8C42',
 }
 
@@ -686,6 +687,7 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   pi: 'Pi',
   kimi: 'Kimi',
   kimicode: 'Kimi Code',
+  dsh: 'DeepSeek Harness',
 }
 function getProviderDisplayName(name: string): string { return PROVIDER_DISPLAY_NAMES[name] ?? name }
 

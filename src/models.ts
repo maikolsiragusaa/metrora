@@ -182,6 +182,8 @@ const BUILTIN_ALIASES: Record<string, string> = {
   'k2d6-agent':                    'kimi-k2p6',
   'mimo-v2-flash':                 'xiaomi/mimo-v2-flash',
   'kat-coder-pro-v1':              'kwaipilot/kat-coder-pro',
+  // DSH logs the route id `deepseek-flash` for the wire model `deepseek-v4-flash`; unmapped it prices at $0.
+  'deepseek-flash':                'deepseek-v4-flash',
   // Cursor emits dot-version tier-last names plus tier/reasoning suffixes
   // that LiteLLM does not index (`-high`, `-low`, `-medium`, `-thinking`,
   // `-high-thinking`, `-fast-mode`). Missing aliases here surface as $0 in

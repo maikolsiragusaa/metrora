@@ -14,6 +14,8 @@ Source repository: `https://github.com/getagentseal/codeburn`
 
 Later provider-capacity work selectively adapts bounded MIT-licensed behavior and parsing lessons from reviewed CodeBurn revisions through `b305378e351ebb6a401e3de8f48af2565608fd3e`. Metrora keeps its own `ProviderQuotaSnapshot`, credential policy, source hierarchy, Windows discovery behavior, stale/backoff semantics, and product presentation rather than synchronizing the upstream implementation wholesale.
 
+The DeepSeek Harness collector (`src/providers/dsh.ts`, `src/providers/dsh-session-log.ts`) is a port of that upstream snapshot's `src/providers/dsh.ts` at commit `aded4c232622b82284f22d172cecb137354e3071`, extended by Metrora to Session format version 4 (usage settled inside `assistant/message`, per-attempt replacement, fork-seed cut markers), with Metrora's own token-semantics declaration, price-authority evidence, tool normalization and cache/parse-version authorities. The upstream implementation covers session format versions 0-3 only and refuses version 4, so this port is not a wholesale synchronization.
+
 ## CodexBar capacity reference
 
 Provider-capacity source strategies and compatibility behavior were also reviewed against `steipete/CodexBar` at commit `0a1aa53598c94003a87bcdcca4af88b0ad508421` and selectively adapted where useful. Metrora does not incorporate CodexBar as a runtime dependency and does not adopt its browser-cookie, localStorage, password-login, account-store, or application lifecycle wholesale.
@@ -87,3 +89,11 @@ semantics or evidence authority.
 The upstream work is licensed under the Apache License, Version 2.0. Metrora changed the implementation to TypeScript, added an explicit named export and unsupported-value errors, made circular-reference cleanup failure-safe, and rejects negative zero in accordance with verified RFC 8785 technical erratum 7920.
 
 The complete Apache License 2.0 text is distributed in [`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt).
+
+## DeepSeek Harness session-log framing
+
+`src/providers/dsh-session-log.ts` scans the zstd frame structure of DeepSeek Harness session logs. That scan is a TypeScript port of `scanZstdFrames` from the harness's own `@deepseek-ai/dsh-session-persistence-jsonl` package, because a session log is a concatenation of independent frames that a single one-shot decode would read only partially. Metrora's adaptation adds the decode budget, the torn-tail and corrupt-file reporting, the versioned-generation selection and the notice policy.
+
+The DeepSeek Harness upstream work is MIT licensed. Its original copyright notice and complete MIT licence text are preserved in [`LICENSES/DEEPSEEK-HARNESS-MIT.txt`](LICENSES/DEEPSEEK-HARNESS-MIT.txt).
+
+Source repository: `https://github.com/deepseek-ai/deepseek-harness`
