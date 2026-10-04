@@ -166,6 +166,10 @@ function sanitizeProviders(raw: unknown): DailyEntry['providers'] {
     for (const key of OPTIONAL_SLICE_NUMERICS) {
       if (slice[key] !== undefined) clean[key] = num(slice[key])
     }
+    if (slice.usageEvidence === 'complete' || slice.usageEvidence === 'partial'
+      || slice.usageEvidence === 'unavailable' || slice.usageEvidence === 'inconsistent') {
+      clean.usageEvidence = slice.usageEvidence
+    }
     if (isRecord(slice.models)) clean.models = sanitizeModels(slice.models)
     if (isRecord(slice.categories)) clean.categories = sanitizeCategories(slice.categories)
     const projects = sanitizeProjects(slice.projects).projects
@@ -226,6 +230,10 @@ export function migrateDays(days: Record<string, unknown>[]): DailyEntry[] {
       categories: sanitizeCategories(d.categories),
       providers: sanitizeProviders(d.providers),
       ...(sanitizeProjects(d.projects)),
+      ...(d.usageEvidence === 'complete' || d.usageEvidence === 'partial'
+          || d.usageEvidence === 'unavailable' || d.usageEvidence === 'inconsistent'
+        ? { usageEvidence: d.usageEvidence }
+        : {}),
       ...(d.carried === true ? { carried: true as const } : {}),
     }))
 }

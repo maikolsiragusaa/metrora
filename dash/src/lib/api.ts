@@ -16,6 +16,7 @@ export type DailyEntry = {
   outputTokens: number
   cacheReadTokens: number
   cacheWriteTokens: number
+  usageEvidence?: 'complete' | 'partial' | 'unavailable' | 'inconsistent'
   topModels: ModelDay[]
 }
 
@@ -45,6 +46,7 @@ export type Current = {
   outputTokens: number
   cacheReadTokens: number
   cacheWriteTokens: number
+  usageEvidence?: 'complete' | 'partial' | 'unavailable' | 'inconsistent'
   cacheHitPercent: number
   codexCredits: number
   topActivities: Array<{ name: string; cost: number; turns: number; oneShotRate: number | null }>
@@ -129,6 +131,7 @@ function normalizePayload(p?: Payload): Payload | undefined {
       outputTokens: c.outputTokens ?? 0,
       cacheReadTokens: c.cacheReadTokens ?? 0,
       cacheWriteTokens: c.cacheWriteTokens ?? 0,
+      usageEvidence: c.usageEvidence,
       cacheHitPercent: c.cacheHitPercent ?? 0,
       codexCredits: c.codexCredits ?? 0,
       topActivities: c.topActivities ?? [],
@@ -153,6 +156,7 @@ function normalizePayload(p?: Payload): Payload | undefined {
         outputTokens: d.outputTokens ?? 0,
         cacheReadTokens: d.cacheReadTokens ?? 0,
         cacheWriteTokens: d.cacheWriteTokens ?? 0,
+        ...(d.usageEvidence ? { usageEvidence: d.usageEvidence } : {}),
         topModels: (d.topModels ?? []).map((m) => ({
           name: m.name,
           cost: m.cost ?? 0,

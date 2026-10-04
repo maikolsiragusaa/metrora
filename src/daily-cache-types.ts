@@ -78,7 +78,8 @@ export type ProviderDaySlice = {
   oneShotTurns?: number
   models?: Record<string, ModelDayStats>
   categories?: Record<string, CategoryDayStats>
-  projects?: Record<string, ProjectDayStats>
+  projects?: Record<string, ProjectDayStats>  /// Primary-counter evidence of the calls in this provider slice; absent on legacy slices.
+  usageEvidence?: 'complete' | 'partial' | 'unavailable' | 'inconsistent'
 }
 
 export type DailyEntry = {
@@ -95,6 +96,9 @@ export type DailyEntry = {
   additiveReasoningTokens?: number
   cacheReadTokens: number
   cacheWriteTokens: number
+  /// Evidence quality of the day's primary token counters, combined from the
+  /// calls that built it. Absent on legacy days (counters assumed complete).
+  usageEvidence?: 'complete' | 'partial' | 'unavailable' | 'inconsistent'
   editTurns: number
   oneShotTurns: number
   models: Record<string, ModelDayStats>

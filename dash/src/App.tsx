@@ -78,8 +78,7 @@ function DeviceView({ payload, isRemote, unit }: { payload?: Payload; isRemote: 
   // Cache cards read the period-scoped `current` totals, matching Cost/Calls/
   // Tokens. `history.daily` is the 365-day backfill that feeds the trend chart
   // only; summing it here over-counted the cards for shorter periods (#583).
-  const cacheWrite = c?.cacheWriteTokens ?? 0
-  const cacheRead = c?.cacheReadTokens ?? 0
+  const cacheWrite = c?.cacheWriteTokens ?? 0, cacheRead = c?.cacheReadTokens ?? 0
   const toolBars: BarItem[] = c
     ? Object.entries(c.providers).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ name: k, value: v, display: usd(v) }))
     : []
@@ -97,6 +96,9 @@ function DeviceView({ payload, isRemote, unit }: { payload?: Payload; isRemote: 
             </div>
             <div className="mt-1 font-display text-4xl tracking-tight tabular-nums text-primary">
               {c ? (unit === 'tokens' ? fmtTokens(c.inputTokens + c.outputTokens) : usd(c.cost)) : <Skeleton className="h-10 w-36" />}
+              {c?.usageEvidence && c.usageEvidence !== 'complete' && (
+                <span className="ml-2 align-middle text-xs font-normal text-amber-400">incomplete token data</span>
+              )}
             </div>
           </div>
         </div>

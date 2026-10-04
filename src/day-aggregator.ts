@@ -1,7 +1,7 @@
 import type { CategoryDayStats, DailyEntry, ModelDayStats, ProjectDayStats, ProviderDaySlice } from './daily-cache.js'
 import type { PeriodData } from './menubar-json.js'
 import { CATEGORY_LABELS, type ProjectSummary, type TaskCategory, type TokenUsage } from './types.js'
-import { combineReasoningSemantics, reasoningTokenTotals, type ReasoningTokenSemantics, type ReasoningTokenTotals } from './token-semantics.js'
+import { combineReasoningSemantics, combineUsageEvidence, reasoningTokenTotals, type ReasoningTokenSemantics, type ReasoningTokenTotals } from './token-semantics.js'
 import { emptyModelStats, mergeModelStats } from './daily-cache-model-detail.js'
 import { emptyCategoryStats, mergeCategoryStats, setOwn } from './daily-cache-category-detail.js'
 import { addCategoryDetail, addModelDetail } from './daily-cache-project-detail.js'
@@ -273,6 +273,7 @@ export function aggregateProjectsIntoDays(
           turnDay.calls += 1
           turnDay.inputTokens += call.usage.inputTokens
           turnDay.outputTokens += call.usage.outputTokens
+          turnDay.usageEvidence = combineUsageEvidence([turnDay.usageEvidence, call.usageEvidence])
           addReasoningTotals(turnDay, callReasoning)
           turnDay.cacheReadTokens += call.usage.cacheReadInputTokens
           turnDay.cacheWriteTokens += call.usage.cacheCreationInputTokens
@@ -294,6 +295,7 @@ export function aggregateProjectsIntoDays(
           slice.savingsUSD += callSavings
           slice.inputTokens! += call.usage.inputTokens
           slice.outputTokens! += call.usage.outputTokens
+          slice.usageEvidence = combineUsageEvidence([slice.usageEvidence, call.usageEvidence])
           addReasoningTotals(slice, callReasoning)
           slice.cacheReadTokens! += call.usage.cacheReadInputTokens
           slice.cacheWriteTokens! += call.usage.cacheCreationInputTokens
@@ -322,6 +324,7 @@ export function buildPeriodDataFromDays(days: DailyEntry[], label: string): Peri
   let reasoningTokens = 0, additiveReasoningTokens = 0
   let hasReasoningTokens = false
   let hasAdditiveReasoningTokens = false
+  let dayUsageEvidence: ReturnType<typeof combineUsageEvidence>
   const catTotals: Record<string, { turns: number; cost: number; savingsUSD: number; editTurns: number; oneShotTurns: number }> = {}
   const modelTotals: Record<string, {
     calls: number
@@ -355,6 +358,7 @@ export function buildPeriodDataFromDays(days: DailyEntry[], label: string): Peri
     }
     cacheReadTokens += d.cacheReadTokens
     cacheWriteTokens += d.cacheWriteTokens
+    dayUsageEvidence = combineUsageEvidence([dayUsageEvidence, d.usageEvidence])
 
     for (const [name, m] of Object.entries(d.models)) {
       const acc = modelTotals[name] ?? {
@@ -409,6 +413,7 @@ export function buildPeriodDataFromDays(days: DailyEntry[], label: string): Peri
     ...(hasAdditiveReasoningTokens ? { additiveReasoningTokens } : {}),
     cacheReadTokens,
     cacheWriteTokens,
+    ...(dayUsageEvidence ? { usageEvidence: dayUsageEvidence } : {}),
     categories: Object.entries(catTotals)
       .sort(([, a], [, b]) => b.cost - a.cost)
       .map(([cat, d]) => ({ name: CATEGORY_LABELS[cat as TaskCategory] ?? cat, ...d })),

@@ -6,7 +6,7 @@ import { formatCost, formatTokens } from './format.js'
 import { createModelPricingCounts, observeModelPricing, summarizeModelPricing, type ModelPricingCounts, type ModelPricingSummary } from './model-pricing-summary.js'
 import { getProvider } from './providers/index.js'
 import { CATEGORY_LABELS, type ProjectSummary, type TaskCategory } from './types.js'
-import { combineReasoningSemantics, reasoningSemanticsForProviders, reasoningTokenTotals, type ReasoningTokenSemantics } from './token-semantics.js'
+import { combineReasoningSemantics, combineUsageEvidence, reasoningSemanticsForProviders, reasoningTokenTotals, type ReasoningTokenSemantics, type UsageTokenEvidence } from './token-semantics.js'
 import type { AggregateOptions, ModelReportRow } from './models-report-types.js'
 import { renderCsv } from './models-report-csv.js'
 export type { AggregateOptions, ModelReportRow } from './models-report-types.js'
@@ -20,7 +20,7 @@ type Bucket = {
   inputTokens: number
   outputTokens: number
   reasoningTokens: number; additiveReasoningTokens: number
-  reasoningSemantics: ReasoningTokenSemantics
+  reasoningSemantics: ReasoningTokenSemantics; usageEvidence?: UsageTokenEvidence
   cacheWriteTokens: number
   cacheReadTokens: number
   costUSD: number
@@ -92,8 +92,8 @@ export async function aggregateModels(projects: ProjectSummary[], opts: Aggregat
           const callReasoningSemantics = call.reasoningSemantics ?? reasoningSemanticsForProviders([call.provider])
           const callReasoning = reasoningTokenTotals(call.usage.reasoningTokens, callReasoningSemantics)
           bucket.reasoningSemantics = bucket.calls === 0 ? callReasoningSemantics : combineReasoningSemantics([bucket.reasoningSemantics, callReasoningSemantics])
-          bucket.reasoningTokens += callReasoning.observedReasoningTokens
-          bucket.additiveReasoningTokens += callReasoning.additiveReasoningTokens
+          bucket.usageEvidence = combineUsageEvidence([bucket.usageEvidence, call.usageEvidence])
+          bucket.reasoningTokens += callReasoning.observedReasoningTokens; bucket.additiveReasoningTokens += callReasoning.additiveReasoningTokens
           bucket.cacheWriteTokens += call.usage.cacheCreationInputTokens
           // The two cache-read fields are provider vocabularies for the same tokens.
           bucket.cacheReadTokens += Math.max(call.usage.cacheReadInputTokens, call.usage.cachedInputTokens)
@@ -108,8 +108,7 @@ export async function aggregateModels(projects: ProjectSummary[], opts: Aggregat
           const modelKey = `${provider} ${model}`
           let perCat = perModelCategoryCost.get(modelKey)
           if (!perCat) {
-            perCat = new Map()
-            perModelCategoryCost.set(modelKey, perCat)
+            perCat = new Map(); perModelCategoryCost.set(modelKey, perCat)
           }
           perCat.set(turn.category, (perCat.get(turn.category) ?? 0) + call.costUSD)
           perModelTotalCost.set(modelKey, (perModelTotalCost.get(modelKey) ?? 0) + call.costUSD)
@@ -145,6 +144,7 @@ export async function aggregateModels(projects: ProjectSummary[], opts: Aggregat
       inputTokens: bucket.inputTokens,
       outputTokens: bucket.outputTokens,
       reasoningTokens: bucket.reasoningTokens, additiveReasoningTokens: bucket.additiveReasoningTokens,
+      ...(bucket.usageEvidence ? { usageEvidence: bucket.usageEvidence } : {}),
       reasoningSemantics: bucket.reasoningSemantics,
       cacheWriteTokens: bucket.cacheWriteTokens,
       cacheReadTokens: bucket.cacheReadTokens,

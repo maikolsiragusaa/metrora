@@ -222,6 +222,7 @@ export function sliceDayToProvider(day: DailyEntry, provider: string): DailyEntr
     sessions: projectedSlice.sessions ?? 0,
     inputTokens: projectedSlice.inputTokens ?? 0,
     outputTokens: projectedSlice.outputTokens ?? 0,
+    ...(projectedSlice.usageEvidence ? { usageEvidence: projectedSlice.usageEvidence } : {}),
     additiveReasoningTokens: projectedSlice.additiveReasoningTokens,
     cacheReadTokens: projectedSlice.cacheReadTokens ?? 0,
     cacheWriteTokens: projectedSlice.cacheWriteTokens ?? 0,

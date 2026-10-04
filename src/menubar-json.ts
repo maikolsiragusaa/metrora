@@ -20,7 +20,7 @@ export type PeriodData = {
   outputTokens: number
   reasoningTokens?: number; additiveReasoningTokens?: number
   cacheReadTokens: number
-  cacheWriteTokens: number
+  cacheWriteTokens: number; usageEvidence?: 'complete' | 'partial' | 'unavailable' | 'inconsistent'
   /// Total Codex credits consumed in the period (issues #408/#495). Optional so
   /// non-menubar PeriodData producers don't have to compute it.
   codexCredits?: number; projectDetailCoverage?: ProjectDetailCoverage
@@ -141,7 +141,7 @@ export type DailyHistoryEntry = {
   calls: number
   inputTokens: number
   outputTokens: number
-  reasoningTokens?: number
+  reasoningTokens?: number; usageEvidence?: 'complete' | 'partial' | 'unavailable' | 'inconsistent'
   cacheReadTokens: number
   cacheWriteTokens: number
   topModels: DailyModelBreakdown[]
@@ -556,7 +556,7 @@ export function buildMenubarPayload(
       outputTokens: current.outputTokens,
       cacheReadTokens: current.cacheReadTokens,
       cacheWriteTokens: current.cacheWriteTokens,
-      cacheHitPercent: cacheHitPercent(current.inputTokens, current.cacheReadTokens),
+      cacheHitPercent: cacheHitPercent(current.inputTokens, current.cacheReadTokens), usageEvidence: current.usageEvidence,
       codexCredits: current.codexCredits ?? 0,
       estimatedCostUSD: current.estimatedCostUSD ?? 0,
       topActivities: buildTopActivities(current.categories),
