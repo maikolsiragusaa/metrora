@@ -9,6 +9,7 @@ import { parseAllSessions, filterProjectsByDateRange, filterProjectsByName, setI
 import { findUnpricedModels, loadPricing } from './models.js'
 import { aggregateModelTotals } from './model-breakdown.js'
 import { buildDurablePeriod } from './usage-aggregator.js'
+import { PROVIDER_COLORS, PROVIDER_DISPLAY_NAMES } from './provider-presentation.js'
 import { getAllProviders } from './providers/index.js'
 import { scanAndDetect, type WasteFinding, type WasteAction, type OptimizeResult } from './optimize.js'
 import { estimateContextBudget, type ContextBudget } from './context-budget.js'
@@ -75,19 +76,6 @@ const PANEL_COLORS = {
   mcp: '#F55BE0',
   bash: '#F5A05B',
   skills: '#7B68EE',
-}
-
-const PROVIDER_COLORS: Record<string, string> = {
-  claude: '#FF8C42',
-  codex: '#5BF5A0',
-  cursor: '#00B4D8',
-  'ibm-bob': '#0F62FE',
-  opencode: '#A78BFA',
-  pi: '#F472B6',
-  kimi: '#B6E34A',
-  kimicode: '#A3E635',
-  dsh: '#4D6BFE',
-  all: '#FF8C42',
 }
 
 const CATEGORY_COLORS: Record<TaskCategory, string> = {
@@ -677,18 +665,6 @@ function ClaudeAgentTypes({ projects, pw, bw }: { projects: ProjectSummary[]; pw
   )
 }
 
-const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
-  all: 'All',
-  claude: 'Claude',
-  codex: 'Codex',
-  cursor: 'Cursor',
-  'ibm-bob': 'IBM Bob',
-  opencode: 'OpenCode',
-  pi: 'Pi',
-  kimi: 'Kimi',
-  kimicode: 'Kimi Code',
-  dsh: 'DeepSeek Harness',
-}
 function getProviderDisplayName(name: string): string { return PROVIDER_DISPLAY_NAMES[name] ?? name }
 
 function PeriodTabs({ active, providerName, showProvider }: { active: Period; providerName?: string; showProvider?: boolean }) {
