@@ -1,6 +1,6 @@
 import type { ReasoningLevel, ReasoningLevelSource, ReasoningMix } from './reasoning-level.js'
 import type { CostAssignmentV1 } from './pricing/cost-assignment.js'
-import type { CacheTokenEvidence, ReasoningTokenSemantics } from './token-semantics.js'
+import type { CacheTokenEvidence, ReasoningTokenSemantics, UsageTokenEvidence } from './token-semantics.js'
 import type { HistoricalPricingContextV1 } from './pricing/pricing-context.js'
 
 export type TokenUsage = {
@@ -123,6 +123,8 @@ export type ParsedApiCall = {
   reasoningSemantics?: ReasoningTokenSemantics
   /** Bounded OTel cache-subfield evidence; absent for non-OTel sources. */
   cacheTokenEvidence?: CacheTokenEvidence
+  /** Primary input/output counter evidence; absent on legacy records. */
+  usageEvidence?: UsageTokenEvidence
 
   reasoningLevelSource?: ReasoningLevelSource
   usage: TokenUsage

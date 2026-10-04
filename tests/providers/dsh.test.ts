@@ -473,6 +473,109 @@ describe('dsh provider - parsing session format v4', () => {
     expect(call.cacheCreationInputTokens).toBe(0)
     expect(call.reasoningTokens).toBe(0)
     expect(call.costIsEstimated).toBe(true)
+    // A degraded counter is unknown, not an observed zero: the record's
+    // primary-counter evidence stays partial even though costIsEstimated is
+    // unconditionally true for DSH's derived cost.
+    expect(call.usageEvidence).toBe('partial')
+  })
+
+  it('distinguishes missing primary counters from a reported zero across the cache boundary', async () => {
+    const message = (turn: number, seq: number, usage: Record<string, unknown>) => ({
+      type: 'assistant/message',
+      seq,
+      time: CREATED_AT + turn * 1000,
+      data: {
+        turn,
+        step: 1,
+        message: { role: 'assistant', id: `msg-${turn}`, content: [], source: { kind: 'model', provider: 'deepseek-account', model: 'deepseek-flash' } },
+        usage,
+        stream: [],
+      },
+    })
+    const path = await writeLines(join('sessions', '--proj--', 'session-1', 'session.v4.jsonl'), [
+      header(),
+      // Input missing, output valid: partial evidence, never a zero-input call.
+      message(1, 1, { outputTokens: 5 }),
+      // Output missing, input valid.
+      message(2, 2, { inputTokens: 100 }),
+      // A reported zero is valid evidence of zero: complete, not partial.
+      message(3, 3, { inputTokens: 0, outputTokens: 5 }),
+      // Both primary counters absent with cache evidence only: unavailable.
+      message(4, 4, { cacheWriteTokens: 50 }),
+    ])
+    const calls = await parse(path)
+    expect(calls).toHaveLength(4)
+    expect(calls[0]!.inputTokens).toBe(0)
+    expect(calls[0]!.usageEvidence).toBe('partial')
+    expect(calls[1]!.outputTokens).toBe(0)
+    expect(calls[1]!.usageEvidence).toBe('partial')
+    expect(calls[2]!.inputTokens).toBe(0)
+    expect(calls[2]!.usageEvidence).toBe('complete')
+    expect(calls[3]!.inputTokens).toBe(0)
+    expect(calls[3]!.usageEvidence).toBe('unavailable')
+    expect(calls[3]!.cacheCreationInputTokens).toBe(50)
+
+    // The distinction is part of the durable cache authority and comes back
+    // on the API surface after a cache round trip.
+    const cached = providerCallToCachedCall(calls[0]!)
+    expect(cached.usageEvidence).toBe('partial')
+    expect(cachedCallToApiCall(cached).usageEvidence).toBe('partial')
+    const cachedComplete = providerCallToCachedCall(calls[2]!)
+    expect(cachedComplete.usageEvidence).toBe('complete')
+    expect(cachedCallToApiCall(cachedComplete).usageEvidence).toBe('complete')
+    const cachedUnavailable = providerCallToCachedCall(calls[3]!)
+    expect(cachedCallToApiCall(cachedUnavailable).usageEvidence).toBe('unavailable')
+  })
+
+  it('keeps the usage evidence through the durable cache file round trip', async () => {
+    vi.stubEnv('METRORA_CONFIG_DIR', join(tmpDir, 'dsh-cache-roundtrip'))
+    try {
+      const { emptyCache, computeEnvFingerprint, saveCache, loadCache } = await import('../../src/session-cache.js')
+      const { providerCallToCachedCall } = await import('../../src/parser.js')
+
+      const message = (turn: number, seq: number, usage: Record<string, unknown>) => ({
+        type: 'assistant/message',
+        seq,
+        time: CREATED_AT + turn * 1000,
+        data: {
+          turn,
+          step: 1,
+          message: { role: 'assistant', id: `msg-${turn}`, content: [], source: { kind: 'model', provider: 'deepseek-account', model: 'deepseek-flash' } },
+          usage,
+          stream: [],
+        },
+      })
+      const path = await writeLines(join('sessions', '--proj--', 'session-1', 'session.v4.jsonl'), [
+        header(),
+        message(1, 1, { outputTokens: 5 }),
+      ])
+      const [call] = await parse(path)
+      const cached = providerCallToCachedCall(call!)
+      expect(cached.usageEvidence).toBe('partial')
+
+      const cache = emptyCache()
+      cache.providers['dsh'] = {
+        envFingerprint: computeEnvFingerprint('dsh'),
+        files: {
+          [path]: {
+            fingerprint: { dev: 1, ino: 1, mtimeMs: 1, sizeBytes: 1 },
+            mcpInventory: [],
+            turns: [{ timestamp: cached.timestamp, sessionId: cached.sessionId ?? 'session-42', userMessage: '', calls: [cached] }],
+          },
+        },
+      }
+      expect(await saveCache(cache)).toBe(true)
+
+      const reloaded = await loadCache()
+      const reloadedCall = reloaded.providers['dsh']?.files[path]?.turns[0]?.calls[0]
+      // The loaded cache is the JSON round trip through isValidCache: the
+      // distinction survived serialization, not just the in-memory mapping.
+      expect(reloadedCall?.usageEvidence).toBe('partial')
+      expect(reloadedCall?.usage.inputTokens).toBe(0)
+      expect(reloadedCall?.usage.outputTokens).toBe(5)
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 
   it('retains what an incomplete usage record did report and says so', async () => {

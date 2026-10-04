@@ -1,7 +1,7 @@
 import { join } from 'path'
 
 import { calculateCost, getShortModelName } from '../models.js'
-import { billableOutputTokens, type CacheTokenEvidence } from '../token-semantics.js'
+import { billableOutputTokens, type CacheTokenEvidence, type UsageTokenEvidence } from '../token-semantics.js'
 import { extractBashCommands } from '../bash-utils.js'
 import { normalizeExplicitModelProvider } from '../model-provider.js'
 import {
@@ -90,6 +90,19 @@ function cacheTokenEvidence(usage: DshUsage): CacheTokenEvidence {
   const write = count(usage.cacheWriteTokens)
   if (read && write) return 'complete'
   return read || write ? 'partial' : 'unavailable'
+}
+
+/**
+ * How much of the record's primary token counters the log actually carried.
+ * A reported zero is complete evidence of zero; a missing or non-numeric
+ * counter is unknown, not a zero, and must not read as one downstream.
+ */
+function usageEvidence(usage: DshUsage): UsageTokenEvidence {
+  const count = (value: unknown): boolean => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+  const input = count(usage.inputTokens)
+  const output = count(usage.outputTokens)
+  if (input && output) return 'complete'
+  return input || output ? 'partial' : 'unavailable'
 }
 
 type UsageObservation = {
@@ -413,6 +426,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
             reasoningTokens: reasoning,
             reasoningSemantics: 'aggregate-output' as const,
             cacheTokenEvidence: cacheTokenEvidence(observation.usage),
+            usageEvidence: usageEvidence(observation.usage),
             webSearchRequests: 0,
             costUSD,
             // DSH reports no cost of its own, so this cost is always derived

@@ -19,6 +19,29 @@ export type ReasoningTokenTotals = {
  */
 export type CacheTokenEvidence = 'complete' | 'partial' | 'unavailable' | 'inconsistent'
 
+/**
+ * Evidence quality for a record's primary input/output counters, using the
+ * same classes as the cache subfield evidence. A reported zero is complete
+ * evidence of zero; a missing or non-numeric counter is unknown, not a zero,
+ * and must not be read as one downstream.
+ */
+export type UsageTokenEvidence = CacheTokenEvidence
+
+/**
+ * Spread-ready optional token-authority fields for a record crossing a
+ * boundary (parsed call -> API/cache and back): absent evidence contributes
+ * no key instead of writing an explicit undefined.
+ */
+export function optionalTokenAuthorityFields(call: {
+  cacheTokenEvidence?: CacheTokenEvidence
+  usageEvidence?: UsageTokenEvidence
+}): { cacheTokenEvidence?: CacheTokenEvidence; usageEvidence?: UsageTokenEvidence } {
+  return {
+    ...(call.cacheTokenEvidence ? { cacheTokenEvidence: call.cacheTokenEvidence } : {}),
+    ...(call.usageEvidence ? { usageEvidence: call.usageEvidence } : {}),
+  }
+}
+
 const SEPARATE_REASONING_PROVIDERS = new Set([
   'antigravity',
   'codex',
