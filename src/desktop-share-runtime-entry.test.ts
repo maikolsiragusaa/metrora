@@ -56,18 +56,24 @@ describe('desktop Activity share runtime', () => {
     const { createDesktopShareRuntime } = await import('./desktop-share-runtime-entry.js')
     const { buildCompanionCapabilities } = await import('./sharing/share-run.js')
 
+    // generatedAt is stamped fresh on every build, so two matrices built a
+    // millisecond apart differ: compare content with it blanked (the
+    // menubar-report-parity idiom) instead of racing the clock.
+    const blankGeneratedAt = <T extends { generatedAt: string }>(matrix: T): T => ({ ...matrix, generatedAt: '' })
+
     const withoutCapacity = await createDesktopShareRuntime(7777)
     const expectedWithout = await buildCompanionCapabilities(false)
-    expect(await withoutCapacity.capabilities()).toEqual(expectedWithout)
+    expect(blankGeneratedAt(await withoutCapacity.capabilities())).toEqual(blankGeneratedAt(expectedWithout))
     expect(withoutCapacity.capabilities && typeof withoutCapacity.capabilities === 'function').toBe(true)
 
     const withCapacity = await createDesktopShareRuntime(7777, { getCapacity: async () => [] })
     const expectedWith = await buildCompanionCapabilities(true)
-    expect(await withCapacity.capabilities()).toEqual(expectedWith)
+    expect(blankGeneratedAt(await withCapacity.capabilities())).toEqual(blankGeneratedAt(expectedWith))
 
     const matrix = await withCapacity.capabilities()
     expect(matrix.kind).toBe('metrora.companion.capabilities')
     expect(matrix.version).toBe(1)
+    expect(typeof matrix.generatedAt).toBe('string')
     expect(matrix.capabilities.find(entry => entry.id === 'home.capacity')?.availability).toBe('available')
     const noCapacityMatrix = await withoutCapacity.capabilities()
     expect(noCapacityMatrix.capabilities.find(entry => entry.id === 'home.capacity')?.availability).toBe('unavailable')
