@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -415,6 +415,94 @@ describe('dsh provider - parsing session format v4', () => {
     expect(cached.isEstimated).toBe(true)
     expect(cached.modelProvider).toBe('deepseek-account')
     expect(cachedCallToApiCall(cached).costAssignment.kind).not.toBe('metered')
+  })
+
+  it('keeps missing cache fields distinct from a reported zero', async () => {
+    // JSON.stringify drops absent keys, so each record below carries exactly
+    // the cache fields a real log would: one partial, one with no cache
+    // evidence at all, one that reports explicit zeros.
+    const message = (turn: number, seq: number, usage: Record<string, unknown>) => ({
+      type: 'assistant/message',
+      seq,
+      time: CREATED_AT + turn * 1000,
+      data: {
+        turn,
+        step: 1,
+        message: { role: 'assistant', id: `msg-${turn}`, content: [], source: { kind: 'model', provider: 'deepseek-account', model: 'deepseek-flash' } },
+        usage,
+        stream: [],
+      },
+    })
+    const path = await writeLines(join('sessions', '--proj--', 'session-1', 'session.v4.jsonl'), [
+      header(),
+      message(1, 1, { inputTokens: 100, outputTokens: 10, cacheReadTokens: 50 }),
+      message(2, 2, { inputTokens: 100, outputTokens: 10, totalTokens: 110 }),
+      message(3, 3, { inputTokens: 100, outputTokens: 10, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 110 }),
+    ])
+    const calls = await parse(path)
+    expect(calls).toHaveLength(3)
+    expect(calls[0]!.cacheTokenEvidence).toBe('partial')
+    expect(calls[1]!.cacheTokenEvidence).toBe('unavailable')
+    expect(calls[2]!.cacheTokenEvidence).toBe('complete')
+  })
+
+  it('never lets non-numeric usage fields corrupt the ledger', async () => {
+    const path = await writeLines(join('sessions', '--proj--', 'session-1', 'session.v4.jsonl'), [
+      header(),
+      {
+        type: 'assistant/message',
+        seq: 1,
+        time: CREATED_AT,
+        data: {
+          turn: 1,
+          step: 1,
+          message: { role: 'assistant', id: 'msg-1', content: [], source: { kind: 'model', provider: 'deepseek-account', model: 'deepseek-flash' } },
+          usage: { inputTokens: '1000', outputTokens: 5, cacheReadTokens: [1, 2], cacheWriteTokens: -3, reasoningTokens: 2.5 },
+          stream: [],
+        },
+      },
+    ])
+    const calls = await parse(path)
+    expect(calls).toHaveLength(1)
+    const call = calls[0]!
+    // Strings and arrays never flow into the global totals: every malformed
+    // counter degrades to a reported zero instead of string concatenation.
+    expect(call.inputTokens).toBe(0)
+    expect(call.outputTokens).toBe(5)
+    expect(call.cacheReadInputTokens).toBe(0)
+    expect(call.cacheCreationInputTokens).toBe(0)
+    expect(call.reasoningTokens).toBe(0)
+    expect(call.costIsEstimated).toBe(true)
+  })
+
+  it('retains what an incomplete usage record did report and says so', async () => {
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    try {
+      const path = await writeLines(join('sessions', '--proj--', 'session-1', 'session.v4.jsonl'), [
+        header(),
+        {
+          type: 'assistant/message',
+          seq: 1,
+          time: CREATED_AT,
+          data: {
+            turn: 1,
+            step: 1,
+            message: { role: 'assistant', id: 'msg-1', content: [], source: { kind: 'model', provider: 'deepseek-account', model: 'deepseek-flash' } },
+            usage: { inputTokens: 100 },
+            stream: [],
+          },
+        },
+      ])
+      const calls = await parse(path)
+      expect(calls).toHaveLength(1)
+      expect(calls[0]!.inputTokens).toBe(100)
+      expect(calls[0]!.outputTokens).toBe(0)
+      expect(calls[0]!.costIsEstimated).toBe(true)
+      const notices = stderrSpy.mock.calls.map(call => String(call[0])).join('')
+      expect(notices).toContain('incomplete or invalid usage')
+    } finally {
+      stderrSpy.mockRestore()
+    }
   })
 })
 
