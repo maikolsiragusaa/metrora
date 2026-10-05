@@ -1,6 +1,6 @@
 import type { DateRange, ToolCall } from '../types.js'
 import type { ReasoningLevel, ReasoningLevelSource } from '../reasoning-level.js'
-import type { CacheTokenEvidence, ReasoningTokenSemantics } from '../token-semantics.js'
+import type { CacheTokenEvidence, ReasoningTokenSemantics, UsageTokenEvidence } from '../token-semantics.js'
 import type { CostAssignmentV1 } from '../pricing/cost-assignment.js'
 import type { HistoricalPricingContextV1 } from '../pricing/pricing-context.js'
 
@@ -40,6 +40,9 @@ export type ParsedProviderCall = {
   reasoningSemantics?: ReasoningTokenSemantics
   /** Whether OTel cache subfields were complete, partial, unavailable, or inconsistent. */
   cacheTokenEvidence?: CacheTokenEvidence
+  /** Evidence quality of the record's primary input/output counters; absent
+   *  preserves the legacy collectors' behavior (counters assumed complete). */
+  usageEvidence?: UsageTokenEvidence
 
   reasoningLevelSource?: ReasoningLevelSource
   inputTokens: number

@@ -28,5 +28,8 @@ export function createShareBridgeHandlers(share: DesktopShareRuntime | null | un
       try { return { ok: true, value: await share.approve(pairingId(id), approve === true) } }
       catch (error) { return { ok: false, error: shareError(error) } }
     },
+    // Read-only capability matrix for the trusted Desktop renderer. Same
+    // authority as the authenticated Android route, no secrets, no peer needed.
+    'metrora:getCompanionCapabilities': call(runtime => runtime.capabilities()),
   }
 }

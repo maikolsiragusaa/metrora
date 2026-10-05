@@ -4,11 +4,13 @@ import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { render, Box, Text, useInput, useApp, useWindowSize } from 'ink'
 import { CATEGORY_LABELS, type DateRange, type ProjectSummary, type TaskCategory } from './types.js'
 import { formatCost, formatTokens, markEstimated } from './format.js'
+import { combineUsageEvidence, type UsageTokenEvidence } from './token-semantics.js'
 import { aggregateModelEfficiency } from './model-efficiency.js'
 import { parseAllSessions, filterProjectsByDateRange, filterProjectsByName, setInteractiveScanUI } from './parser.js'
 import { findUnpricedModels, loadPricing } from './models.js'
 import { aggregateModelTotals } from './model-breakdown.js'
 import { buildDurablePeriod } from './usage-aggregator.js'
+import { PROVIDER_COLORS, PROVIDER_DISPLAY_NAMES } from './provider-presentation.js'
 import { getAllProviders } from './providers/index.js'
 import { scanAndDetect, type WasteFinding, type WasteAction, type OptimizeResult } from './optimize.js'
 import { estimateContextBudget, type ContextBudget } from './context-budget.js'
@@ -77,18 +79,6 @@ const PANEL_COLORS = {
   skills: '#7B68EE',
 }
 
-const PROVIDER_COLORS: Record<string, string> = {
-  claude: '#FF8C42',
-  codex: '#5BF5A0',
-  cursor: '#00B4D8',
-  'ibm-bob': '#0F62FE',
-  opencode: '#A78BFA',
-  pi: '#F472B6',
-  kimi: '#B6E34A',
-  kimicode: '#A3E635',
-  all: '#FF8C42',
-}
-
 const CATEGORY_COLORS: Record<TaskCategory, string> = {
   coding: '#5B9EF5',
   debugging: '#F55B5B',
@@ -145,6 +135,7 @@ export type DurableOverview = {
   outputTokens: number
   cacheReadTokens: number
   cacheWriteTokens: number
+  usageEvidence?: UsageTokenEvidence
 }
 
 async function computeDurableOverview(
@@ -169,6 +160,7 @@ async function computeDurableOverview(
     outputTokens: data.outputTokens,
     cacheReadTokens: data.cacheReadTokens,
     cacheWriteTokens: data.cacheWriteTokens,
+    usageEvidence: data.usageEvidence,
   }
 }
 
@@ -287,6 +279,8 @@ function Overview({ projects, label, width, planUsages, durable }: { projects: P
   const totalOutput = durable ? durable.outputTokens : allSessions.reduce((s, sess) => s + sess.totalOutputTokens, 0)
   const totalCacheRead = durable ? durable.cacheReadTokens : allSessions.reduce((s, sess) => s + sess.totalCacheReadTokens, 0)
   const totalCacheWrite = durable ? durable.cacheWriteTokens : allSessions.reduce((s, sess) => s + sess.totalCacheWriteTokens, 0)
+  const liveTokenEvidence = combineUsageEvidence(allSessions.flatMap(sess => sess.turns.flatMap(turn => turn.assistantCalls.map(call => call.usageEvidence))))
+  const tokenEvidence = durable ? durable.usageEvidence : liveTokenEvidence
   const allInputTokens = totalInput + totalCacheRead + totalCacheWrite
   const cacheHit = allInputTokens > 0
     ? (totalCacheRead / allInputTokens) * 100 : 0
@@ -310,6 +304,7 @@ function Overview({ projects, label, width, planUsages, durable }: { projects: P
       </Text>
       <Text dimColor wrap="truncate-end">
         {formatTokens(totalInput)} in   {formatTokens(totalOutput)} out   {formatTokens(totalCacheRead)} cached   {formatTokens(totalCacheWrite)} written
+        {tokenEvidence && tokenEvidence !== 'complete' && <Text color="#d9a441"> · incomplete token data</Text>}
       </Text>
       {totalSavings > 0 && (
         <Text wrap="truncate-end">
@@ -676,17 +671,6 @@ function ClaudeAgentTypes({ projects, pw, bw }: { projects: ProjectSummary[]; pw
   )
 }
 
-const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
-  all: 'All',
-  claude: 'Claude',
-  codex: 'Codex',
-  cursor: 'Cursor',
-  'ibm-bob': 'IBM Bob',
-  opencode: 'OpenCode',
-  pi: 'Pi',
-  kimi: 'Kimi',
-  kimicode: 'Kimi Code',
-}
 function getProviderDisplayName(name: string): string { return PROVIDER_DISPLAY_NAMES[name] ?? name }
 
 function PeriodTabs({ active, providerName, showProvider }: { active: Period; providerName?: string; showProvider?: boolean }) {

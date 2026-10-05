@@ -139,13 +139,16 @@ describe('Antigravity timestamp stability across .db rewrites', () => {
     createGenMetadataDb(dbPath, fixture)
 
     // The fixture row carries no ChatStartMetadata.created_at, so the call
-    // inherits the file mtime as its first-seen fallback. Pin it to July.
-    const firstSeen = new Date('2026-07-02T03:04:05.000Z')
+    // inherits the file mtime as its first-seen fallback. Pin it to a recent
+    // past day: the durable detailed cache evicts entries older than 90 days
+    // (parser.ts retention cutoff), so fixed dates age out of the cache and
+    // the freshly parsed entry would be discarded as real time passes.
+    const firstSeen = new Date(Date.now() - 10 * 86_400_000)
     await utimes(dbPath, firstSeen, firstSeen)
 
     const wideRange: DateRange = {
-      start: new Date('2026-01-01T00:00:00.000Z'),
-      end: new Date('2026-12-31T23:59:59.999Z'),
+      start: new Date(firstSeen.getTime() - 86_400_000),
+      end: new Date(Date.now() + 86_400_000),
     }
 
     // First parse — through the generic parser + session-cache.
@@ -160,11 +163,11 @@ describe('Antigravity timestamp stability across .db rewrites', () => {
     await parseAllSessions(wideRange, 'antigravity')
     expect((await cachedAntigravityTurns(cacheDir, dbPath))[0]!.timestamp).toBe(firstTs)
 
-    // Rewrite only the mtime to a much later day, then reparse. The non-durable
-    // source is cleared and reparsed, but the dedup key must retain its
-    // first-seen time rather than jumping to the new mtime.
+    // Rewrite only the mtime to a later day (still in the past), then reparse.
+    // The non-durable source is cleared and reparsed, but the dedup key must
+    // retain its first-seen time rather than jumping to the new mtime.
     clearSessionCache()
-    const rewritten = new Date('2026-07-07T08:09:10.000Z')
+    const rewritten = new Date(Date.now() - 5 * 86_400_000)
     await utimes(dbPath, rewritten, rewritten)
     await parseAllSessions(wideRange, 'antigravity')
     const afterRewrite = await cachedAntigravityTurns(cacheDir, dbPath)
@@ -172,11 +175,12 @@ describe('Antigravity timestamp stability across .db rewrites', () => {
     expect(Math.abs(new Date(afterRewrite[0]!.timestamp).getTime() - rewritten.getTime())).toBeGreaterThan(1000)
 
     // Date-range consequence: the first-seen month still includes the call
-    // after the July rewrite, because its timestamp stayed in early July.
+    // after the rewrite, because its timestamp stayed at the first-seen day.
     clearSessionCache()
+    const firstSeenMonth = new Date(firstSeen)
     const firstSeenMonthRange: DateRange = {
-      start: new Date('2026-07-01T00:00:00.000Z'),
-      end: new Date('2026-07-31T23:59:59.999Z'),
+      start: new Date(Date.UTC(firstSeenMonth.getUTCFullYear(), firstSeenMonth.getUTCMonth(), 1)),
+      end: new Date(Date.UTC(firstSeenMonth.getUTCFullYear(), firstSeenMonth.getUTCMonth() + 1, 1) - 1),
     }
     const firstSeenMonthProjects = await parseAllSessions(firstSeenMonthRange, 'antigravity')
     const firstSeenMonthKeys = firstSeenMonthProjects.flatMap(project =>
@@ -186,8 +190,8 @@ describe('Antigravity timestamp stability across .db rewrites', () => {
     )
     expect(firstSeenMonthKeys.length).toBeGreaterThan(0)
 
-    // `today` must NOT include the call: first-seen is in July, not "now",
-    // even though the file mtime was rewritten within July.
+    // `today` must NOT include the call: first-seen is 10 days ago, not "now",
+    // even though the file mtime was rewritten more recently than that.
     clearSessionCache()
     const { range: todayRange } = getDateRange('today')
     const todayProjects = await parseAllSessions(todayRange, 'antigravity')
@@ -206,16 +210,19 @@ describe('Antigravity timestamp stability across .db rewrites', () => {
     const conversationsDir = join(home, '.gemini', 'antigravity-ide', 'conversations')
     await mkdir(conversationsDir, { recursive: true })
     const dbPath = join(conversationsDir, `${conversationId}.db`)
+    // Relative dates: the durable detailed cache evicts entries older than 90
+    // days, so fixed dates age out and the freshly parsed entry would be
+    // discarded as real time passes.
     const wideRange: DateRange = {
-      start: new Date('2026-01-01T00:00:00.000Z'),
-      end: new Date('2026-12-31T23:59:59.999Z'),
+      start: new Date(Date.now() - 11 * 86_400_000),
+      end: new Date(Date.now() + 86_400_000),
     }
 
     createGenMetadataDb(dbPath, {
       conversationId,
       rows: [sqliteUsageRow(0, 'K', 100, 1), sqliteUsageRow(1, 'B', 50, 1)],
     })
-    const firstSeen = new Date('2026-07-02T03:04:05.000Z')
+    const firstSeen = new Date(Date.now() - 10 * 86_400_000)
     await utimes(dbPath, firstSeen, firstSeen)
 
     await parseAllSessions(wideRange, 'antigravity')
@@ -233,7 +240,7 @@ describe('Antigravity timestamp stability across .db rewrites', () => {
       conversationId,
       rows: [sqliteUsageRow(0, 'K', 120, 1), sqliteUsageRow(1, 'C', 30, 1)],
     })
-    const rewritten = new Date('2026-07-07T08:09:10.000Z')
+    const rewritten = new Date(Date.now() - 5 * 86_400_000)
     await utimes(dbPath, rewritten, rewritten)
 
     const secondProjects = await parseAllSessions(wideRange, 'antigravity')

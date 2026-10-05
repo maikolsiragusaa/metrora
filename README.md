@@ -43,7 +43,7 @@ The result is intentionally broader than a token tracker: Metrora is the place w
 
 - **Local-first.** Ordinary local use does not require a Metrora account or hosted backend.
 - **No mandatory proxy.** Supported AI traffic can remain on the path chosen by the user; Metrora reads supported local evidence instead of demanding to become the gateway.
-- **Multi-tool, not single-provider.** Metrora currently registers **39 local collectors** across major AI coding clients, CLIs, editors and gateways.
+- **Multi-tool, not single-provider.** Metrora currently registers **40 local collectors** across major AI coding clients, CLIs, editors and gateways.
 - **Evidence-aware.** Observed, metered, derived, estimated, stale, partial and unavailable states remain distinguishable. Unknown does not silently become zero.
 - **Real Code surface.** The current source foundation embeds upstream OpenCode for coding sessions, agents, tools, files, shell and Git rather than shipping a lookalike client or second agent runtime.
 - **One factual layer, many surfaces.** Desktop, CLI, local web, Android, MCP, Bench and Code integrations build on shared Metrora facts instead of inventing separate accounting engines.
@@ -136,7 +136,7 @@ Source trees also retain macOS and GNOME companion work, but a source surface is
 
 ## Supported ecosystem
 
-Metrora currently registers **39 local collectors**. The supported set includes sources such as Claude, Codex, Gemini, Cursor, GitHub Copilot, OpenCode, Antigravity, Zed, Kiro, Cline, Cline CLI, Roo Code, KiloCode, Qwen, Kimi, Warp and other compatible clients or gateways.
+Metrora currently registers **40 local collectors**. The supported set includes sources such as Claude, Codex, Gemini, Cursor, GitHub Copilot, OpenCode, Antigravity, Zed, Kiro, Cline, Cline CLI, Roo Code, KiloCode, Qwen, Kimi, DeepSeek Harness, Warp and other compatible clients or gateways.
 
 “Supported” is intentionally not a binary marketing claim. Metrora separately reports:
 

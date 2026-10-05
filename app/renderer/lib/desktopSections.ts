@@ -58,7 +58,7 @@ export const DESKTOP_SECTION_CAPABILITIES: Record<Section, DesktopSectionCapabil
     customRange: false,
     provider: false,
     claudeConfig: false,
-    globalRefresh: true,
+    globalRefresh: false,
   },
   settings: {
     period: false,

@@ -19,6 +19,54 @@ export type ReasoningTokenTotals = {
  */
 export type CacheTokenEvidence = 'complete' | 'partial' | 'unavailable' | 'inconsistent'
 
+/**
+ * Evidence quality for a record's primary input/output counters, using the
+ * same classes as the cache subfield evidence. A reported zero is complete
+ * evidence of zero; a missing or non-numeric counter is unknown, not a zero,
+ * and must not be read as one downstream.
+ */
+export type UsageTokenEvidence = CacheTokenEvidence
+
+/**
+ * Spread-ready optional token-authority fields for a record crossing a
+ * boundary (parsed call -> API/cache and back): absent evidence contributes
+ * no key instead of writing an explicit undefined.
+ */
+export function optionalTokenAuthorityFields(call: {
+  cacheTokenEvidence?: CacheTokenEvidence
+  usageEvidence?: UsageTokenEvidence
+}): { cacheTokenEvidence?: CacheTokenEvidence; usageEvidence?: UsageTokenEvidence } {
+  return {
+    ...(call.cacheTokenEvidence ? { cacheTokenEvidence: call.cacheTokenEvidence } : {}),
+    ...(call.usageEvidence ? { usageEvidence: call.usageEvidence } : {}),
+  }
+}
+
+/**
+ * Combine per-record usage evidence into the evidence for a set that sums
+ * those records. Records without the field come from legacy collectors whose
+ * counters were assumed complete; a set with no explicit evidence at all stays
+ * unmarked so legacy behavior is unchanged. One degraded record degrades the
+ * set: the worst present class wins (complete < partial < unavailable <
+ * inconsistent). A reported zero is complete evidence of zero and never
+ * degrades a set.
+ */
+export function combineUsageEvidence(
+  values: readonly (UsageTokenEvidence | undefined)[],
+): UsageTokenEvidence | undefined {
+  const rank = (value: UsageTokenEvidence | undefined): number =>
+    value === 'partial' ? 1 : value === 'unavailable' ? 2 : value === 'inconsistent' ? 3 : 0
+  let worst = 0
+  let explicit = false
+  for (const value of values) {
+    if (value === undefined) continue
+    explicit = true
+    worst = Math.max(worst, rank(value))
+  }
+  if (!explicit) return undefined
+  return worst === 0 ? 'complete' : worst === 1 ? 'partial' : worst === 2 ? 'unavailable' : 'inconsistent'
+}
+
 const SEPARATE_REASONING_PROVIDERS = new Set([
   'antigravity',
   'codex',

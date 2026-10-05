@@ -2,13 +2,24 @@ import { randomUUID } from 'crypto'
 
 import { loadOrCreateIdentity, type Identity } from './identity.js'
 import { PeerStore } from './pairing.js'
-import { ShareServer, type ActivityQuery, type PairRequest, type UsageQuery } from './share-server.js'
+import { ShareServer, type ActivityQuery, type PairRequest, type PairResult, type UsageQuery } from './share-server.js'
 import { advertise } from './discovery.js'
 import { getSharingDir, loadPeers, savePeers } from './store.js'
 import { buildPairingBootstrap } from './pairing-bootstrap.js'
 import { getLanAddresses } from './network-address.js'
 
 export type PendingPairing = { id: string; name: string; code: string }
+/** Paired-device projection for UI lists. Never carries the token or the
+ *  raw fingerprint — those stay in the PeerStore and the share server. */
+export type PairedPeerSummary = { name: string; pairedAt: number }
+
+/**
+ * Terminal outcome of one approve-flow pairing request, confirmed for the
+ * SPECIFIC request id. `paired` means the server persisted the peer;
+ * anything else must never render as success. Carries no secret: only the
+ * outcome class may cross to a UI, never tokens or fingerprints.
+ */
+export type PairingOutcome = 'paired' | 'declined' | 'expired' | 'persist-failed' | 'unknown'
 export type ShareStatus = {
   sharing: boolean
   name: string
@@ -19,6 +30,8 @@ export type ShareStatus = {
   networkWarning?: string
   always: boolean
   peers: number
+  /** Optional so status payloads produced before the field existed stay valid. */
+  peerList?: PairedPeerSummary[]
   pending: PendingPairing[]
 }
 
@@ -43,6 +56,14 @@ export class ShareController {
     string,
     { name: string; code: string; fingerprint: string; resolve: (ok: boolean) => void; timer: ReturnType<typeof setTimeout> }
   >()
+  // Request ids approved by the user but not yet confirmed persisted,
+  // indexed by device fingerprint for the server's terminal hook.
+  private readonly approvedPairings = new Map<string, string>()
+  // Terminal outcomes per request id (bounded). A vanished pending entry is
+  // NEVER completion evidence on its own: only a `paired` outcome recorded
+  // here — after the server confirms persistence — proves the pairing.
+  private readonly pairOutcomes = new Map<string, PairingOutcome>()
+  private readonly pairOutcomeWaiters = new Map<string, Array<(outcome: PairingOutcome) => void>>()
 
   constructor(
     private readonly getUsage: (q: UsageQuery) => Promise<unknown>,
@@ -86,6 +107,7 @@ export class ShareController {
       getActivityPullRequests: this.getActivityPullRequests,
       onPeersChanged: () => this.peers ? savePeers(this.peers.list(), this.dir) : Promise.resolve(),
       approve: (req) => this.enqueueApproval(req),
+      onPairResult: (result) => this.recordPairResult(result),
     })
     // listen() can reject (e.g. EADDRINUSE); only commit state after it binds,
     // so a failed start never leaves us reporting always/sharing incorrectly.
@@ -125,6 +147,11 @@ export class ShareController {
       p.resolve(false)
     }
     this.pending.clear()
+    // An approval decided but not yet confirmed can no longer complete once
+    // the service stops: settle its waiters instead of leaving them hanging
+    // until the confirmation timeout.
+    for (const id of [...this.pairOutcomeWaiters.keys()]) this.recordPairOutcome(id, 'expired')
+    this.approvedPairings.clear()
     await this.ad?.stop().catch(() => {})
     await this.server?.close().catch(() => {})
     this.ad = null
@@ -143,6 +170,7 @@ export class ShareController {
       const id = randomUUID()
       const timer = setTimeout(() => {
         this.pending.delete(id)
+        this.recordPairOutcome(id, 'expired')
         resolve(false)
       }, 60_000)
       timer.unref?.()
@@ -159,13 +187,85 @@ export class ShareController {
     if (!p) return false
     clearTimeout(p.timer)
     this.pending.delete(id)
+    if (approve) this.approvedPairings.set(p.fingerprint, id)
     p.resolve(approve)
     return true
   }
 
+  /**
+   * Resolve one pairing request with a positively confirmed terminal outcome
+   * for that SPECIFIC request id. Approving a request that already vanished
+   * (expiry, stop, concurrent decision) reports `expired`, never success.
+   * An approval reports `paired` only after the server confirms the peer was
+   * persisted; a failed save (rolled back server-side) reports
+   * `persist-failed`. The confirmation wait is bounded: without a terminal
+   * signal the outcome is `unknown`, which must also never render as success.
+   */
+  async approvePairingRequest(id: string, approve: boolean): Promise<PairingOutcome> {
+    if (!approve) {
+      const consumed = this.resolvePending(id, false)
+      const outcome: PairingOutcome = consumed ? 'declined' : 'expired'
+      this.recordPairOutcome(id, outcome)
+      return outcome
+    }
+    if (!this.resolvePending(id, true)) {
+      this.recordPairOutcome(id, 'expired')
+      return 'expired'
+    }
+    return this.waitPairOutcome(id)
+  }
+
+  private recordPairOutcome(id: string, outcome: PairingOutcome): void {
+    this.pairOutcomes.set(id, outcome)
+    if (this.pairOutcomes.size > 32) {
+      const oldest = this.pairOutcomes.keys().next()
+      if (!oldest.done) this.pairOutcomes.delete(oldest.value)
+    }
+    const waiters = this.pairOutcomeWaiters.get(id)
+    if (waiters) {
+      this.pairOutcomeWaiters.delete(id)
+      for (const waiter of waiters) waiter(outcome)
+    }
+  }
+
+  private recordPairResult(result: PairResult): void {
+    // Only approve-flow requests carry an id: the legacy PIN route pairs
+    // without one, so an unmatched fingerprint is simply not a request
+    // confirmation and must not fabricate an outcome.
+    const id = this.approvedPairings.get(result.fingerprint)
+    if (!id) return
+    this.approvedPairings.delete(result.fingerprint)
+    this.recordPairOutcome(id, result.ok ? 'paired' : 'persist-failed')
+  }
+
+  private waitPairOutcome(id: string, timeoutMs = 10_000): Promise<PairingOutcome> {
+    const settled = this.pairOutcomes.get(id)
+    if (settled !== undefined) return Promise.resolve(settled)
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.pairOutcomeWaiters.delete(id)
+        this.approvedPairings.forEach((requestId, fingerprint) => {
+          if (requestId === id) this.approvedPairings.delete(fingerprint)
+        })
+        resolve('unknown')
+      }, timeoutMs)
+      timer.unref?.()
+      const waiter = (outcome: PairingOutcome): void => {
+        clearTimeout(timer)
+        resolve(outcome)
+      }
+      const existing = this.pairOutcomeWaiters.get(id)
+      if (existing) existing.push(waiter)
+      else this.pairOutcomeWaiters.set(id, [waiter])
+    })
+  }
+
   async status(): Promise<ShareStatus> {
     const identity = await this.getIdentity()
-    const peers = this.peers ? this.peers.list().length : (await loadPeers(this.dir)).length
+    const stored = this.peers ? this.peers.list() : await loadPeers(this.dir)
+    const peerList: PairedPeerSummary[] = stored
+      .map(peer => ({ name: peer.name, pairedAt: peer.pairedAt }))
+      .sort((a, b) => b.pairedAt - a.pairedAt)
     return {
       sharing: this.isSharing(),
       name: identity.name,
@@ -179,7 +279,8 @@ export class ShareController {
         ? { networkWarning: 'No non-loopback LAN address was detected; choose a local network address manually.' }
         : {}),
       always: this.always,
-      peers,
+      peers: peerList.length,
+      peerList,
       pending: this.listPending(),
     }
   }

@@ -45,6 +45,10 @@ function isOptionalCacheTokenEvidence(value: unknown): boolean {
     || value === 'unavailable'
     || value === 'inconsistent'
 }
+
+function isOptionalUsageTokenEvidence(value: unknown): boolean {
+  return isOptionalCacheTokenEvidence(value)
+}
 // A plain object whose every value is a string. Used for the sidechain
 // `agentSpawnLinks` map (agentId -> spawn tool_use id).
 function isOptionalStringRecord(value: unknown): boolean {
@@ -109,6 +113,7 @@ function validateCall(value: unknown): value is CachedCall {
     && (call['pricingContext'] === undefined || HistoricalPricingContextV1Schema.safeParse(call['pricingContext']).success)
     && isOptionalReasoningSemantics(call['reasoningSemantics'])
     && isOptionalCacheTokenEvidence(call['cacheTokenEvidence'])
+    && isOptionalUsageTokenEvidence(call['usageEvidence'])
     && typeof call['deduplicationKey'] === 'string'
     && typeof call['timestamp'] === 'string'
     && (call['speed'] === 'standard' || call['speed'] === 'fast')

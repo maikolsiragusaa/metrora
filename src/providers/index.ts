@@ -16,6 +16,7 @@ import {
 } from './copilot-cli-resume.js'
 import { droid } from './droid.js'
 import { devin } from './devin.js'
+import { dsh } from './dsh.js'
 import { gemini } from './gemini.js'
 import { hermes } from './hermes.js'
 import { ibmBob } from './ibm-bob.js'
@@ -224,7 +225,7 @@ const internalProviders: Provider[] = [
   createCopilotChatJournalProvider(copilot),
   createCopilotCliResumeProvider(copilot),
 ]
-const coreProviders: Provider[] = [claude, cline, clineCli, codewhale, codebuff, withCodexModelProvider(codex), copilotWithChatJournal, devin, droid, gemini, hermes, ibmBob, kiloCode, kiro, kimi, kimicode, lingtaiTui, mistralVibe, mux, openclaw, openDesign, pi, omp, qwen, quickdesk, rooCode, zerostack, grok]
+const coreProviders: Provider[] = [claude, cline, clineCli, codewhale, codebuff, withCodexModelProvider(codex), copilotWithChatJournal, devin, droid, dsh, gemini, hermes, ibmBob, kiloCode, kiro, kimi, kimicode, lingtaiTui, mistralVibe, mux, openclaw, openDesign, pi, omp, qwen, quickdesk, rooCode, zerostack, grok]
 
 // Lazily loaded providers, listed by name so --provider validation works even
 // when an optional module fails to load. Must stay in sync with getAllProviders.

@@ -1,38 +1,10 @@
 import { useEffect, useState } from 'react'
-import QRCode from 'qrcode'
 
+import { ConnectionQr } from './ConnectionQr'
 import { normalizeCliError, metrora } from '../lib/ipc'
 import type { Polled } from '../hooks/usePolled'
 import type { ShareStatus } from '../lib/types'
 import { showToast } from '../lib/toast'
-
-function ConnectionQr({ payload }: { payload: string }) {
-  const [svg, setSvg] = useState('')
-
-  useEffect(() => {
-    let cancelled = false
-    void QRCode.toString(payload, {
-      type: 'svg',
-      margin: 1,
-      errorCorrectionLevel: 'M',
-      color: { dark: '#111214', light: '#ffffff' },
-    }).then(value => {
-      if (!cancelled) setSvg(value)
-    }).catch(() => {
-      if (!cancelled) setSvg('')
-    })
-    return () => { cancelled = true }
-  }, [payload])
-
-  return svg ? (
-    <div
-      aria-label="Metrora connection QR code"
-      className="set-share-qr"
-      role="img"
-      dangerouslySetInnerHTML={{ __html: svg }}
-    />
-  ) : <div className="set-share-qr set-share-qr-loading" role="status">Preparing QR…</div>
-}
 
 export function ShareConnectSurface({
   shareStatus,

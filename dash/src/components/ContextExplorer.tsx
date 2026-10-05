@@ -176,7 +176,12 @@ export function ContextExplorer() {
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['context-sessions', provider],
     queryFn: () => fetchContextSessions(provider),
-    staleTime: 30_000,
+    // The list endpoint stats live files (cheap), so keep staleness short:
+    // returning to this tab must never present a session list that predates
+    // the user's last refresh elsewhere. The interval keeps an open view
+    // tracking brand-new sessions without any manual refresh.
+    staleTime: 5_000,
+    refetchInterval: 15_000,
   })
 
   return (

@@ -27,6 +27,7 @@ These labels describe current evidence boundaries. They are not a public impleme
 | cursor-agent | lazy | unassessed | docs/providers/cursor-agent.md | available | local-only | withheld |
 | devin | core | unassessed | docs/providers/devin.md | available | local-only | withheld |
 | droid | core | unassessed | docs/providers/droid.md | available | local-only | withheld |
+| dsh | core | unassessed | docs/providers/dsh.md | available | local-only | withheld |
 | forge | lazy | unassessed | docs/providers/forge.md | available | local-only | withheld |
 | gemini | core | session-json-or-jsonl-message-usage | docs/providers/gemini.md | available | signed-approved | approved |
 | goose | lazy | unassessed | docs/providers/goose.md | available | local-only | withheld |
@@ -56,10 +57,10 @@ These labels describe current evidence boundaries. They are not a public impleme
 
 ## Current totals
 
-- Registered local collectors: **39**.
+- Registered local collectors: **40**.
 - Approved for signed Workspace measurements: **4 collectors / 6 path-specific profiles**.
-- Local collectors with signed sharing withheld: **35**.
-- Provider documentation present: **39**.
+- Local collectors with signed sharing withheld: **36**.
+- Provider documentation present: **40**.
 - Documentation gaps: **none**.
 
 ## Approval gate

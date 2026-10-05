@@ -17,6 +17,7 @@ For the architectural picture, see `../architecture.md`.
 | [CodeWhale](codewhale.md) | JSON | `src/providers/codewhale.ts` | `tests/providers/codewhale.test.ts` |
 | [Codex](codex.md) | JSONL | `src/providers/codex.ts` | `tests/providers/codex.test.ts` |
 | [Copilot](copilot.md) | JSONL + SQLite (OTel) + Nitrite .db (JetBrains) | `src/providers/copilot.ts` | `tests/providers/copilot.test.ts` |
+| [DeepSeek Harness](dsh.md) | JSONL (multi-frame zstd) | `src/providers/dsh.ts` | `tests/providers/dsh.test.ts` |
 | [Devin](devin.md) | JSON + SQLite enrichment | `src/providers/devin.ts` | `tests/providers/devin.test.ts` |
 | [Droid](droid.md) | JSONL | `src/providers/droid.ts` | `tests/providers/droid.test.ts` |
 | [Gemini](gemini.md) | JSON / JSONL | `src/providers/gemini.ts` | none |

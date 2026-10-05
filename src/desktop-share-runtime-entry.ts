@@ -1,5 +1,5 @@
 import { loadPricing } from './models.js'
-import { ShareController, type ShareStatus } from './sharing/share-controller.js'
+import { ShareController, type PairingOutcome, type ShareStatus } from './sharing/share-controller.js'
 import {
   buildCompanionCapabilities,
   buildCompanionCapacity,
@@ -21,7 +21,15 @@ export type DesktopShareRuntimeV1 = {
   status(): Promise<ShareStatus>
   start(always: boolean): Promise<ShareStatus>
   stop(): Promise<ShareStatus>
-  approve(id: string, approve: boolean): Promise<ShareStatus>
+  /**
+   * Resolves one pairing request with its positively confirmed terminal
+   * outcome. The status is returned for convenience, but a vanished pending
+   * entry inside it is NOT completion evidence: only outcome `paired`
+   * proves the specific request completed and persisted.
+   */
+  approve(id: string, approve: boolean): Promise<{ status: ShareStatus; outcome: PairingOutcome }>
+  /** Read-only projection of the SAME canonical capability matrix served to Android. */
+  capabilities(): Promise<Awaited<ReturnType<typeof buildCompanionCapabilities>>>
 }
 
 /**
@@ -64,8 +72,12 @@ export async function createDesktopShareRuntime(
       return share.status()
     },
     approve: async (id, approve) => {
-      share.resolvePending(id, approve)
-      return share.status()
+      const outcome = await share.approvePairingRequest(id, approve)
+      return { status: await share.status(), outcome }
     },
+    // Read-only: resolves the same builder the share server uses for the
+    // authenticated Android capability route. Never starts sharing and never
+    // requires a peer. Carries no tokens, fingerprints, or private material.
+    capabilities: () => buildCompanionCapabilities(Boolean(options.getCapacity)),
   }
 }

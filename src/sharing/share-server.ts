@@ -103,6 +103,13 @@ export function canonicalActivityQuery(query: ActivityQuery): ActivityQueryV1 & 
 // An approve-style pairing request, surfaced to the user on the sharing device.
 export type PairRequest = { name: string; fingerprint: string; code: string }
 
+/**
+ * Terminal result of one approve-flow pairing, reported after persistence
+ * settles. In-process only: the fingerprint never leaves the host, and only
+ * the outcome class (never tokens or fingerprints) may cross to a UI.
+ */
+export type PairResult = { fingerprint: string; name: string; ok: boolean }
+
 export type ShareServerOptions = {
   identity: Identity
   peers: PeerStore
@@ -126,6 +133,14 @@ export type ShareServerOptions = {
   // Enables the interactive approve flow (POST /api/peer/pair-request): return
   // true to accept. The user confirms the matching `code` shown on both devices.
   approve?: (req: PairRequest) => Promise<boolean>
+  /**
+   * Optional terminal hook for the approve flow: fires after pairAndPersist
+   * settles so the embedder can confirm the completion of the SPECIFIC
+   * request (the approve callback only resolves the user's decision, which
+   * precedes persistence and its possible rollback). Never fires for the
+   * legacy PIN route, which carries no request identity.
+   */
+  onPairResult?: (result: PairResult) => void
 }
 
 export const SHARE_API_VERSION = 1 as const
@@ -333,7 +348,17 @@ export class ShareServer {
         json(403, { error: 'pairing declined' })
         return
       }
-      const peer = await this.pairAndPersist(clientFp, name)
+      // Persistence settles AFTER the user's approval: report its terminal
+      // result so the embedder never mistakes "request consumed" for
+      // "device paired" (a failed save rolls the peer back).
+      let peer: PairedPeer
+      try {
+        peer = await this.pairAndPersist(clientFp, name)
+      } catch (error) {
+        this.opts.onPairResult?.({ fingerprint: clientFp, name, ok: false })
+        throw error
+      }
+      this.opts.onPairResult?.({ fingerprint: clientFp, name, ok: true })
       json(200, { token: peer.token, name: this.opts.identity.name, fingerprint: this.opts.identity.fingerprint, code })
       return
     }

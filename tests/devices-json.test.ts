@@ -141,11 +141,14 @@ describe('devices/share/identity JSON CLI output', () => {
     try {
       const projectDir = join(home, '.claude', 'projects', 'app')
       await mkdir(projectDir, { recursive: true })
+      // Relative timestamps: `--period all` only covers the last six calendar
+      // months, so fixed dates age out of the window as real time passes.
+      const ts = (offsetMs: number) => new Date(Date.now() - 3 * 3600_000 + offsetMs).toISOString().replace(/\.\d+Z$/, 'Z')
       await writeFile(
         join(projectDir, 'session.jsonl'),
         [
-          userLine('s1', '2026-04-10T09:00:00Z'),
-          assistantLine('s1', '2026-04-10T09:01:00Z', 'msg-1'),
+          userLine('s1', ts(0)),
+          assistantLine('s1', ts(60_000), 'msg-1'),
         ].join('\n'),
       )
 

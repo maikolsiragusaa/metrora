@@ -194,6 +194,7 @@ export const PROVIDER_ENV_VARS: Record<string, string[]> = {
   claude: ['CLAUDE_CONFIG_DIRS', 'CLAUDE_CONFIG_DIR'],
   codewhale: ['CODEWHALE_HOME'],
   codex: ['CODEX_HOME'],
+  dsh: ['DSH_HOME'],
   hermes: ['HERMES_HOME'],
   'lingtai-tui': ['LINGTAI_HOME', 'LINGTAI_TUI_HOME', 'LINGTAI_TUI_GLOBAL_DIR'],
   droid: ['FACTORY_DIR'],
@@ -222,9 +223,7 @@ export const DURABLE_PROVIDER_NAMES: ReadonlySet<string> = new Set(['copilot', '
 // changes through the present-source check in the parser.
 export const PROVIDER_PARSE_VERSIONS: Record<string, string> = {
   // rich-session-capture-v1: parse-time capture of per-turn gitBranch, per-call
-  // LOC deltas / interruptions / userModified / toolErrors, and session-level
-  // title / prLinks / isSidechain. Forces one re-parse so cached sessions gain
-  // the new optional fields.
+  // LOC deltas and session-level title / prLinks / isSidechain.
   claude: 'advisor-usage-v1-skills-rich-capture-v1-cross-provider-pr-v1-native-id-reconciliation-v1',
   cline: 'worktree-project-grouping-v1-vscode-variants-v2-provider-zero-cost',
   codewhale: 'aggregate-session-v2-provider-provenance-pricing-evidence-v1',
@@ -239,6 +238,7 @@ export const PROVIDER_PARSE_VERSIONS: Record<string, string> = {
   codex: 'mcp-attribution-v5-est-cost-active-timing-mcp-wait-rich-capture-v1-cross-provider-pr-v1-reasoning-attribution-v1-pricing-context-tags-v1-pricing-evidence-provider-routes-v1-session-meta-model-v1',
   cursor: 'composer-anchored-crediting-v1-est-cost',
   'cursor-agent': 'workspaceless-transcript-v2-estimated-cost',
+  dsh: 'session-format-v4-fork-seed-attempt-v1',
   copilot: 'cli-shutdown-cost-v3-source-provenance-otel-token-semantics-v1-reasoning-evidence-v1',
   goose: 'sqlite-session-v1-provider-provenance',
   grok: 'estimated-cost-v1-authoritative-turn-usage-v1',

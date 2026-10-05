@@ -15,7 +15,7 @@ describe('CollectorInventoryV1', () => {
     const registered = [...allProviderNames()].sort()
     const inventoried = CollectorInventoryV1.entries.map(entry => entry.provider).sort()
     expect(inventoried).toEqual(registered)
-    expect(new Set(inventoried).size).toBe(39)
+    expect(new Set(inventoried).size).toBe(40)
   })
 
   it('points every collector at a real provider module and provider guide', () => {
@@ -28,11 +28,11 @@ describe('CollectorInventoryV1', () => {
 
   it('tracks complete provider documentation coverage separately from evidence approval', () => {
     expect(collectorInventorySummaryV1()).toEqual({
-      total: 39,
+      total: 40,
       approved: 4,
       priority: 8,
-      pending: 27,
-      documented: 39,
+      pending: 28,
+      documented: 40,
       documentationGaps: [],
     })
   })

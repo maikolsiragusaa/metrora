@@ -62,13 +62,16 @@ async function makeHome(): Promise<string> {
   const home = await mkdtemp(join(tmpdir(), 'metrora-cli-emitters-'))
   const projectDir = join(home, '.claude', 'projects', 'app')
   await mkdir(projectDir, { recursive: true })
+  // Timestamps relative to now: `--period all` is bounded to the last six
+  // calendar months, so fixed dates age out of the window as real time passes.
+  const ts = (offsetMs: number) => new Date(Date.now() - 3 * 3600_000 + offsetMs).toISOString().replace(/\.\d+Z$/, 'Z')
   await writeFile(join(projectDir, 'session-a.jsonl'), [
-    userLine('session-a', '2026-04-10T09:00:00Z'),
-    assistantLine('session-a', '2026-04-10T09:01:00Z', 'msg-a', 'claude-sonnet-4-5'),
+    userLine('session-a', ts(0)),
+    assistantLine('session-a', ts(60_000), 'msg-a', 'claude-sonnet-4-5'),
   ].join('\n'))
   await writeFile(join(projectDir, 'session-b.jsonl'), [
-    userLine('session-b', '2026-04-10T10:00:00Z'),
-    assistantLine('session-b', '2026-04-10T10:01:00Z', 'msg-b', 'claude-opus-4-5'),
+    userLine('session-b', ts(120_000)),
+    assistantLine('session-b', ts(180_000), 'msg-b', 'claude-opus-4-5'),
   ].join('\n'))
   return home
 }

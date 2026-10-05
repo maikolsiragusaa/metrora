@@ -1,6 +1,6 @@
 # Supported tools
 
-Metrora currently registers **39 local collectors**. A registered collector can discover and analyze supported local records, but that does not automatically mean every field is measured directly or approved for signed Workspace measurements.
+Metrora currently registers **40 local collectors**. A registered collector can discover and analyze supported local records, but that does not automatically mean every field is measured directly or approved for signed Workspace measurements.
 
 ## How to read this page
 
@@ -28,6 +28,7 @@ This is an evidence boundary, not a product-priority ranking.
 | `cursor-agent` | Available | Local collector registered; signed-evidence audit incomplete | Withheld |
 | `devin` | Available | Local collector registered; signed-evidence audit incomplete | Withheld |
 | `droid` | Available | Local collector registered; signed-evidence audit incomplete | Withheld |
+| `dsh` | Available | Multi-frame zstd session log, disjoint token accounting and fork-seed cut documented; signed-evidence audit incomplete | Withheld |
 | `forge` | Available | Local collector registered; signed-evidence audit incomplete | Withheld |
 | `gemini` | Available | Session JSON/JSONL message usage reviewed | Approved |
 | `goose` | Available | Local collector registered; signed-evidence audit incomplete | Withheld |

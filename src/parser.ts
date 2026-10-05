@@ -3,7 +3,7 @@ import { lstat, readFile, readdir, stat } from 'fs/promises'
 import { basename, dirname, join, normalize, resolve, sep } from 'path'
 import { readSessionLines } from './fs-utils.js'
 import { calculateCost, calculateLocalModelSavings, getShortModelName, isProxiedPath, getProxyPathsConfigHash } from './models.js'
-import { billableOutputTokens } from './token-semantics.js'
+import { billableOutputTokens, optionalTokenAuthorityFields } from './token-semantics.js'
 import { buildReasoningMix, reasoningLevelFromModelLabel, type ReasoningMixInput } from './reasoning-level.js'
 import { resolveSubagentAttribution, sessionIdentity } from './sessions-report.js'
 import { normalizeContentBlocks } from './content-utils.js'
@@ -2401,7 +2401,7 @@ export function providerCallToTurn(call: ParsedProviderCall): ParsedTurn {
       reasoningLevelSource: call.reasoningLevelSource,
     } : {}),
     ...(call.reasoningSemantics ? { reasoningSemantics: call.reasoningSemantics } : {}),
-    ...(call.cacheTokenEvidence ? { cacheTokenEvidence: call.cacheTokenEvidence } : {}),
+    ...optionalTokenAuthorityFields(call),
     usage,
     costUSD: settlement.runtimeCostUSD + (call.costCorrectionUSD ?? 0),
     costAssignment: settlement.runtimeAssignment, ...(call.costCorrectionUSD !== undefined ? { costCorrectionUSD: call.costCorrectionUSD } : {}),
@@ -2462,7 +2462,7 @@ export function providerCallToCachedCall(call: ParsedProviderCall): CachedCall {
       reasoningLevelSource: call.reasoningLevelSource,
     } : {}),
     ...(call.reasoningSemantics ? { reasoningSemantics: call.reasoningSemantics } : {}),
-    ...(call.cacheTokenEvidence ? { cacheTokenEvidence: call.cacheTokenEvidence } : {}),
+    ...optionalTokenAuthorityFields(call),
     usage,
     ...(settlement.storedCostUSD !== undefined ? { costUSD: settlement.storedCostUSD } : {}),
     costAssignment: settlement.storedAssignment, ...(call.costCorrectionUSD !== undefined ? { costCorrectionUSD: call.costCorrectionUSD } : {}),
@@ -2530,7 +2530,7 @@ export function apiCallToCachedCall(call: ParsedApiCall): CachedCall {
       reasoningLevelSource: call.reasoningLevelSource,
     } : {}),
     ...(call.reasoningSemantics ? { reasoningSemantics: call.reasoningSemantics } : {}),
-    ...(call.cacheTokenEvidence ? { cacheTokenEvidence: call.cacheTokenEvidence } : {}),
+    ...optionalTokenAuthorityFields(call),
     usage,
     ...(settlement.storedCostUSD !== undefined ? { costUSD: settlement.storedCostUSD } : {}),
     costAssignment: settlement.storedAssignment, ...(call.costCorrectionUSD !== undefined ? { costCorrectionUSD: call.costCorrectionUSD } : {}),
@@ -2643,7 +2643,7 @@ export function cachedCallToApiCall(call: CachedCall): ParsedApiCall {
       reasoningLevelSource: call.reasoningLevelSource,
     } : {}),
     ...(call.reasoningSemantics ? { reasoningSemantics: call.reasoningSemantics } : {}),
-    ...(call.cacheTokenEvidence ? { cacheTokenEvidence: call.cacheTokenEvidence } : {}),
+    ...optionalTokenAuthorityFields(call),
     usage: {
       inputTokens: u.inputTokens,
       outputTokens: u.outputTokens,

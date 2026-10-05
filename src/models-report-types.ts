@@ -1,6 +1,6 @@
 import type { ModelPricingSummary } from './model-pricing-summary.js'
 import type { TaskCategory } from './types.js'
-import type { ReasoningTokenSemantics } from './token-semantics.js'
+import type { ReasoningTokenSemantics, UsageTokenEvidence } from './token-semantics.js'
 
 export type ModelReportRow = {
   /** Legacy JSON field name: this value is the collector/client source (`call.provider`), not `modelProvider`. */
@@ -18,6 +18,8 @@ export type ModelReportRow = {
   /** Only the reasoning subtotal that is additive to generated output. */
   additiveReasoningTokens?: number
   reasoningSemantics?: ReasoningTokenSemantics
+  /// Primary-counter evidence across the calls bucketed into this row; absent on legacy rows.
+  usageEvidence?: UsageTokenEvidence
   cacheWriteTokens: number
   cacheReadTokens: number
   totalTokens: number
