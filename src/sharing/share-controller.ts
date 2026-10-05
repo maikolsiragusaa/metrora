@@ -9,6 +9,9 @@ import { buildPairingBootstrap } from './pairing-bootstrap.js'
 import { getLanAddresses } from './network-address.js'
 
 export type PendingPairing = { id: string; name: string; code: string }
+/** Paired-device projection for UI lists. Never carries the token or the
+ *  raw fingerprint — those stay in the PeerStore and the share server. */
+export type PairedPeerSummary = { name: string; pairedAt: number }
 export type ShareStatus = {
   sharing: boolean
   name: string
@@ -19,6 +22,8 @@ export type ShareStatus = {
   networkWarning?: string
   always: boolean
   peers: number
+  /** Optional so status payloads produced before the field existed stay valid. */
+  peerList?: PairedPeerSummary[]
   pending: PendingPairing[]
 }
 
@@ -165,7 +170,10 @@ export class ShareController {
 
   async status(): Promise<ShareStatus> {
     const identity = await this.getIdentity()
-    const peers = this.peers ? this.peers.list().length : (await loadPeers(this.dir)).length
+    const stored = this.peers ? this.peers.list() : await loadPeers(this.dir)
+    const peerList: PairedPeerSummary[] = stored
+      .map(peer => ({ name: peer.name, pairedAt: peer.pairedAt }))
+      .sort((a, b) => b.pairedAt - a.pairedAt)
     return {
       sharing: this.isSharing(),
       name: identity.name,
@@ -179,7 +187,8 @@ export class ShareController {
         ? { networkWarning: 'No non-loopback LAN address was detected; choose a local network address manually.' }
         : {}),
       always: this.always,
-      peers,
+      peers: peerList.length,
+      peerList,
       pending: this.listPending(),
     }
   }

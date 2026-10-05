@@ -785,6 +785,34 @@ describe('Overview', () => {
     expect(missing.reasoning).toMatchObject({ observedTokens: null, semantics: 'unavailable', state: 'unavailable' })
   })
 
+  it('marks primary counters incomplete when the payload carries usage evidence', () => {
+    const now = new Date()
+
+    const partial = makePayload(now)
+    partial.current.usageEvidence = 'partial'
+    const partialUsage = deriveOverviewUsage(partial.current)
+    expect(partialUsage.input).toEqual({ value: partial.current.inputTokens, state: 'partial' })
+    expect(partialUsage.output).toEqual({ value: partial.current.outputTokens, state: 'partial' })
+    expect(partialUsage.cacheRead.state).toBe('available')
+    expect(partialUsage.evidenceNote).toMatch(/Incomplete token data/)
+
+    // Neither primary counter evidenced: never render the aggregates as zeros.
+    const unavailable = makePayload(now)
+    unavailable.current.usageEvidence = 'unavailable'
+    const unavailableUsage = deriveOverviewUsage(unavailable.current)
+    expect(unavailableUsage.input).toEqual({ value: null, state: 'unavailable' })
+    expect(unavailableUsage.output).toEqual({ value: null, state: 'unavailable' })
+    expect(unavailableUsage.evidenceNote).toMatch(/Incomplete token data/)
+
+    const complete = makePayload(now)
+    complete.current.usageEvidence = 'complete'
+    expect(deriveOverviewUsage(complete.current).input.state).toBe('available')
+
+    // Absent evidence stays on the legacy path (provider payloads without the field).
+    const legacy = withTokenAccounting(makePayload(now), {})
+    expect(deriveOverviewUsage(legacy.current).input.state).toBe('available')
+  })
+
   it('keeps Project period totals factual when model token detail is absent', () => {
     const now = new Date()
     const project = withTokenAccounting(makePayload(now), { tokenDetail: false, reasoningTokens: undefined, additiveReasoningTokens: undefined, reasoningSemantics: undefined })

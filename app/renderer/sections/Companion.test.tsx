@@ -74,7 +74,7 @@ function capabilities(options: { capacityAvailable?: boolean } = {}): CompanionC
   }
 }
 
-describe('Companion product surface', () => {
+describe('Companion product surface v002', () => {
   beforeEach(() => {
     __resetPolledMemo()
     bridge.getShareStatus.mockReset()
@@ -89,53 +89,24 @@ describe('Companion product surface', () => {
     bridge.approvePairing.mockImplementation(async () => shareStatus({ sharing: true, peers: 6 }))
   })
 
-  it('renders the Companion top bar with the local subtitle', async () => {
+  it('starts the page with the product title, no section search band', async () => {
     render(<Companion />)
-    expect(await screen.findByText('Companion')).toBeInTheDocument()
-    expect(screen.getByText('Your local Android companion')).toBeInTheDocument()
-    expect(screen.queryByText('Android pairing and local device sync')).not.toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Companion' })).toBeInTheDocument()
+    expect(screen.getByText('Your Metrora control center, on Android.')).toBeInTheDocument()
+    // The v002 reference removes the top band with its subtitle and reserved space.
+    expect(screen.queryByText('Your local Android companion')).not.toBeInTheDocument()
+    expect(document.querySelector('.companion-bar')).toBeNull()
   })
 
-  it('removes the global Overview refresh button', async () => {
+  it('shows the Local & encrypted pill', async () => {
     render(<Companion />)
-    await screen.findByText('Companion')
-    expect(screen.queryByRole('button', { name: /refresh/i })).not.toBeInTheDocument()
-    expect(screen.queryByText(/Refreshing/)).not.toBeInTheDocument()
-  })
-
-  it('renders the product hero', async () => {
-    render(<Companion />)
-    expect(await screen.findByRole('heading', { name: /Take Metrora with you\./ })).toBeInTheDocument()
-    expect(screen.getByText(/Access key parts of your local control center from your Android device\./)).toBeInTheDocument()
-    expect(screen.getByText(/Same data\. Same privacy\. No cloud required\./)).toBeInTheDocument()
-  })
-
-  it('uses the approved hero artwork without duplicating raster text', async () => {
-    const { container } = render(<Companion />)
-    await screen.findByRole('heading', { name: /Take Metrora with you\./ })
-    const art = container.querySelector('.companion-hero-art')
-    expect(art).not.toBeNull()
-    expect(art?.getAttribute('aria-hidden')).toBe('true')
-    const img = container.querySelector('.companion-hero-device') as HTMLImageElement | null
-    expect(img).not.toBeNull()
-    expect(img?.getAttribute('src')).toMatch(/companion-hero/)
-    expect(img?.getAttribute('alt')).toBe('')
-    // Live semantic copy stays real HTML; the raster headline is never
-    // duplicated as a second visible heading.
-    expect(screen.getAllByText(/Take Metrora/).length).toBe(1)
-    // Artwork lives in its own region beside the copy, never behind it:
-    // the copy container and the art container are siblings.
-    const heading = screen.getByRole('heading', { name: /Take Metrora with you\./ })
-    const copyRegion = heading.closest('.companion-hero-copy')!
-    expect(copyRegion).not.toBeNull()
-    expect(art!.contains(copyRegion)).toBe(false)
-    expect(copyRegion.contains(art!)).toBe(false)
-    expect(art!.parentElement).toBe(copyRegion.parentElement)
+    expect(await screen.findByText('Local & encrypted')).toBeInTheDocument()
   })
 
   it('labels peer count as paired, never connected', async () => {
     render(<Companion />)
     expect(await screen.findByTestId('companion-paired-count')).toHaveTextContent('6')
+    expect(screen.getByText('paired devices')).toBeInTheDocument()
     expect(screen.getByText('Paired devices')).toBeInTheDocument()
     expect(screen.getByText('Devices paired with this Metrora instance.')).toBeInTheDocument()
     expect(screen.queryByText(/6 connected/)).not.toBeInTheDocument()
@@ -146,14 +117,16 @@ describe('Companion product surface', () => {
 
   it('maps Local sharing from ShareStatus.sharing', async () => {
     const first = render(<Companion />)
-    expect(await first.findByText('Pairing service stopped')).toBeInTheDocument()
-    expect(first.container.textContent).toContain('Off')
+    const offLine = await screen.findByText((_, element) =>
+      element?.classList.contains('companion-stat-line') === true && element.textContent === 'Sharing Off')
+    expect(offLine).toBeInTheDocument()
     first.unmount()
 
     __resetPolledMemo()
     bridge.getShareStatus.mockResolvedValue(shareStatus({ sharing: true, peers: 2, connectPayload: 'metrora://x' }))
     render(<Companion />)
-    expect(await screen.findByText('Accepting new device connections.')).toBeInTheDocument()
+    expect(await screen.findByText((_, element) =>
+      element?.classList.contains('companion-stat-line') === true && element.textContent === 'Sharing On')).toBeInTheDocument()
   })
 
   it('surfaces the local network warning instead of a healthy claim', async () => {
@@ -169,13 +142,32 @@ describe('Companion product surface', () => {
     expect(warnings.length).toBeGreaterThanOrEqual(1)
   })
 
-  it('shows an unavailable connection state when sharing state cannot be read', async () => {
+  it('renders real paired device names from the runtime peer list', async () => {
     __resetPolledMemo()
-    bridge.getShareStatus.mockRejectedValue(new Error('share unavailable'))
-    bridge.getCompanionCapabilities.mockResolvedValue(capabilities())
+    bridge.getShareStatus.mockResolvedValue(shareStatus({
+      peers: 2,
+      peerList: [
+        { name: 'Pixel 8', pairedAt: 1_759_500_000_000 },
+        { name: 'A very long Android device name that must not break the row layout', pairedAt: 1_759_000_000_000 },
+      ],
+    }))
     render(<Companion />)
-    const unavailable = await screen.findAllByText('Unable to read local sharing state.')
-    expect(unavailable.length).toBeGreaterThanOrEqual(1)
+    expect(await screen.findByText('Pixel 8')).toBeInTheDocument()
+    expect(screen.getByText(/A very long Android device name/)).toBeInTheDocument()
+    // One paired-date caption per device row (month-initial, so the bare
+    // "Paired" state label and "paired devices" stat don't collide).
+    expect(screen.getAllByText(/^Paired [A-Z]/).length).toBe(2)
+  })
+
+  it('supports zero devices and the legacy count-only payload', async () => {
+    const first = render(<Companion />)
+    expect(await screen.findByText('No paired devices yet')).toBeInTheDocument()
+    first.unmount()
+
+    __resetPolledMemo()
+    bridge.getShareStatus.mockResolvedValue(shareStatus({ peers: 3 }))
+    render(<Companion />)
+    expect(await screen.findByText('3 paired devices')).toBeInTheDocument()
   })
 
   it('shows Start pairing when sharing is off and starts the real service', async () => {
@@ -183,102 +175,38 @@ describe('Companion product surface', () => {
     const start = await screen.findByRole('button', { name: 'Start pairing' })
     fireEvent.click(start)
     await waitFor(() => expect(bridge.startShare).toHaveBeenCalledTimes(1))
+    // Opening the pairing surface is the v002 dialog, not an inline QR swap.
+    expect(await screen.findByText('Scan to connect')).toBeInTheDocument()
   })
 
-  it('renders the real QR path and waiting state when sharing is on', async () => {
+  it('offers Show pairing code and a real Stop sharing while active', async () => {
     __resetPolledMemo()
-    bridge.getShareStatus.mockResolvedValue(shareStatus({
-      sharing: true,
-      peers: 6,
-      connectPayload: 'metrora://pair-qr-payload',
-    }))
-    const { container } = render(<Companion />)
-    expect(await screen.findByText('Scan with Metrora Android')).toBeInTheDocument()
-    expect(await screen.findByText('Waiting for a device...')).toBeInTheDocument()
-    expect(container.querySelector('[aria-label="Metrora connection QR code"]')).not.toBeNull()
-    expect(screen.getByText(/Once you scan the code from the app, a pairing request will appear here\./)).toBeInTheDocument()
-  })
-
-  it('never shows a six-digit code without a pending request', async () => {
-    __resetPolledMemo()
-    bridge.getShareStatus.mockResolvedValue(shareStatus({
-      sharing: true,
-      peers: 1,
-      connectPayload: 'metrora://pair-qr-payload',
-    }))
+    bridge.getShareStatus.mockResolvedValue(shareStatus({ sharing: true, peers: 6, connectPayload: 'metrora://x' }))
     render(<Companion />)
-    await screen.findByText('Waiting for a device...')
-    expect(screen.queryByText(/Pairing request/)).not.toBeInTheDocument()
-    // No bare six-digit SAS code in the QR-only state.
-    expect(document.body.textContent).not.toMatch(/\b\d{6}\b/)
-  })
-
-  it('promotes a pending pairing with device name and exact SAS', async () => {
-    __resetPolledMemo()
-    bridge.getShareStatus.mockResolvedValue(shareStatus({
-      sharing: true,
-      peers: 6,
-      connectPayload: 'metrora://pair-qr-payload',
-      pending: [{ id: 'pair-1', name: 'Pixel 8', code: '482913' }],
-    }))
-    render(<Companion />)
-    expect(await screen.findByText('Pixel 8')).toBeInTheDocument()
-    expect(screen.getByText('482913')).toBeInTheDocument()
-    expect(screen.getByText(/Compare the six-digit verification code on both devices before approving/)).toBeInTheDocument()
-  })
-
-  it('approves and declines through the existing bridge actions', async () => {
-    __resetPolledMemo()
-    bridge.getShareStatus.mockResolvedValue(shareStatus({
-      sharing: true,
-      peers: 6,
-      connectPayload: 'metrora://pair-qr-payload',
-      pending: [{ id: 'pair-9', name: 'Pixel 8', code: '112233' }],
-    }))
-    render(<Companion />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Approve' }))
-    await waitFor(() => expect(bridge.approvePairing).toHaveBeenCalledWith('pair-9', true))
-
-    fireEvent.click(screen.getByRole('button', { name: 'Decline' }))
-    await waitFor(() => expect(bridge.approvePairing).toHaveBeenCalledWith('pair-9', false))
-  })
-
-  it('keeps copy as connection payload and stop sharing real', async () => {
-    __resetPolledMemo()
-    bridge.getShareStatus.mockResolvedValue(shareStatus({
-      sharing: true,
-      peers: 6,
-      connectPayload: 'metrora://pair-qr-payload',
-    }))
-    render(<Companion />)
-    expect(await screen.findByRole('button', { name: 'Copy connection payload' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Copy pairing code/i })).not.toBeInTheDocument()
-
+    expect(await screen.findByRole('button', { name: 'Show pairing code' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Stop sharing' }))
     await waitFor(() => expect(bridge.stopShare).toHaveBeenCalledTimes(1))
   })
 
-  it('renders the factual capability list', async () => {
+  it('renders the factual capability grid', async () => {
     render(<Companion />)
-    expect(await screen.findByRole('heading', { name: 'Available on your Companion' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'On your Companion' })).toBeInTheDocument()
     expect(screen.getByText('Home / Usage')).toBeInTheDocument()
-    expect(screen.getByText('Monitor your usage and activity overview.')).toBeInTheDocument()
+    expect(screen.getByText('Your usage overview')).toBeInTheDocument()
     expect(screen.getByText('Activity')).toBeInTheDocument()
-    expect(screen.getByText('View activity sessions and pull requests.')).toBeInTheDocument()
+    expect(screen.getByText('Recent sessions')).toBeInTheDocument()
     expect(screen.getByText('Models')).toBeInTheDocument()
-    expect(screen.getByText('Inspect model usage and economics.')).toBeInTheDocument()
+    expect(screen.getByText('Model usage and costs')).toBeInTheDocument()
     expect(screen.getByText('Projects')).toBeInTheDocument()
-    expect(screen.getByText('Browse projects and change scope.')).toBeInTheDocument()
+    expect(screen.getByText('Browse your projects')).toBeInTheDocument()
     expect(screen.getByText('Spend')).toBeInTheDocument()
-    expect(screen.getByText('Monitor spend and costs.')).toBeInTheDocument()
+    expect(screen.getByText('Track your spending')).toBeInTheDocument()
     expect(screen.getByText('Capacity')).toBeInTheDocument()
-    expect(screen.getByText('View capacity and availability.')).toBeInTheDocument()
+    expect(screen.getByText('Provider quotas and credits')).toBeInTheDocument()
+    // The mockup does not authorize dropping Workspace or other real capabilities.
     expect(screen.getByText('Workspace')).toBeInTheDocument()
-    // Mockup composition: only Capacity and Workspace carry badges.
-    const homeRow = screen.getByText('Home / Usage').closest('li')!
-    expect(homeRow.querySelector('.companion-badge')).toBeNull()
     const capacityRow = screen.getByText('Capacity').closest('li')!
-    expect(capacityRow.querySelector('.companion-badge')).toHaveTextContent('Available')
+    expect(within(capacityRow).getByText('Available')).toBeInTheDocument()
   })
 
   it('follows canonical Capacity availability', async () => {
@@ -298,16 +226,16 @@ describe('Companion product surface', () => {
 
   it('keeps Workspace Desktop-only and non-interactive', async () => {
     render(<Companion />)
-    const workspaceRow = (await screen.findByText('Workspace')).closest('li')!
-    expect(within(workspaceRow).getByText('Desktop only')).toBeInTheDocument()
-    expect(within(workspaceRow).getByText('Not available on Android.')).toBeInTheDocument()
-    expect(within(workspaceRow).queryByRole('button')).not.toBeInTheDocument()
-    expect(workspaceRow.getAttribute('aria-disabled')).toBe('true')
+    const workspaceTile = (await screen.findByText('Workspace')).closest('li')!
+    expect(within(workspaceTile).getByText('Desktop only')).toBeInTheDocument()
+    expect(within(workspaceTile).getByText('Not available on Android.')).toBeInTheDocument()
+    expect(within(workspaceTile).queryByRole('button')).not.toBeInTheDocument()
+    expect(workspaceTile.getAttribute('aria-disabled')).toBe('true')
   })
 
   it('makes no fake Project management or model comparison claims', async () => {
     render(<Companion />)
-    await screen.findByRole('heading', { name: 'Available on your Companion' })
+    await screen.findByRole('heading', { name: 'On your Companion' })
     expect(screen.queryByText(/Manage projects/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/Compare models/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/Compare.*model/i)).not.toBeInTheDocument()
@@ -315,7 +243,7 @@ describe('Companion product surface', () => {
 
   it('advertises no unshipped product UI', async () => {
     render(<Companion />)
-    await screen.findByRole('heading', { name: 'Available on your Companion' })
+    await screen.findByRole('heading', { name: 'On your Companion' })
     const text = document.body.textContent ?? ''
     expect(text).not.toMatch(/Metrora Pro/i)
     expect(text).not.toMatch(/Remote access/i)
@@ -327,16 +255,10 @@ describe('Companion product surface', () => {
     expect(text).not.toMatch(/chatbot/i)
   })
 
-  it('explains Local by design without claiming no data leaves the computer', async () => {
+  it('keeps the privacy note factual', async () => {
     render(<Companion />)
     expect(await screen.findByRole('heading', { name: 'Local by design' })).toBeInTheDocument()
-    expect(screen.getByText('Your data stays under your control. Companion connects to your Metrora instance over an encrypted local connection.')).toBeInTheDocument()
-    expect(screen.getByText('Desktop stays authoritative')).toBeInTheDocument()
-    expect(screen.getByText('All sensitive operations, credentials and provider access remain on your machine.')).toBeInTheDocument()
-    expect(screen.getByText('Secure local pairing')).toBeInTheDocument()
-    expect(screen.getByText('Devices pair using end-to-end encryption and verification.')).toBeInTheDocument()
-    expect(screen.getByText('Bounded mobile data')).toBeInTheDocument()
-    expect(screen.getByText('Your Android device receives only the data needed for the Companion experience.')).toBeInTheDocument()
+    expect(screen.getByText('Your desktop stays in control. Companion connects over your local network.')).toBeInTheDocument()
     expect(screen.queryByText(/no data leaves the computer/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/all your data stays on this machine/i)).not.toBeInTheDocument()
   })
@@ -349,5 +271,98 @@ describe('Companion product surface', () => {
     bridge.getCompanionCapabilities.mockResolvedValue(capabilities())
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(await screen.findByText('Home / Usage')).toBeInTheDocument()
+  })
+
+  it('promotes a pending pairing to the verify dialog with the real SAS', async () => {
+    __resetPolledMemo()
+    bridge.getShareStatus.mockResolvedValue(shareStatus({
+      sharing: true,
+      peers: 6,
+      connectPayload: 'metrora://pair-qr-payload',
+      pending: [{ id: 'pair-9', name: 'Pixel 8', code: '112233' }],
+    }))
+    render(<Companion />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Show pairing code' }))
+    expect(await screen.findByText('Verify your device')).toBeInTheDocument()
+    expect(screen.getByText('Pixel 8')).toBeInTheDocument()
+    expect(screen.getByTestId('companion-sas-code')).toHaveTextContent('112233')
+    expect(screen.getByRole('button', { name: 'Codes match — approve' })).toBeInTheDocument()
+    // The illustrative mockup wording never ships.
+    expect(document.body.textContent).not.toMatch(/Example code/i)
+  })
+
+  it('approves through the bridge and shows success only after runtime confirmation', async () => {
+    __resetPolledMemo()
+    bridge.getShareStatus.mockResolvedValue(shareStatus({
+      sharing: true,
+      peers: 6,
+      connectPayload: 'metrora://pair-qr-payload',
+      pending: [{ id: 'pair-9', name: 'Pixel 8', code: '112233' }],
+    }))
+    bridge.approvePairing.mockImplementation(async () => shareStatus({ sharing: true, peers: 7, pending: [] }))
+    render(<Companion />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Show pairing code' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Codes match — approve' }))
+    await waitFor(() => expect(bridge.approvePairing).toHaveBeenCalledWith('pair-9', true))
+    expect(await screen.findByText('Device paired')).toBeInTheDocument()
+    expect(screen.getByText('Your Android device is now paired with Metrora.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }))
+    expect(screen.queryByText('Device paired')).not.toBeInTheDocument()
+  })
+
+  it('keeps the verify stage when the runtime keeps the request pending', async () => {
+    __resetPolledMemo()
+    bridge.getShareStatus.mockResolvedValue(shareStatus({
+      sharing: true,
+      peers: 6,
+      connectPayload: 'metrora://pair-qr-payload',
+      pending: [{ id: 'pair-9', name: 'Pixel 8', code: '112233' }],
+    }))
+    bridge.approvePairing.mockImplementation(async () => shareStatus({
+      sharing: true,
+      peers: 6,
+      pending: [{ id: 'pair-9', name: 'Pixel 8', code: '112233' }],
+    }))
+    render(<Companion />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Show pairing code' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Codes match — approve' }))
+    await waitFor(() => expect(bridge.approvePairing).toHaveBeenCalledTimes(1))
+    expect(screen.getByText('Verify your device')).toBeInTheDocument()
+    expect(screen.queryByText('Device paired')).not.toBeInTheDocument()
+  })
+
+  it('declines through the Cancel action and returns to the QR stage', async () => {
+    __resetPolledMemo()
+    bridge.getShareStatus.mockResolvedValue(shareStatus({
+      sharing: true,
+      peers: 6,
+      connectPayload: 'metrora://pair-qr-payload',
+      pending: [{ id: 'pair-9', name: 'Pixel 8', code: '112233' }],
+    }))
+    bridge.approvePairing.mockImplementation(async () => shareStatus({ sharing: true, peers: 6, pending: [] }))
+    render(<Companion />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Show pairing code' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(bridge.approvePairing).toHaveBeenCalledWith('pair-9', false))
+    expect(await screen.findByText('Scan to connect')).toBeInTheDocument()
+  })
+
+  it('renders the live QR and waiting state inside the dialog', async () => {
+    __resetPolledMemo()
+    bridge.getShareStatus.mockResolvedValue(shareStatus({
+      sharing: true,
+      peers: 6,
+      connectPayload: 'metrora://pair-qr-payload',
+    }))
+    render(<Companion />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Show pairing code' }))
+    expect(await screen.findByText('Scan to connect')).toBeInTheDocument()
+    await waitFor(() => expect(document.querySelector('[aria-label="Metrora connection QR code"]')).not.toBeNull())
+    expect(screen.getByText('Waiting for your phone…')).toBeInTheDocument()
+    expect(screen.getByText('Encrypted local pairing')).toBeInTheDocument()
+    // No bare six-digit SAS code in the QR-only state.
+    expect(document.body.textContent).not.toMatch(/\b\d{6}\b/)
   })
 })

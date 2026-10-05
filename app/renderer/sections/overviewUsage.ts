@@ -121,6 +121,31 @@ export function deriveOverviewUsage(current: MenubarPayload['current']): Overvie
   const projectUsage = projectTokenUsage(overviewCurrent)
   if (projectUsage) return projectUsage
 
+  const reasoning = reasoningFromAccounting(overviewCurrent)
+  const evidence = overviewCurrent.usageEvidence
+
+  // When the payload carries primary-counter evidence (e.g. DSH), it is the
+  // authority for input/output — the same signal the CLI token row and the web
+  // dashboard chip read. A reported zero is complete evidence, never a gap.
+  if (evidence) {
+    const state: OverviewEvidenceState = evidence === 'complete'
+      ? 'available'
+      : evidence === 'partial' ? 'partial' : 'unavailable'
+    const value = (reported: number): number | null => (state === 'unavailable' ? null : reported)
+    return {
+      input: tokenMetric(value(overviewCurrent.inputTokens), state),
+      output: tokenMetric(value(overviewCurrent.outputTokens), state),
+      cacheRead: tokenMetric(overviewCurrent.cacheReadTokens, 'available'),
+      cacheWrite: tokenMetric(overviewCurrent.cacheWriteTokens, 'available'),
+      reasoning,
+      evidenceNote: state === 'available'
+        ? 'Usage totals are complete for this scope.'
+        : state === 'partial'
+          ? 'Incomplete token data: primary input/output counters are partially reported for this scope.'
+          : 'Incomplete token data: no primary input/output evidence was reported for this scope.',
+    }
+  }
+
   const values = [overviewCurrent.inputTokens, overviewCurrent.outputTokens, overviewCurrent.cacheReadTokens, overviewCurrent.cacheWriteTokens]
   const hasAccountingTokenEvidence = overviewCurrent.modelAccounting?.rows.some(row => row.tokenDetail) ?? false
   const hasLegacyEvidence = overviewCurrent.calls === 0 || values.some(value => value > 0) || hasAccountingTokenEvidence
@@ -128,7 +153,6 @@ export function deriveOverviewUsage(current: MenubarPayload['current']): Overvie
     return unavailableUsage('This payload does not include token-level evidence for the selected scope.')
   }
 
-  const reasoning = reasoningFromAccounting(overviewCurrent)
   return {
     input: tokenMetric(overviewCurrent.inputTokens, 'available'),
     output: tokenMetric(overviewCurrent.outputTokens, 'available'),

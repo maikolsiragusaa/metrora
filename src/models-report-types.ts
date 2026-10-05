@@ -1,6 +1,6 @@
 import type { ModelPricingSummary } from './model-pricing-summary.js'
 import type { TaskCategory } from './types.js'
-import type { ReasoningTokenSemantics , type UsageTokenEvidence} from './token-semantics.js'
+import type { ReasoningTokenSemantics, UsageTokenEvidence } from './token-semantics.js'
 
 export type ModelReportRow = {
   /** Legacy JSON field name: this value is the collector/client source (`call.provider`), not `modelProvider`. */

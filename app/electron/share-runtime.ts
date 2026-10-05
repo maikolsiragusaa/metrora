@@ -2,6 +2,8 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 export type PendingPairing = { id: string; name: string; code: string }
+/** Renderer-safe mirror of src/sharing/share-controller.ts PairedPeerSummary. */
+export type PairedPeerSummary = { name: string; pairedAt: number }
 export type DesktopShareStatus = {
   sharing: boolean
   name: string
@@ -12,6 +14,7 @@ export type DesktopShareStatus = {
   networkWarning?: string
   always: boolean
   peers: number
+  peerList?: PairedPeerSummary[]
   pending: PendingPairing[]
 }
 

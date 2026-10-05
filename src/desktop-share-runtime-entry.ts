@@ -23,7 +23,7 @@ export type DesktopShareRuntimeV1 = {
   stop(): Promise<ShareStatus>
   approve(id: string, approve: boolean): Promise<ShareStatus>
   /** Read-only projection of the SAME canonical capability matrix served to Android. */
-  capabilities(): Promise<ReturnType<typeof buildCompanionCapabilities>>
+  capabilities(): Promise<Awaited<ReturnType<typeof buildCompanionCapabilities>>>
 }
 
 /**

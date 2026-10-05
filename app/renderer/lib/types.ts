@@ -135,6 +135,8 @@ export type MenubarPayload = {
     cacheReadTokens: number
     cacheWriteTokens: number
     cacheHitPercent: number
+    /** Worst primary-counter evidence in the period; absent means legacy behavior. */
+    usageEvidence?: 'complete' | 'partial' | 'unavailable' | 'inconsistent'
     codexCredits: number
     topActivities: Array<{
       name: string
@@ -421,7 +423,8 @@ export type OptimizeJsonReport = {
 // ————— T1b: src/sharing/* (defined by the shared contract) —————
 
 export type PendingPairing = { id: string; name: string; code: string }
-export type ShareStatus = { sharing: boolean; name: string; port: number; host: string | null; addresses: string[]; connectPayload: string | null; networkWarning?: string; always: boolean; peers: number; pending: PendingPairing[] }
+export type PairedPeerSummary = { name: string; pairedAt: number }
+export type ShareStatus = { sharing: boolean; name: string; port: number; host: string | null; addresses: string[]; connectPayload: string | null; networkWarning?: string; always: boolean; peers: number; peerList?: PairedPeerSummary[]; pending: PendingPairing[] }
 
 export type { CompanionCapabilitiesV1, CompanionCapabilityId, CompanionCapabilityV1 } from './companion-capability-types'
 

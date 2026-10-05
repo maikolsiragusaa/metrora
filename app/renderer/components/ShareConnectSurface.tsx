@@ -1,49 +1,18 @@
 import { useEffect, useState } from 'react'
-import QRCode from 'qrcode'
 
+import { ConnectionQr } from './ConnectionQr'
 import { normalizeCliError, metrora } from '../lib/ipc'
 import type { Polled } from '../hooks/usePolled'
 import type { ShareStatus } from '../lib/types'
 import { showToast } from '../lib/toast'
 
-function ConnectionQr({ payload }: { payload: string }) {
-  const [svg, setSvg] = useState('')
-
-  useEffect(() => {
-    let cancelled = false
-    void QRCode.toString(payload, {
-      type: 'svg',
-      margin: 1,
-      errorCorrectionLevel: 'M',
-      color: { dark: '#111214', light: '#ffffff' },
-    }).then(value => {
-      if (!cancelled) setSvg(value)
-    }).catch(() => {
-      if (!cancelled) setSvg('')
-    })
-    return () => { cancelled = true }
-  }, [payload])
-
-  return svg ? (
-    <div
-      aria-label="Metrora connection QR code"
-      className="set-share-qr"
-      role="img"
-      dangerouslySetInnerHTML={{ __html: svg }}
-    />
-  ) : <div className="set-share-qr set-share-qr-loading" role="status">Preparing QR…</div>
-}
-
 export function ShareConnectSurface({
   shareStatus,
   onboarding = false,
-  companion = false,
 }: {
   shareStatus: Polled<ShareStatus>
   /** Use the onboarding composition without exposing a second sharing toggle. */
   onboarding?: boolean
-  /** Use the Companion product-surface composition (operational pairing panel). */
-  companion?: boolean
 }) {
   const [busy, setBusy] = useState(false)
   const [responding, setResponding] = useState<string | null>(null)
@@ -129,80 +98,6 @@ export function ShareConnectSurface({
             ))}
           </div>
         ) : null}
-      </div>
-    )
-  }
-
-  if (companion) {
-    return (
-      <div className="companion-pairing" aria-live="polite">
-        {!data ? (
-          shareStatus.error ? (
-            <div className="companion-pairing-state" role="alert">
-              <p className="companion-pairing-lede">Unable to read local sharing state.</p>
-              <p className="companion-pairing-sub">The local pairing service did not respond. Nothing was started or changed.</p>
-              <button type="button" className="companion-btn companion-btn-secondary" onClick={() => shareStatus.refresh()}>Retry</button>
-            </div>
-          ) : (
-            <div className="companion-pairing-state" role="status">
-              <p className="companion-pairing-lede">Reading local pairing state…</p>
-            </div>
-          )
-        ) : !data.sharing ? (
-          <div className="companion-pairing-state companion-pairing-off">
-            <p className="companion-pairing-lede">Start local pairing to generate a connection QR for Metrora Android.</p>
-            <p className="companion-pairing-sub">Your phone and this computer need to be on the same local network. No cloud relay is used.</p>
-            {data.networkWarning && <p className="companion-warning" role="status">{data.networkWarning}</p>}
-            <div className="companion-off-visual" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2" /><path d="M11 18.5h2" /><path d="M3.5 9v6M2 10.5v3M20.5 9v6M22 10.5v3" /></svg>
-              <span>Same local network · explicit approval on this device</span>
-            </div>
-            <div className="companion-pairing-cta">
-              <button type="button" className="companion-btn companion-btn-primary" disabled={busy} onClick={() => void toggleSharing()}>
-                {busy ? 'Starting…' : 'Start pairing'}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="companion-pairing-live">
-            {data.pending.length > 0 && (
-              <div className="companion-pending" role="alert">
-                <b>Pairing request</b>
-                {data.pending.map(pairing => (
-                  <div className="companion-pending-row" key={pairing.id}>
-                    <div className="companion-pending-copy">
-                      <b>{pairing.name}</b>
-                      <span>Compare this six-digit code on both devices before approving: <code>{pairing.code}</code></span>
-                    </div>
-                    <span className="companion-pending-actions">
-                      <button type="button" className="companion-btn companion-btn-primary" disabled={responding !== null} onClick={() => void respondToPairing(pairing.id, true)}>Approve</button>
-                      <button type="button" className="companion-btn companion-btn-secondary" disabled={responding !== null} onClick={() => void respondToPairing(pairing.id, false)}>Decline</button>
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-            {data.connectPayload ? (
-              <>
-                <p className="companion-pairing-lede">Scan with Metrora Android</p>
-                <div className="companion-qr-wrap"><ConnectionQr payload={data.connectPayload} /></div>
-                <p className="companion-waiting">Waiting for a device...</p>
-                <p className="companion-pairing-sub">Once you scan the code from the app, a pairing request will appear here. Compare the six-digit verification code on both devices before approving.</p>
-                {data.networkWarning && <p className="companion-warning" role="status">{data.networkWarning}</p>}
-                <p className="companion-endpoint">{data.host ?? 'Local network'}:{data.port}</p>
-                {data.addresses.length > 1 && <p className="companion-pairing-sub">Other local addresses: {data.addresses.slice(1).join(', ')}</p>}
-                <div className="companion-pairing-actions">
-                  <button type="button" className="companion-btn companion-btn-secondary" onClick={() => void copyPayload()}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" /></svg>{copied ? 'Copied connection payload' : 'Copy connection payload'}</button>
-                  <button type="button" className="companion-btn companion-btn-danger" disabled={busy} onClick={() => void toggleSharing()}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>{busy ? 'Updating…' : 'Stop sharing'}</button>
-                </div>
-              </>
-            ) : (
-              <div className="companion-pairing-state" role="status">
-                <p className="companion-pairing-lede">Reading local pairing state…</p>
-              </div>
-            )}
-          </div>
-        )}
       </div>
     )
   }

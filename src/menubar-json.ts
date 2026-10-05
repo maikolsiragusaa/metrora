@@ -231,13 +231,11 @@ export type MenubarPayload = {
     calls: number
     sessions: number
     oneShotRate: number | null
-    inputTokens: number
-    outputTokens: number
+    inputTokens: number; outputTokens: number
     /// Period-scoped cache token totals. Kept separate from `history.daily`
     /// (which is a 365-day backfill for the trend chart) so the web cache
     /// cards read the same range as Cost/Calls/Tokens (issue #583).
-    cacheReadTokens: number
-    cacheWriteTokens: number
+    cacheReadTokens: number; cacheWriteTokens: number
     cacheHitPercent: number
     /// Codex credits consumed in the period; 0 when there is no Codex usage.
     codexCredits: number
@@ -246,6 +244,8 @@ export type MenubarPayload = {
     /// display/metadata only, never summed into `cost`. Optional for compatibility
     /// with payloads produced before the field existed.
     estimatedCostUSD?: number
+    /// Worst primary-counter evidence; absent means the producer predates the field.
+    usageEvidence?: 'complete' | 'partial' | 'unavailable' | 'inconsistent'
     topActivities: Array<{
       name: string
       cost: number
