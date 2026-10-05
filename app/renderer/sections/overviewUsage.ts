@@ -87,28 +87,76 @@ function reasoningFromAccounting(current: MenubarPayload['current']): OverviewRe
   return reasoningForRows(detailedRows)
 }
 
+type CounterEvidence = 'complete' | 'partial' | 'unavailable'
+
+/**
+ * Whether the payload carries any known primary-counter counts: evidenced
+ * detail rows, or positive counters (which can only come from records that
+ * reported numbers). Distinguishes mixed sets (complete records alongside
+ * unevidenced ones — keep the known values) from genuinely empty evidence
+ * (nothing known — never render aggregates as zeros).
+ */
+function hasKnownTokenCounts(current: MenubarPayload['current']): boolean {
+  if (current.modelAccounting?.rows.some(row => row.tokenDetail)) return true
+  return current.inputTokens > 0 || current.outputTokens > 0 || current.cacheReadTokens > 0 || current.cacheWriteTokens > 0
+}
+
+/**
+ * Display reading of the primary-counter evidence class. Mirrors the web
+ * token chip: incompleteness accompanies the values, it never blanks known
+ * counts, and "no evidence reported" is claimed only when nothing is known.
+ */
+function counterDisplay(
+  evidence: OverviewCurrent['usageEvidence'],
+  hasKnown: boolean,
+): { state: OverviewEvidenceState; note: CounterEvidence } {
+  if (!evidence || evidence === 'complete') return { state: 'available', note: 'complete' }
+  if (evidence === 'partial' || hasKnown) return { state: 'partial', note: 'partial' }
+  return { state: 'unavailable', note: 'unavailable' }
+}
+
+const PARTIAL_COUNTER_NOTE = 'Incomplete token data: primary input/output counters are partially reported for this scope.'
+const NO_COUNTER_EVIDENCE_NOTE = 'Incomplete token data: no primary input/output evidence was reported for this scope.'
+
+function rankEvidenceState(state: OverviewEvidenceState): number {
+  return state === 'available' ? 0 : state === 'partial' ? 1 : 2
+}
+
 function projectTokenUsage(current: OverviewCurrent): OverviewUsageDetails | null {
   const coverage = current.projectDetailCoverage?.tokens
   if (!coverage) return null
 
   const reasoning = reasoningFromAccounting(current)
-  if (coverage === 'unavailable') {
-    return {
-      ...unavailableUsage('Token totals are unavailable for this Project scope; missing values are not shown as zero.'),
-      reasoning,
-    }
-  }
-
-  const state: OverviewEvidenceState = coverage === 'complete' ? 'available' : 'partial'
-  return {
-    input: tokenMetric(current.inputTokens, state),
-    output: tokenMetric(current.outputTokens, state),
-    cacheRead: tokenMetric(current.cacheReadTokens, state),
-    cacheWrite: tokenMetric(current.cacheWriteTokens, state),
-    reasoning,
-    evidenceNote: coverage === 'complete'
+  const coverageState: OverviewEvidenceState =
+    coverage === 'complete' ? 'available' : coverage === 'partial' ? 'partial' : 'unavailable'
+  // The displayed totals ARE the primary counters: counter evidence can only
+  // downgrade what project detail coverage claims, never upgrade it. A
+  // complete detail claim next to partial counters still renders partial.
+  const counter = counterDisplay(current.usageEvidence, hasKnownTokenCounts(current))
+  const state: OverviewEvidenceState =
+    coverageState === 'unavailable' || counter.state === 'unavailable'
+      ? 'unavailable'
+      : coverageState === 'partial' || counter.state === 'partial'
+        ? 'partial'
+        : 'available'
+  const value = (reported: number): number | null => (state === 'unavailable' ? null : reported)
+  // The note follows the binding (worse) constraint; ties keep the
+  // project-scoped wording.
+  const counterBinds = rankEvidenceState(counter.state) > rankEvidenceState(coverageState)
+  const evidenceNote = counterBinds
+    ? counter.note === 'partial' ? PARTIAL_COUNTER_NOTE : NO_COUNTER_EVIDENCE_NOTE
+    : coverage === 'complete'
       ? 'Period token totals are complete for this Project scope; model identity detail is tracked separately.'
-      : 'Period token totals remain factual for this Project scope, but the supporting detail is partial.',
+      : coverage === 'partial'
+        ? 'Period token totals remain factual for this Project scope, but the supporting detail is partial.'
+        : 'Token totals are unavailable for this Project scope; missing values are not shown as zero.'
+  return {
+    input: tokenMetric(value(current.inputTokens), state),
+    output: tokenMetric(value(current.outputTokens), state),
+    cacheRead: tokenMetric(value(current.cacheReadTokens), state),
+    cacheWrite: tokenMetric(value(current.cacheWriteTokens), state),
+    reasoning,
+    evidenceNote,
   }
 }
 
@@ -125,24 +173,25 @@ export function deriveOverviewUsage(current: MenubarPayload['current']): Overvie
   const evidence = overviewCurrent.usageEvidence
 
   // When the payload carries primary-counter evidence (e.g. DSH), it is the
-  // authority for input/output — the same signal the CLI token row and the web
-  // dashboard chip read. A reported zero is complete evidence, never a gap.
+  // authority for input/output — the same signal the web dashboard chip
+  // reads. A reported zero is complete evidence, never a gap. Mixed sets
+  // (complete records alongside unevidenced ones) keep their known counts
+  // with the incompleteness attached; only a genuinely evidence-free scope
+  // renders as unavailable.
   if (evidence) {
-    const state: OverviewEvidenceState = evidence === 'complete'
-      ? 'available'
-      : evidence === 'partial' ? 'partial' : 'unavailable'
-    const value = (reported: number): number | null => (state === 'unavailable' ? null : reported)
+    const counter = counterDisplay(evidence, hasKnownTokenCounts(overviewCurrent))
+    const value = (reported: number): number | null => (counter.state === 'unavailable' ? null : reported)
     return {
-      input: tokenMetric(value(overviewCurrent.inputTokens), state),
-      output: tokenMetric(value(overviewCurrent.outputTokens), state),
-      cacheRead: tokenMetric(overviewCurrent.cacheReadTokens, 'available'),
-      cacheWrite: tokenMetric(overviewCurrent.cacheWriteTokens, 'available'),
+      input: tokenMetric(value(overviewCurrent.inputTokens), counter.state),
+      output: tokenMetric(value(overviewCurrent.outputTokens), counter.state),
+      cacheRead: tokenMetric(value(overviewCurrent.cacheReadTokens), counter.state),
+      cacheWrite: tokenMetric(value(overviewCurrent.cacheWriteTokens), counter.state),
       reasoning,
-      evidenceNote: state === 'available'
+      evidenceNote: counter.note === 'complete'
         ? 'Usage totals are complete for this scope.'
-        : state === 'partial'
-          ? 'Incomplete token data: primary input/output counters are partially reported for this scope.'
-          : 'Incomplete token data: no primary input/output evidence was reported for this scope.',
+        : counter.note === 'partial'
+          ? PARTIAL_COUNTER_NOTE
+          : NO_COUNTER_EVIDENCE_NOTE,
     }
   }
 

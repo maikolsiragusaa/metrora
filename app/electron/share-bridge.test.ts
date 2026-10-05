@@ -56,7 +56,7 @@ function capabilitiesPayload(capacityAvailable: boolean): DesktopCompanionCapabi
 describe('companion capability bridge', () => {
   it('returns the canonical CompanionCapabilitiesV1 through the trusted runtime', async () => {
     const capabilities = vi.fn(async () => capabilitiesPayload(true))
-    const share = { status: async () => status, start: async () => status, stop: async () => status, approve: async () => status, capabilities }
+    const share = { status: async () => status, start: async () => status, stop: async () => status, approve: async () => ({ status, outcome: 'paired' as const }), capabilities }
     const handlers = createShareBridgeHandlers(share)
 
     const result = await handlers['metrora:getCompanionCapabilities']!()
@@ -83,7 +83,7 @@ describe('companion capability bridge', () => {
       status: async () => status,
       start: async () => status,
       stop: async () => status,
-      approve: async () => status,
+      approve: async () => ({ status, outcome: 'paired' as const }),
       capabilities: async () => capabilitiesPayload(true),
     })
     const withResult = (await withCapacity['metrora:getCompanionCapabilities']!()) as { ok: true; value: DesktopCompanionCapabilities }
@@ -93,7 +93,7 @@ describe('companion capability bridge', () => {
       status: async () => status,
       start: async () => status,
       stop: async () => status,
-      approve: async () => status,
+      approve: async () => ({ status, outcome: 'paired' as const }),
       capabilities: async () => capabilitiesPayload(false),
     })
     const withoutResult = (await withoutCapacity['metrora:getCompanionCapabilities']!()) as { ok: true; value: DesktopCompanionCapabilities }
@@ -111,7 +111,7 @@ describe('companion capability bridge', () => {
       status: async () => status,
       start: async () => status,
       stop: async () => status,
-      approve: async () => status,
+      approve: async () => ({ status, outcome: 'paired' as const }),
       capabilities: async () => capabilitiesPayload(true),
     })
     const result = await handlers['metrora:getCompanionCapabilities']!()
@@ -132,7 +132,7 @@ describe('companion capability bridge', () => {
       status: async () => status,
       start: async () => status,
       stop: async () => status,
-      approve: async () => status,
+      approve: async () => ({ status, outcome: 'paired' as const }),
       capabilities: async () => { throw new Error('Bearer sk-ant-secret material') },
     })
     const result = await handlers['metrora:getCompanionCapabilities']!()

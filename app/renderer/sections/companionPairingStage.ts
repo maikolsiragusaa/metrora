@@ -5,10 +5,13 @@ import type { Polled } from '../hooks/usePolled'
 import type { PendingPairing, ShareStatus } from '../lib/types'
 
 /**
- * Stage machine for the v002 pairing dialog, driven entirely by the polled
- * ShareStatus bridge. The three stages map to the real pairing phases
- * (scan → verify → paired); success is shown only after the runtime confirms
- * the pending request is gone. This module owns no protocol logic of its own.
+ * Stage machine for the v002 pairing dialog, driven by the polled
+ * ShareStatus bridge plus the positively confirmed outcome of each approval.
+ * The three stages map to the real pairing phases (scan → verify → paired)
+ * with no artificial steps. Success renders ONLY on a `paired` outcome for
+ * the specific request id — a vanished pending entry is never completion
+ * evidence (it also vanishes on expiry, decline, or a failed save). This
+ * module owns no protocol logic of its own.
  */
 export type PairingStage =
   | { kind: 'scan' }
@@ -37,7 +40,7 @@ export function usePairingStage(shareStatus: Polled<ShareStatus>, onStart: () =>
   const [stage, setStage] = useState<PairingStage>({ kind: 'scan' })
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
-  const approvedRef = useRef<{ id: string; name: string } | null>(null)
+  const busyRef = useRef(false)
   // "Pairing is not active" is only meaningful once the dialog has actually
   // seen the service running — otherwise a freshly opened dialog could misread
   // a stale pre-start poll as a stopped service.
@@ -46,13 +49,14 @@ export function usePairingStage(shareStatus: Polled<ShareStatus>, onStart: () =>
   useEffect(() => {
     if (!share) return
     if (share.sharing) seenSharingRef.current = true
+    // While an approval is in flight the runtime answer (not the next poll)
+    // owns the stage: a poll landing mid-approval must not promote, expire,
+    // or otherwise move the verify stage on its own.
+    if (busyRef.current) return
     setStage(current => {
       if (current.kind === 'complete' || current.kind === 'ended') return current
       if (current.kind === 'verify') {
         if (share.pending.some(pairing => pairing.id === current.id)) return current
-        if (approvedRef.current?.id === current.id) {
-          return { kind: 'complete', name: approvedRef.current.name }
-        }
         const next = share.pending[0]
         if (next) return { kind: 'verify', id: next.id, name: next.name, code: next.code }
         return { kind: 'ended', reason: 'expired' }
@@ -67,22 +71,31 @@ export function usePairingStage(shareStatus: Polled<ShareStatus>, onStart: () =>
   const approve = async (pairing: PendingPairing) => {
     if (busy) return
     setBusy(true)
+    busyRef.current = true
     setActionError(null)
-    approvedRef.current = { id: pairing.id, name: pairing.name }
     try {
-      const status = await metrora.approvePairing(pairing.id, true)
+      const { outcome } = await metrora.approvePairing(pairing.id, true)
       shareStatus.refresh()
-      if (!status.pending.some(entry => entry.id === pairing.id)) {
+      // Only a positively confirmed `paired` outcome for THIS request id
+      // renders success. Every other terminal outcome moves to an explicit
+      // end state instead of trusting the pending list.
+      if (outcome === 'paired') {
         setStage({ kind: 'complete', name: pairing.name })
+      } else if (outcome === 'expired') {
+        setStage({ kind: 'ended', reason: 'expired' })
       } else {
-        // The runtime kept the request pending; stay on verify and let the
-        // poll resolve the stage. Never show success without confirmation.
-        approvedRef.current = null
+        setStage({
+          kind: 'ended',
+          reason: 'error',
+          detail: outcome === 'persist-failed'
+            ? 'The device approved pairing, but saving it failed and nothing was paired. Scan the QR code again to retry.'
+            : 'The pairing outcome is unknown. Nothing was confirmed paired. Scan the QR code again to retry.',
+        })
       }
     } catch (error) {
-      approvedRef.current = null
       setActionError(normalizeCliError(error).message)
     } finally {
+      busyRef.current = false
       setBusy(false)
     }
   }
@@ -90,21 +103,21 @@ export function usePairingStage(shareStatus: Polled<ShareStatus>, onStart: () =>
   const decline = async (id: string) => {
     if (busy) return
     setBusy(true)
+    busyRef.current = true
     setActionError(null)
     try {
       await metrora.approvePairing(id, false)
       shareStatus.refresh()
-      approvedRef.current = null
       setStage({ kind: 'scan' })
     } catch (error) {
       setActionError(normalizeCliError(error).message)
     } finally {
+      busyRef.current = false
       setBusy(false)
     }
   }
 
   const retry = async () => {
-    approvedRef.current = null
     setActionError(null)
     if (!share?.sharing) {
       const started = await onStart()

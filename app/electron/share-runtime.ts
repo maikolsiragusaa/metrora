@@ -18,11 +18,17 @@ export type DesktopShareStatus = {
   pending: PendingPairing[]
 }
 
+/**
+ * Renderer-safe mirror of src/sharing/share-controller.ts PairingOutcome:
+ * only the outcome class crosses the bridge, never tokens or fingerprints.
+ */
+export type DesktopPairingOutcome = 'paired' | 'declined' | 'expired' | 'persist-failed' | 'unknown'
+
 export type DesktopShareRuntime = {
   status(): Promise<DesktopShareStatus>
   start(always: boolean): Promise<DesktopShareStatus>
   stop(): Promise<DesktopShareStatus>
-  approve(id: string, approve: boolean): Promise<DesktopShareStatus>
+  approve(id: string, approve: boolean): Promise<{ status: DesktopShareStatus; outcome: DesktopPairingOutcome }>
   /** Read-only canonical Companion capability matrix (no secrets, no peer required). */
   capabilities(): Promise<DesktopCompanionCapabilities>
 }

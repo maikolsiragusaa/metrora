@@ -262,7 +262,7 @@ describe('createBridgeHandlers (channel → argv for all channels)', () => {
       status: vi.fn(async () => status),
       start: vi.fn(async () => sharingStatus),
       stop: vi.fn(async () => status),
-      approve: vi.fn(async () => sharingStatus),
+      approve: vi.fn(async () => ({ status: sharingStatus, outcome: 'paired' as const })),
       capabilities: vi.fn(async () => ({
         kind: 'metrora.companion.capabilities' as const,
         version: 1 as const,
@@ -276,7 +276,7 @@ describe('createBridgeHandlers (channel → argv for all channels)', () => {
     expect(await handlers['metrora:getShareStatus']!()).toEqual({ ok: true, value: status })
     expect(await handlers['metrora:startShare']!(true)).toEqual({ ok: true, value: sharingStatus })
     expect(await handlers['metrora:stopShare']!()).toEqual({ ok: true, value: status })
-    expect(await handlers['metrora:approvePairing']!('pair-1', true)).toEqual({ ok: true, value: sharingStatus })
+    expect(await handlers['metrora:approvePairing']!('pair-1', true)).toEqual({ ok: true, value: { status: sharingStatus, outcome: 'paired' } })
     expect(share.start).toHaveBeenCalledWith(true)
     expect(share.approve).toHaveBeenCalledWith('pair-1', true)
     expect(spawnCli).not.toHaveBeenCalled()

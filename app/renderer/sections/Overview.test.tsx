@@ -793,16 +793,17 @@ describe('Overview', () => {
     const partialUsage = deriveOverviewUsage(partial.current)
     expect(partialUsage.input).toEqual({ value: partial.current.inputTokens, state: 'partial' })
     expect(partialUsage.output).toEqual({ value: partial.current.outputTokens, state: 'partial' })
-    expect(partialUsage.cacheRead.state).toBe('available')
+    expect(partialUsage.cacheRead.state).toBe('partial')
     expect(partialUsage.evidenceNote).toMatch(/Incomplete token data/)
 
-    // Neither primary counter evidenced: never render the aggregates as zeros.
+    // Genuinely evidence-free scope (no detail rows, zero counters): never
+    // render the aggregates as zeros.
     const unavailable = makePayload(now)
     unavailable.current.usageEvidence = 'unavailable'
     const unavailableUsage = deriveOverviewUsage(unavailable.current)
     expect(unavailableUsage.input).toEqual({ value: null, state: 'unavailable' })
     expect(unavailableUsage.output).toEqual({ value: null, state: 'unavailable' })
-    expect(unavailableUsage.evidenceNote).toMatch(/Incomplete token data/)
+    expect(unavailableUsage.evidenceNote).toMatch(/no primary input\/output evidence was reported/)
 
     const complete = makePayload(now)
     complete.current.usageEvidence = 'complete'
@@ -811,6 +812,57 @@ describe('Overview', () => {
     // Absent evidence stays on the legacy path (provider payloads without the field).
     const legacy = withTokenAccounting(makePayload(now), {})
     expect(deriveOverviewUsage(legacy.current).input.state).toBe('available')
+  })
+
+  it('keeps known counts when complete and unevidenced records mix', () => {
+    const now = new Date()
+
+    // Worst-wins evidence says unavailable, but detail rows carry known
+    // counts: incompleteness accompanies the values instead of blanking them,
+    // and the note must not claim nothing was reported.
+    const mixed = withTokenAccounting(makePayload(now), {})
+    mixed.current.usageEvidence = 'unavailable'
+    const mixedUsage = deriveOverviewUsage(mixed.current)
+    expect(mixedUsage.input).toEqual({ value: 1200, state: 'partial' })
+    expect(mixedUsage.output).toEqual({ value: 500, state: 'partial' })
+    expect(mixedUsage.cacheRead).toEqual({ value: 300, state: 'partial' })
+    expect(mixedUsage.evidenceNote).toMatch(/partially reported/)
+    expect(mixedUsage.evidenceNote).not.toMatch(/no primary input\/output evidence was reported/)
+
+    // The evidence class and the values survive a cache round-trip with the
+    // same reading: still partial with values, never unavailable, never zeros.
+    const cached = JSON.parse(JSON.stringify(mixed)) as MenubarPayload
+    const cachedUsage = deriveOverviewUsage(cached.current)
+    expect(cachedUsage.input).toEqual({ value: 1200, state: 'partial' })
+    expect(cachedUsage.output).toEqual({ value: 500, state: 'partial' })
+    expect(cachedUsage.evidenceNote).toMatch(/partially reported/)
+
+    // Fully unevidenced scope stays unavailable after the same round-trip.
+    const empty = makePayload(now)
+    empty.current.usageEvidence = 'unavailable'
+    const emptyCached = JSON.parse(JSON.stringify(empty)) as MenubarPayload
+    const emptyUsage = deriveOverviewUsage(emptyCached.current)
+    expect(emptyUsage.input).toEqual({ value: null, state: 'unavailable' })
+    expect(emptyUsage.output).toEqual({ value: null, state: 'unavailable' })
+    expect(emptyUsage.evidenceNote).toMatch(/no primary input\/output evidence was reported/)
+  })
+
+  it('downgrades complete project detail when counters are only partially evidenced', () => {
+    const now = new Date()
+    const project = withTokenAccounting(makePayload(now), { tokenDetail: false })
+    const projectCurrent = asOverviewCurrent(project.current)
+    projectCurrent.inputTokens = 4_321
+    projectCurrent.outputTokens = 987
+    projectCurrent.cacheReadTokens = 654
+    projectCurrent.cacheWriteTokens = 123
+    projectCurrent.projectDetailCoverage = { models: 'partial', tokens: 'complete', categories: 'partial', historical: true }
+    projectCurrent.usageEvidence = 'partial'
+
+    const usage = deriveOverviewUsage(projectCurrent)
+    expect(usage.input).toEqual({ value: 4_321, state: 'partial' })
+    expect(usage.output).toEqual({ value: 987, state: 'partial' })
+    expect(usage.cacheRead).toEqual({ value: 654, state: 'partial' })
+    expect(usage.evidenceNote).toMatch(/partially reported/)
   })
 
   it('keeps Project period totals factual when model token detail is absent', () => {

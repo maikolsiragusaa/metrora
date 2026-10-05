@@ -422,9 +422,7 @@ export type OptimizeJsonReport = {
 
 // ————— T1b: src/sharing/* (defined by the shared contract) —————
 
-export type PendingPairing = { id: string; name: string; code: string }
-export type PairedPeerSummary = { name: string; pairedAt: number }
-export type ShareStatus = { sharing: boolean; name: string; port: number; host: string | null; addresses: string[]; connectPayload: string | null; networkWarning?: string; always: boolean; peers: number; peerList?: PairedPeerSummary[]; pending: PendingPairing[] }
+export type { ApprovePairingResult, PairedPeerSummary, PairingOutcome, PendingPairing, ShareStatus } from './pairing-types'
 
 export type { CompanionCapabilitiesV1, CompanionCapabilityId, CompanionCapabilityV1 } from './companion-capability-types'
 

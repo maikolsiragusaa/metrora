@@ -86,7 +86,10 @@ describe('Companion product surface v002', () => {
     bridge.getCompanionCapabilities.mockResolvedValue(capabilities({ capacityAvailable: true }))
     bridge.startShare.mockImplementation(async () => shareStatus({ sharing: true, peers: 6, connectPayload: 'metrora://pair-test' }))
     bridge.stopShare.mockImplementation(async () => shareStatus({ sharing: false, peers: 6 }))
-    bridge.approvePairing.mockImplementation(async () => shareStatus({ sharing: true, peers: 6 }))
+    bridge.approvePairing.mockImplementation(async () => ({
+      status: shareStatus({ sharing: true, peers: 6 }),
+      outcome: 'expired' as const,
+    }))
   })
 
   it('starts the page with the product title, no section search band', async () => {
@@ -299,7 +302,10 @@ describe('Companion product surface v002', () => {
       connectPayload: 'metrora://pair-qr-payload',
       pending: [{ id: 'pair-9', name: 'Pixel 8', code: '112233' }],
     }))
-    bridge.approvePairing.mockImplementation(async () => shareStatus({ sharing: true, peers: 7, pending: [] }))
+    bridge.approvePairing.mockImplementation(async () => ({
+      status: shareStatus({ sharing: true, peers: 7, pending: [] }),
+      outcome: 'paired' as const,
+    }))
     render(<Companion />)
     fireEvent.click(await screen.findByRole('button', { name: 'Show pairing code' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Codes match — approve' }))
@@ -312,7 +318,7 @@ describe('Companion product surface v002', () => {
     expect(screen.queryByText('Device paired')).not.toBeInTheDocument()
   })
 
-  it('keeps the verify stage when the runtime keeps the request pending', async () => {
+  it('treats the paired outcome as the only success proof, not the peer count', async () => {
     __resetPolledMemo()
     bridge.getShareStatus.mockResolvedValue(shareStatus({
       sharing: true,
@@ -320,16 +326,61 @@ describe('Companion product surface v002', () => {
       connectPayload: 'metrora://pair-qr-payload',
       pending: [{ id: 'pair-9', name: 'Pixel 8', code: '112233' }],
     }))
-    bridge.approvePairing.mockImplementation(async () => shareStatus({
-      sharing: true,
-      peers: 6,
-      pending: [{ id: 'pair-9', name: 'Pixel 8', code: '112233' }],
+    // Peers unchanged and the request still listed: only the confirmed
+    // outcome may promote to success.
+    bridge.approvePairing.mockImplementation(async () => ({
+      status: shareStatus({
+        sharing: true,
+        peers: 6,
+        pending: [{ id: 'pair-9', name: 'Pixel 8', code: '112233' }],
+      }),
+      outcome: 'paired' as const,
     }))
     render(<Companion />)
     fireEvent.click(await screen.findByRole('button', { name: 'Show pairing code' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Codes match — approve' }))
-    await waitFor(() => expect(bridge.approvePairing).toHaveBeenCalledTimes(1))
-    expect(screen.getByText('Verify your device')).toBeInTheDocument()
+    await waitFor(() => expect(bridge.approvePairing).toHaveBeenCalledWith('pair-9', true))
+    expect(await screen.findByText('Device paired')).toBeInTheDocument()
+  })
+
+  it('shows expiry when the request vanished before the approval click', async () => {
+    __resetPolledMemo()
+    bridge.getShareStatus.mockResolvedValue(shareStatus({
+      sharing: true,
+      peers: 6,
+      connectPayload: 'metrora://pair-qr-payload',
+      pending: [{ id: 'pair-9', name: 'Pixel 8', code: '112233' }],
+    }))
+    bridge.approvePairing.mockImplementation(async () => ({
+      status: shareStatus({ sharing: true, peers: 6, pending: [] }),
+      outcome: 'expired' as const,
+    }))
+    render(<Companion />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Show pairing code' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Codes match — approve' }))
+    await waitFor(() => expect(bridge.approvePairing).toHaveBeenCalledWith('pair-9', true))
+    expect(await screen.findByRole('heading', { name: 'Pairing request expired' })).toBeInTheDocument()
+    expect(screen.queryByText('Device paired')).not.toBeInTheDocument()
+  })
+
+  it('shows a save failure instead of success when persistence rolls back', async () => {
+    __resetPolledMemo()
+    bridge.getShareStatus.mockResolvedValue(shareStatus({
+      sharing: true,
+      peers: 6,
+      connectPayload: 'metrora://pair-qr-payload',
+      pending: [{ id: 'pair-9', name: 'Pixel 8', code: '112233' }],
+    }))
+    bridge.approvePairing.mockImplementation(async () => ({
+      status: shareStatus({ sharing: true, peers: 6, pending: [] }),
+      outcome: 'persist-failed' as const,
+    }))
+    render(<Companion />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Show pairing code' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Codes match — approve' }))
+    await waitFor(() => expect(bridge.approvePairing).toHaveBeenCalledWith('pair-9', true))
+    expect(await screen.findByText('Pairing failed')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Scan again' })).toBeInTheDocument()
     expect(screen.queryByText('Device paired')).not.toBeInTheDocument()
   })
 
@@ -341,7 +392,10 @@ describe('Companion product surface v002', () => {
       connectPayload: 'metrora://pair-qr-payload',
       pending: [{ id: 'pair-9', name: 'Pixel 8', code: '112233' }],
     }))
-    bridge.approvePairing.mockImplementation(async () => shareStatus({ sharing: true, peers: 6, pending: [] }))
+    bridge.approvePairing.mockImplementation(async () => ({
+      status: shareStatus({ sharing: true, peers: 6, pending: [] }),
+      outcome: 'declined' as const,
+    }))
     render(<Companion />)
     fireEvent.click(await screen.findByRole('button', { name: 'Show pairing code' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }))

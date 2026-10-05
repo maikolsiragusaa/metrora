@@ -29,7 +29,7 @@ describe('desktop share runtime loader', () => {
       status: async () => status,
       start: async () => status,
       stop: async () => status,
-      approve: async () => status,
+      approve: async () => ({ status, outcome: 'paired' as const }),
       capabilities: async () => ({
         kind: 'metrora.companion.capabilities' as const,
         version: 1 as const,
@@ -53,7 +53,7 @@ describe('desktop share runtime loader', () => {
       status: async () => status,
       start: async () => status,
       stop: async () => status,
-      approve: async () => status,
+      approve: async () => ({ status, outcome: 'paired' as const }),
       capabilities: async () => ({
         kind: 'metrora.companion.capabilities' as const,
         version: 1 as const,

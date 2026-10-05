@@ -2,6 +2,7 @@ import type {
   ActionResult,
   AliasRow,
   ActReportJson,
+  ApprovePairingResult,
   AuditRow,
   CombinedUsage,
   CompareJsonReport,
@@ -143,7 +144,7 @@ export interface MetroraBridge extends ProjectBridge {
   getDevicesScan(): Promise<DeviceScanResult>
   getShareStatus(): Promise<ShareStatus>
   getCompanionCapabilities(): Promise<CompanionCapabilitiesV1>
-  startShare(always?: boolean): Promise<ShareStatus>; stopShare(): Promise<ShareStatus>; approvePairing(id: string, approve: boolean): Promise<ShareStatus>
+  startShare(always?: boolean): Promise<ShareStatus>; stopShare(): Promise<ShareStatus>; approvePairing(id: string, approve: boolean): Promise<ApprovePairingResult>
   getIdentity(): Promise<Identity>
   getAliases(): Promise<AliasRow[]>
   getProxyPaths(): Promise<string[]>

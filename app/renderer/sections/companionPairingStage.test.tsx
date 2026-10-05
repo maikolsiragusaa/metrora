@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { act, renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Polled } from '../hooks/usePolled'
-import type { ShareStatus } from '../lib/types'
+import type { ApprovePairingResult, ShareStatus } from '../lib/types'
 import { PAIRING_STEP_TOTAL, pairingStepNumber, usePairingStage } from './companionPairingStage'
 
 const bridge = vi.hoisted(() => ({
@@ -35,6 +35,10 @@ function shareStatus(overrides: Partial<ShareStatus> = {}): ShareStatus {
 
 function polled(data: ShareStatus | null): Polled<ShareStatus> {
   return { data, error: null, loading: !data, switching: false, lastSuccessAt: data ? 1 : null, refresh: () => {}, refreshFresh: () => {} }
+}
+
+function approval(status: ShareStatus, outcome: ApprovePairingResult['outcome']): ApprovePairingResult {
+  return { status, outcome }
 }
 
 describe('usePairingStage', () => {
@@ -75,8 +79,8 @@ describe('usePairingStage', () => {
     await waitFor(() => expect(result.current.stage).toEqual({ kind: 'verify', id: 'pair-1', name: 'Pixel 8', code: '482913' }))
   })
 
-  it('shows success only after the runtime confirms the request is gone', async () => {
-    bridge.approvePairing.mockResolvedValue(shareStatus({ sharing: true, pending: [] }))
+  it('shows success only on a positively confirmed paired outcome', async () => {
+    bridge.approvePairing.mockResolvedValue(approval(shareStatus({ sharing: true, pending: [] }), 'paired'))
     const { result, rerender } = renderHook(({ status }) => usePairingStage(status, async () => true), {
       initialProps: { status: polled(shareStatus({
         sharing: true,
@@ -89,26 +93,78 @@ describe('usePairingStage', () => {
     await act(() => result.current.approve({ id: 'pair-2', name: 'Pixel 8', code: '112233' }))
     expect(bridge.approvePairing).toHaveBeenCalledWith('pair-2', true)
     expect(result.current.stage).toEqual({ kind: 'complete', name: 'Pixel 8' })
+  })
 
-    // The runtime kept the request pending: no success, stay on verify.
-    bridge.approvePairing.mockResolvedValue(shareStatus({
-      sharing: true,
-      pending: [{ id: 'pair-3', name: 'Pixel 9', code: '445566' }],
-    }))
-    const second = renderHook(({ status }) => usePairingStage(status, async () => true), {
+  it('freezes the verify stage while an approval is in flight', async () => {
+    let resolveApproval!: (value: ApprovePairingResult) => void
+    bridge.approvePairing.mockImplementation(() => new Promise(resolve => { resolveApproval = resolve }))
+    const { result, rerender } = renderHook(({ status }) => usePairingStage(status, async () => true), {
       initialProps: { status: polled(shareStatus({
         sharing: true,
         connectPayload: 'metrora://x',
-        pending: [{ id: 'pair-3', name: 'Pixel 9', code: '445566' }],
+        pending: [{ id: 'pair-7', name: 'Pixel 8', code: '112233' }],
       })) },
     })
-    await waitFor(() => expect(second.result.current.stage.kind).toBe('verify'))
-    await act(() => second.result.current.approve({ id: 'pair-3', name: 'Pixel 9', code: '445566' }))
-    expect(second.result.current.stage.kind).toBe('verify')
+    await waitFor(() => expect(result.current.stage.kind).toBe('verify'))
+
+    // The approval is in flight: a poll that no longer lists the request
+    // must not promote or expire the stage on its own. Start the approval
+    // without awaiting its completion (it suspends on the bridge promise).
+    let approvePromise!: Promise<void>
+    await act(async () => {
+      approvePromise = result.current.approve({ id: 'pair-7', name: 'Pixel 8', code: '112233' })
+      await Promise.resolve()
+    })
+    act(() => {
+      rerender({ status: polled(shareStatus({ sharing: true, connectPayload: 'metrora://x' })) })
+    })
+    expect(result.current.stage.kind).toBe('verify')
+    expect(result.current.busy).toBe(true)
+
+    await act(async () => {
+      resolveApproval(approval(shareStatus({ sharing: true, pending: [] }), 'paired'))
+      await approvePromise
+    })
+    expect(result.current.stage).toEqual({ kind: 'complete', name: 'Pixel 8' })
+  })
+
+  it('ends expired when the request vanished before the approval click', async () => {
+    bridge.approvePairing.mockResolvedValue(approval(shareStatus({ sharing: true, pending: [] }), 'expired'))
+    const { result } = renderHook(({ status }) => usePairingStage(status, async () => true), {
+      initialProps: { status: polled(shareStatus({
+        sharing: true,
+        connectPayload: 'metrora://x',
+        pending: [{ id: 'pair-8', name: 'Pixel 8', code: '112233' }],
+      })) },
+    })
+    await waitFor(() => expect(result.current.stage.kind).toBe('verify'))
+
+    await act(() => result.current.approve({ id: 'pair-8', name: 'Pixel 8', code: '112233' }))
+    expect(result.current.stage).toEqual({ kind: 'ended', reason: 'expired' })
+    expect(result.current.actionError).toBeNull()
+  })
+
+  it('ends in error when persistence rolls back or the outcome is unknown', async () => {
+    for (const outcome of ['persist-failed', 'unknown'] as const) {
+      bridge.approvePairing.mockResolvedValue(approval(shareStatus({ sharing: true, pending: [] }), outcome))
+      const { result } = renderHook(({ status }) => usePairingStage(status, async () => true), {
+        initialProps: { status: polled(shareStatus({
+          sharing: true,
+          connectPayload: 'metrora://x',
+          pending: [{ id: `pair-${outcome}`, name: 'Pixel 8', code: '112233' }],
+        })) },
+      })
+      await waitFor(() => expect(result.current.stage.kind).toBe('verify'))
+
+      await act(() => result.current.approve({ id: `pair-${outcome}`, name: 'Pixel 8', code: '112233' }))
+      expect(result.current.stage.kind).toBe('ended')
+      expect(result.current.stage).toMatchObject({ kind: 'ended', reason: 'error' })
+      expect(screen.queryByText('Device paired')).not.toBeInTheDocument()
+    }
   })
 
   it('declines through the bridge and returns to scan', async () => {
-    bridge.approvePairing.mockResolvedValue(shareStatus({ sharing: true, pending: [] }))
+    bridge.approvePairing.mockResolvedValue(approval(shareStatus({ sharing: true, pending: [] }), 'declined'))
     const { result } = renderHook(({ status }) => usePairingStage(status, async () => true), {
       initialProps: { status: polled(shareStatus({
         sharing: true,
