@@ -66,10 +66,17 @@ export function Sankey({ flow }: { flow: SpendFlow }) {
   return (
     <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} width="100%" style={{ minWidth: 0, display: 'block', height: 'auto' }}>
       <defs>
+        {/* userSpaceOnUse: ribbon paths are near-horizontal curves whose geometry
+            bbox has ~zero height, which makes objectBoundingBox gradients
+            degenerate (ribbons paint as nothing in Chromium). User-space spans
+            the fixed model to project columns, so the gradient is always defined. */}
         {models.map(model => (
-          <linearGradient key={model.id} id={gradientId(model.id)} x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0" stopColor={model.fill} />
-            <stop offset="1" stopColor={model.fill} stopOpacity=".25" />
+          <linearGradient key={model.id} id={gradientId(model.id)} gradientUnits="userSpaceOnUse" x1={LEFT_X + NODE_W} y1="0" x2={RIGHT_X} y2="0">
+            {/* stopColor as a presentation attribute does not resolve var(--s-*)
+                series colors in Chromium, which would paint ribbons black on the
+                dark canvas. style resolves the same token correctly. */}
+            <stop offset="0" style={{ stopColor: model.fill }} />
+            <stop offset="1" style={{ stopColor: model.fill }} stopOpacity=".25" />
           </linearGradient>
         ))}
       </defs>
