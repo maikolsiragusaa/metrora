@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 import { formatUsd, shortenProjectPath } from '../lib/format'
 import { isOtherNode, seriesColorForModel } from '../lib/modelSeries'
 import type { SpendFlow, SpendFlowNode } from '../lib/types'
@@ -21,6 +23,7 @@ const GAP = 8
 const MIN_RIBBON_W = 2
 
 export function Sankey({ flow }: { flow: SpendFlow }) {
+  const [focus, setFocus] = useState<{ side: 'model' | 'project'; id: string } | null>(null)
   const models = layoutNodes(flow.models, LEFT_X, true)
   const projects = layoutNodes(flow.projects, RIGHT_X, false)
   const modelById = new Map(models.map(node => [node.id, node]))
@@ -42,6 +45,9 @@ export function Sankey({ flow }: { flow: SpendFlow }) {
     targetOffset.set(target.id, (targetOffset.get(target.id) ?? 0) + targetSegment)
 
     const gradId = gradientId(source.id)
+    const active = focus === null
+      || (focus.side === 'model' && focus.id === source.id)
+      || (focus.side === 'project' && focus.id === target.id)
     return [
       <path
         key={`${link.model}-${link.project}-${i}`}
@@ -52,13 +58,13 @@ export function Sankey({ flow }: { flow: SpendFlow }) {
         stroke={`url(#${gradId})`}
         strokeWidth={round(width)}
         fill="none"
-        strokeOpacity=".40"
+        strokeOpacity={active ? '.46' : '.10'}
       />,
     ]
   })
 
   return (
-    <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} width="100%" style={{ minWidth: 560, display: 'block' }}>
+    <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} width="100%" style={{ minWidth: 0, display: 'block', height: 'auto' }}>
       <defs>
         {models.map(model => (
           <linearGradient key={model.id} id={gradientId(model.id)} x1="0" y1="0" x2="1" y2="0">
@@ -70,44 +76,71 @@ export function Sankey({ flow }: { flow: SpendFlow }) {
 
       {ribbons}
 
-      {models.map(node => (
-        <rect
-          key={node.id}
-          data-testid="sankey-node"
-          data-node-id={node.id}
-          x={node.x}
-          y={round(node.y)}
-          width={NODE_W}
-          height={round(node.h)}
-          rx="2.5"
-          fill={node.fill}
-        />
-      ))}
-      {projects.map(node => (
-        <rect
-          key={node.id}
-          data-testid="sankey-node"
-          data-node-id={node.id}
-          x={node.x}
-          y={round(node.y)}
-          width={NODE_W}
-          height={round(node.h)}
-          rx="2.5"
-          fill={node.fill}
-        />
-      ))}
+      {models.map(node => <FlowNode key={node.id} node={node} side="model" focus={focus} onFocus={setFocus} />)}
+      {projects.map(node => <FlowNode key={node.id} node={node} side="project" focus={focus} onFocus={setFocus} />)}
 
       {models.map(node => (
-        <text key={node.id} x="118" y={round(node.y + node.h / 2 + 3)} textAnchor="end" fontSize="10" fill="var(--mut)">
+        <text key={node.id} x="118" y={round(node.y + node.h / 2 + 3)} textAnchor="end" fontSize="10" fill="var(--mut)" onClick={() => toggleFocus(focus, setFocus, 'model', node.id)} style={{ cursor: 'pointer' }}>
           {node.displayLabel} · {formatUsd(node.cost)}
         </text>
       ))}
       {projects.map(node => (
-        <text key={node.id} x="534" y={round(node.y + node.h / 2 + 3)} fontSize="10" fill="var(--mut)">
+        <text key={node.id} x="534" y={round(node.y + node.h / 2 + 3)} fontSize="10" fill="var(--mut)" onClick={() => toggleFocus(focus, setFocus, 'project', node.id)} style={{ cursor: 'pointer' }}>
           {node.displayLabel} · {formatUsd(node.cost)}
         </text>
       ))}
     </svg>
+  )
+}
+
+function toggleFocus(
+  focus: { side: 'model' | 'project'; id: string } | null,
+  setFocus: (value: { side: 'model' | 'project'; id: string } | null) => void,
+  side: 'model' | 'project',
+  id: string,
+): void {
+  setFocus(focus?.side === side && focus.id === id ? null : { side, id })
+}
+
+function FlowNode({
+  node,
+  side,
+  focus,
+  onFocus,
+}: {
+  node: LayoutNode
+  side: 'model' | 'project'
+  focus: { side: 'model' | 'project'; id: string } | null
+  onFocus: (value: { side: 'model' | 'project'; id: string } | null) => void
+}) {
+  const selected = focus?.side === side && focus.id === node.id
+  const label = `${side === 'model' ? 'Model' : 'Project'} ${node.displayLabel}. Spend ${formatUsd(node.cost)}.`
+  return (
+    <rect
+      data-testid="sankey-node"
+      data-node-id={node.id}
+      data-side={side}
+      data-selected={selected ? 'true' : 'false'}
+      role="button"
+      tabIndex={0}
+      aria-label={label}
+      aria-pressed={selected}
+      x={node.x}
+      y={round(node.y)}
+      width={NODE_W}
+      height={round(node.h)}
+      rx="2.5"
+      fill={node.fill}
+      opacity={focus === null || selected ? 1 : .45}
+      style={{ cursor: 'pointer' }}
+      onClick={() => toggleFocus(focus, onFocus, side, node.id)}
+      onKeyDown={event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          toggleFocus(focus, onFocus, side, node.id)
+        }
+      }}
+    />
   )
 }
 
