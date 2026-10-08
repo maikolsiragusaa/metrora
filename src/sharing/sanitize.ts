@@ -17,6 +17,7 @@ export function sanitizeForSharing(payload: MenubarPayload): MenubarPayload {
     mobileFoundation: undefined,
     current: {
       ...payload.current,
+      projectSpend: [],
       topProjects: [],
       topSessions: [],
     },
