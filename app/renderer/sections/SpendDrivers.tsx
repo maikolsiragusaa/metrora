@@ -1,8 +1,9 @@
 import { EmptyNote } from '../components/EmptyState'
 import { Panel } from '../components/Panel'
-import { formatCompact, formatUsd } from '../lib/format'
+import { formatUsd } from '../lib/format'
 import type { MenubarPayload } from '../lib/types'
 import { ModelIdentity } from './ModelsDurableTable'
+import { meteredTokenKpi } from './spendUsage'
 import { SpendKpiRow, SpendRankRow } from './SpendPrimitives'
 
 export function SpendDrivers({ data }: { data: MenubarPayload }) {
@@ -11,6 +12,7 @@ export function SpendDrivers({ data }: { data: MenubarPayload }) {
   const activityRows = current.topActivities.length > 0
     ? current.topActivities.map(row => ({ ...row, brandId: undefined }))
     : modelRows.map(row => ({ name: row.name, cost: row.cost, savingsUSD: row.savingsUSD, turns: row.calls, oneShotRate: null, brandId: row.brandId }))
+  const tokenKpi = meteredTokenKpi(current, 'Observed volume')
 
   return (
     <div className="spend-view spend-drivers-view" data-testid="spend-drivers-view">
@@ -18,7 +20,7 @@ export function SpendDrivers({ data }: { data: MenubarPayload }) {
         { label: 'Total spend', value: formatUsd(current.cost), detail: 'Observed cost', tone: 'accent' },
         { label: 'Calls', value: current.calls.toLocaleString('en-US'), detail: 'Metered API calls' },
         { label: 'Sessions', value: current.sessions.toLocaleString('en-US'), detail: 'In selected scope' },
-        { label: 'Metered tokens', value: formatCompact(current.inputTokens + current.outputTokens + current.cacheReadTokens + current.cacheWriteTokens), detail: 'Observed volume' },
+        { label: 'Metered tokens', value: tokenKpi.value, detail: tokenKpi.detail, evidence: tokenKpi.state === 'available' ? undefined : tokenKpi.state },
       ]} />
 
       <div className="spend-drivers-grid">

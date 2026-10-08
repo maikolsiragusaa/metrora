@@ -1,9 +1,9 @@
 import { EmptyNote } from '../components/EmptyState'
 import { ModelIdentity } from './ModelsDurableTable'
 import { Panel } from '../components/Panel'
-import { formatCompact, formatUsd } from '../lib/format'
-import { observedTokenTotal } from '../lib/usageMetrics'
+import { formatUsd } from '../lib/format'
 import type { DailyHistoryEntry, MenubarPayload } from '../lib/types'
+import { meteredTokenKpi } from './spendUsage'
 import { SpendDailyChart } from './SpendDailyChart'
 import { SpendKpiRow, SpendRankRow } from './SpendPrimitives'
 
@@ -19,6 +19,7 @@ export function SpendOverview({
   const current = data.current
   const modelRows = current.modelPresentation?.rows ?? current.topModels
   const activityRows = current.topActivities
+  const tokenKpi = meteredTokenKpi(current, 'Input, output & cache')
 
   return (
     <div className="spend-view spend-overview-view" data-testid="spend-overview-view">
@@ -26,7 +27,7 @@ export function SpendOverview({
         { label: 'Total spend', value: formatUsd(current.cost), detail: 'Observed cost', tone: 'accent' },
         { label: 'Sessions', value: current.sessions.toLocaleString('en-US'), detail: 'In selected scope' },
         { label: 'Calls', value: current.calls.toLocaleString('en-US'), detail: 'Metered API calls' },
-        { label: 'Metered tokens', value: formatCompact(observedTokenTotal(current)), detail: 'Input, output & cache' },
+        { label: 'Metered tokens', value: tokenKpi.value, detail: tokenKpi.detail, evidence: tokenKpi.state === 'available' ? undefined : tokenKpi.state },
       ]} />
 
       <Panel title="Daily spend" right={daily.length ? 'Observed cost over time' : undefined} className="spend-chart-panel">

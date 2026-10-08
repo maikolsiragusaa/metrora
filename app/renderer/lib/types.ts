@@ -1,6 +1,5 @@
-// Types mirrored from the Metrora CLI (`src/*`). The renderer is a
-// pure view over CLI JSON, so these shapes must match the emitters exactly.
-// Do not invent fields — copy from the cited source files.
+// Types mirrored from the Metrora CLI (`src/*`): the renderer is a pure view
+// over CLI JSON, so these shapes must match the emitters exactly. Do not invent fields.
 
 // ————— Period + IPC error contract —————
 
@@ -163,8 +162,7 @@ export type MenubarPayload = {
     localModelSavings: LocalModelSavings
     providers: Record<string, number>
     // Optional: older CLIs omit it. `id` is the internal client/source name
-    // (round-trips as --provider), `label` the display name. Fall back to
-    // `providers` when absent.
+    // (round-trips as --provider), `label` the display name; falls back to `providers`.
     providerDetails?: Array<{ id: string; label: string; cost: number }>
     projectSpend?: ProjectSpendProjection[]
     topProjects: Array<{
@@ -197,7 +195,7 @@ export type MenubarPayload = {
     }>
     // Workflow-intelligence rollups (src/menubar-json.ts buildWorkflow /
     // buildTopReworkedFiles). Optional: older CLIs omit them, so the Overview
-    // workflow card renders only when they are present with real signal.
+    // workflow card renders only when present with real signal.
     workflow?: {
       corrections: number
       correctionRate: number | null
@@ -243,9 +241,9 @@ export type MenubarPayload = {
     // `attributedCost + unattributedCost === distinctCost`. `approx` marks a row
     // fed by the legacy whole-session even split (transcript expired). `models` is
     // the short model names that processed the PR (cost-desc); `categories` is the
-    // per-task-category attributed cost (cost-desc), omitted for legacy rows.
-    // `attributedCost`/`unattributedCost` are optional so a payload from an older
-    // CLI (by-reference rows, not summable) still type-checks and can be detected.
+    // per-task attributed cost (cost-desc), omitted for legacy rows. `attributedCost`
+    // and `unattributedCost` are optional so an older CLI payload (by-reference rows,
+    // not summable) still type-checks and can be detected.
     pullRequests?: {
       rows: Array<{
         url: string
@@ -283,8 +281,7 @@ export type MenubarPayload = {
     /** Exact selected-period history when the durable cache can provide it. */
     periodDaily?: DailyHistoryEntry[]
   }
-  // Active display currency. Payload costs are raw USD; the renderer multiplies by
-  // `rate` and prefixes `symbol` at display time. Optional: older CLIs omit it.
+  // Active display currency. Payload costs are raw USD; the renderer multiplies by `rate` and prefixes `symbol` at display time. Optional: older CLIs omit it.
   currency?: { code: string; symbol: string; rate: number }
   combined?: CombinedUsage
   claudeConfigs?: ClaudeConfigSelector

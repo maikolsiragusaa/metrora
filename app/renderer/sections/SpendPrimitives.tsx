@@ -7,13 +7,19 @@ export type SpendKpi = {
   value: string
   detail?: string
   tone?: 'accent' | 'neutral'
+  /** Token-evidence state: partial keeps known quantities with a note, unavailable never renders a false zero. */
+  evidence?: 'partial' | 'unavailable'
 }
 
 export function SpendKpiRow({ items }: { items: SpendKpi[] }) {
   return (
     <div className="spend-kpi-grid">
       {items.map(item => (
-        <div className={`spend-kpi spend-kpi-${item.tone ?? 'neutral'}`} key={item.label}>
+        <div
+          className={`spend-kpi spend-kpi-${item.tone ?? 'neutral'}${item.evidence ? ` spend-kpi-${item.evidence}` : ''}`}
+          data-evidence={item.evidence ?? 'available'}
+          key={item.label}
+        >
           <span className="spend-kpi-label">{item.label}</span>
           <strong className="spend-kpi-value">{item.value}</strong>
           {item.detail ? <span className="spend-kpi-detail">{item.detail}</span> : null}

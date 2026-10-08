@@ -78,6 +78,9 @@
 .spend-kpi-label { color: var(--spend-muted); font-size: 10px; font-weight: 620; letter-spacing: .045em; text-transform: uppercase; }
 .spend-kpi-value { overflow: hidden; color: var(--spend-text); font-family: var(--mono); font-size: 22px; font-weight: 650; letter-spacing: -.04em; line-height: 1.05; text-overflow: ellipsis; white-space: nowrap; }
 .spend-kpi-detail { overflow: hidden; color: var(--spend-subtle); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.spend-kpi-partial { border-color: color-mix(in srgb, var(--warn) 45%, var(--spend-border)); }
+.spend-kpi-partial .spend-kpi-detail { color: color-mix(in srgb, var(--warn) 75%, var(--spend-muted)); }
+.spend-kpi-unavailable .spend-kpi-value { color: var(--spend-subtle); }
 
 .ct-spend .panel { border-color: var(--spend-border); background: var(--spend-panel); box-shadow: 0 1px 2px rgba(0, 0, 0, .2); }
 .ct-spend .panel .phead { border-color: var(--spend-border); background: var(--spend-panel-raised); padding: 11px 14px; }

@@ -45,7 +45,11 @@ export function SpendProjects({ data }: { data: MenubarPayload }) {
     )
   }, [allRows, query, sort])
   const pageCount = Math.max(1, Math.ceil(filteredRows.length / pageSize))
-  const pageRows = filteredRows.slice(page * pageSize, (page + 1) * pageSize)
+  // Global filters or a refresh can shrink the dataset underneath the
+  // current page; clamp so the view stays on a valid page and keeps showing
+  // the projects that are still present.
+  const currentPage = Math.min(page, pageCount - 1)
+  const pageRows = filteredRows.slice(currentPage * pageSize, (currentPage + 1) * pageSize)
   const selected = allRows.find(project => project.rowKey === selectedKey) ?? null
 
   useEffect(() => setPage(0), [query, sort])
@@ -122,14 +126,14 @@ export function SpendProjects({ data }: { data: MenubarPayload }) {
                   </tbody>
                 </table>
               </div>
-            ) : <EmptyNote>No projects match this search.</EmptyNote>}
+            ) : <EmptyNote>{allRows.length ? 'No projects match this search.' : 'No projects in this range yet.'}</EmptyNote>}
             <div className="spend-table-footer">
-              <span>{filteredRows.length ? `${page * pageSize + 1}–${Math.min((page + 1) * pageSize, filteredRows.length)} of ${filteredRows.length}` : '0 projects'}</span>
+              <span>{filteredRows.length ? `${currentPage * pageSize + 1}–${Math.min((currentPage + 1) * pageSize, filteredRows.length)} of ${filteredRows.length}` : '0 projects'}</span>
               {pageCount > 1 ? (
                 <span className="spend-pagination">
-                  <button type="button" onClick={() => setPage(value => Math.max(0, value - 1))} disabled={page === 0} aria-label="Previous projects">‹</button>
-                  <span>Page {page + 1} of {pageCount}</span>
-                  <button type="button" onClick={() => setPage(value => Math.min(pageCount - 1, value + 1))} disabled={page >= pageCount - 1} aria-label="Next projects">›</button>
+                  <button type="button" onClick={() => setPage(Math.max(0, currentPage - 1))} disabled={currentPage === 0} aria-label="Previous projects">‹</button>
+                  <span>Page {currentPage + 1} of {pageCount}</span>
+                  <button type="button" onClick={() => setPage(Math.min(pageCount - 1, currentPage + 1))} disabled={currentPage >= pageCount - 1} aria-label="Next projects">›</button>
                 </span>
               ) : null}
             </div>
