@@ -6,6 +6,7 @@ import { tmpdir } from 'os'
 import { createMistralVibeProvider } from '../../src/providers/mistral-vibe.js'
 import { calculateCost } from '../../src/models.js'
 import type { ParsedProviderCall } from '../../src/providers/types.js'
+import { clearSessionCache, parseAllSessions } from '../../src/parser.js'
 
 let tmpDir: string
 
@@ -347,5 +348,63 @@ describe('mistral-vibe provider - unified store parsing', () => {
     expect(calls).toHaveLength(1)
     expect(calls[0]!.sessionId).toBe('unified-session-9')
     expect(calls[0]!.model).toBe(PRICED_MODEL)
+  })
+})
+
+describe('mistral-vibe provider - unified store end to end', () => {
+  it('reports unified journal usage through parseAllSessions', async () => {
+    const vibeHome = await mkdtemp(join(tmpdir(), 'mistral-vibe-e2e-home-'))
+    const cacheDir = await mkdtemp(join(tmpdir(), 'mistral-vibe-e2e-cache-'))
+    const previousVibeHome = process.env['VIBE_HOME']
+    const previousCacheDir = process.env['METRORA_CACHE_DIR']
+    process.env['VIBE_HOME'] = vibeHome
+    process.env['METRORA_CACHE_DIR'] = cacheDir
+    clearSessionCache()
+
+    try {
+      // Same layout Vibe Desktop writes on a real machine:
+      // <VIBE_HOME>/logs/session/unified/<session-id>/{"meta.json","journal/<seq>.jsonl"}.
+      await writeUnifiedSession(
+        'desktop-session',
+        unifiedMetadata({ sessionId: 'desktop-session', cwd: 'C:/Users/test/metrora-report' }),
+        {
+          '0000000000010000.jsonl': [
+            turnStart('measure my desktop usage'),
+            completion('action-e2e', usage(1000, 200, 400, 100, 50), [bashPart('git status')]),
+          ],
+        },
+        join(vibeHome, 'logs', 'session'),
+      )
+
+      const projects = await parseAllSessions(undefined, 'mistral-vibe')
+      const calls = projects
+        .flatMap(project => project.sessions)
+        .flatMap(session => session.turns)
+        .flatMap(turn => turn.assistantCalls)
+
+      expect(calls).toHaveLength(1)
+      const call = calls[0]!
+      expect(call.provider).toBe('mistral-vibe')
+      expect(call.sessionId).toBe('desktop-session')
+      expect(call.model).toBe(PRICED_MODEL)
+      // input_tokens is inclusive of the cached subset on this store.
+      expect(call.inputTokens).toBe(600)
+      expect(call.cacheReadInputTokens).toBe(400)
+      expect(call.cacheCreationInputTokens).toBe(100)
+      expect(call.outputTokens).toBe(200)
+      expect(call.tools).toEqual(['Bash'])
+      expect(call.costIsEstimated).toBe(true)
+      expect(call.cacheTokenEvidence).toBe('complete')
+      expect(call.costUSD).toBeGreaterThan(0)
+      expect(call.deduplicationKey).toBe('mistral-vibe:desktop-session:unified:action-e2e')
+    } finally {
+      clearSessionCache()
+      if (previousVibeHome === undefined) delete process.env['VIBE_HOME']
+      else process.env['VIBE_HOME'] = previousVibeHome
+      if (previousCacheDir === undefined) delete process.env['METRORA_CACHE_DIR']
+      else process.env['METRORA_CACHE_DIR'] = previousCacheDir
+      await rm(vibeHome, { recursive: true, force: true })
+      await rm(cacheDir, { recursive: true, force: true })
+    }
   })
 })
