@@ -197,8 +197,9 @@ export function parseToolArguments(raw: string | Record<string, unknown> | null 
 export function isUnifiedJournalSource(path: string): boolean {
   if (!path.endsWith(JOURNAL_EXTENSION)) return false
   const journalDir = dirname(path)
-  return basename(journalDir) === JOURNAL_DIRNAME
-    && basename(dirname(journalDir)) === UNIFIED_DIRNAME
+  if (basename(journalDir) !== JOURNAL_DIRNAME) return false
+  // <unified>/<session>/journal/<segment>.jsonl -> dirname(dirname(dirname(file))) = <unified>
+  return basename(dirname(unifiedSessionDir(path))) === UNIFIED_DIRNAME
 }
 
 /** <session-root>/unified/<session-id>/ for a segment inside that session. */
