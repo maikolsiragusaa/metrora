@@ -330,6 +330,11 @@ describe('v7 -> v8 cost-assignment adoption', () => {
   it('carries source-less durable v7 entries even when they have no PR links', async () => {
     await loadPricing()
     const gonePath = join(tmpDir, 'gone-copilot.sqlite')
+    // The durable detail cache drops an entry whose newest call is older than 90
+    // days of wall clock (src/parser.ts: Date.now() - 90 * 24 * 60 * 60 * 1000),
+    // and this case parses without a range, so both timestamps track now instead
+    // of a fixed date that silently ages out of the window.
+    const recentTs = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
     await writeFile(join(cacheDir, 'session-cache.v7.json'), JSON.stringify({
       version: 7,
       complete: true,
@@ -342,10 +347,10 @@ describe('v7 -> v8 cost-assignment adoption', () => {
               fingerprint: { dev: 1, ino: 2, mtimeMs: 3, sizeBytes: 4 },
               mcpInventory: [],
               turns: [{
-                timestamp: '2026-07-20T10:00:00.000Z',
+                timestamp: recentTs,
                 sessionId: 'durable',
                 userMessage: 'work',
-                calls: [{ ...cachedCall('durable-call', 12), provider: 'copilot' }],
+                calls: [{ ...cachedCall('durable-call', 12), provider: 'copilot', timestamp: recentTs }],
               }],
             },
           },

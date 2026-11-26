@@ -1,17 +1,31 @@
-import { readdir, stat } from 'fs/promises'
+import { readdir } from 'fs/promises'
 import { basename, join } from 'path'
 import { homedir } from 'os'
 
-import { readSessionFile, readSessionLines } from '../fs-utils.js'
+import { readSessionLines } from '../fs-utils.js'
 import { normalizeExplicitModelProvider } from '../model-provider.js'
 import { calculateCost } from '../models.js'
 import { extractBashCommands } from '../bash-utils.js'
 import type { Provider, SessionSource, SessionParser, ParsedProviderCall, ProbeRoot } from './types.js'
 import { safeNumber } from '../parser.js'
-
-const METADATA_FILENAME = 'meta.json'
-const MESSAGES_FILENAME = 'messages.jsonl'
-const DEFAULT_MODEL = 'mistral-medium-3.5'
+import {
+  MESSAGES_FILENAME,
+  METADATA_FILENAME,
+  UNIFIED_DIRNAME,
+  activeModelConfig,
+  isDirectory,
+  isFile,
+  isUnifiedJournalSource,
+  normalizeContent,
+  parseToolArguments,
+  readJsonFile,
+  resolveModel,
+  toolNameMap,
+  unifiedSessionDir,
+  type VibeMessage,
+  type VibeMetadata,
+} from './mistral-vibe-shared.js'
+import { createUnifiedParser, discoverUnifiedJournalFiles } from './mistral-vibe-unified.js'
 
 const modelDisplayNames: Record<string, string> = {
   'mistral-medium-3.5': 'Mistral Medium 3.5',
@@ -20,68 +34,6 @@ const modelDisplayNames: Record<string, string> = {
   'devstral-small-latest': 'Devstral Small',
   devstral: 'Devstral',
   local: 'Local',
-}
-
-const toolNameMap: Record<string, string> = {
-  bash: 'Bash',
-  read_file: 'Read',
-  write_file: 'Write',
-  search_replace: 'Edit',
-  grep: 'Grep',
-  task: 'Agent',
-  todo: 'TodoWrite',
-  skill: 'Skill',
-  web_fetch: 'WebFetch',
-  web_search: 'WebSearch',
-  ask_user_question: 'AskUser',
-  exit_plan_mode: 'ExitPlanMode',
-}
-
-type VibeStats = {
-  session_prompt_tokens?: number
-  session_completion_tokens?: number
-  session_cost?: number
-  input_price_per_million?: number
-  output_price_per_million?: number
-  tokens_per_second?: number
-}
-
-type VibeModelConfig = {
-  name?: string
-  alias?: string
-  provider?: string
-  input_price?: number
-  output_price?: number
-}
-
-type VibeMetadata = {
-  session_id?: string
-  start_time?: string
-  end_time?: string | null
-  environment?: {
-    working_directory?: string | null
-  }
-  stats?: VibeStats
-  config?: {
-    active_model?: string
-    models?: VibeModelConfig[]
-  }
-  title?: string | null
-}
-
-type VibeToolCall = {
-  function?: {
-    name?: string
-    arguments?: string | Record<string, unknown> | null
-  }
-}
-
-type VibeMessage = {
-  role?: string
-  content?: unknown
-  message_id?: string
-  timestamp?: string
-  tool_calls?: VibeToolCall[] | null
 }
 
 function getMistralVibeSessionsDir(override?: string): string {
@@ -97,33 +49,12 @@ function expandHome(path: string): string {
   return path
 }
 
-async function isFile(path: string): Promise<boolean> {
-  const s = await stat(path).catch(() => null)
-  return Boolean(s?.isFile())
-}
-
-async function isDirectory(path: string): Promise<boolean> {
-  const s = await stat(path).catch(() => null)
-  return Boolean(s?.isDirectory())
-}
-
 async function hasSessionFiles(dir: string): Promise<boolean> {
   const [hasMetadata, hasMessages] = await Promise.all([
     isFile(join(dir, METADATA_FILENAME)),
     isFile(join(dir, MESSAGES_FILENAME)),
   ])
   return hasMetadata && hasMessages
-}
-
-async function readJsonFile<T>(path: string): Promise<T | null> {
-  const raw = await readSessionFile(path)
-  if (raw === null) return null
-  try {
-    const parsed = JSON.parse(raw) as unknown
-    return typeof parsed === 'object' && parsed !== null ? parsed as T : null
-  } catch {
-    return null
-  }
 }
 
 async function discoverSessionDirs(root: string): Promise<string[]> {
@@ -165,20 +96,6 @@ async function discoverSessionDirs(root: string): Promise<string[]> {
   return sessionDirs
 }
 
-function activeModelConfig(metadata: VibeMetadata): VibeModelConfig | null {
-  const activeModel = metadata.config?.active_model
-  const models = metadata.config?.models
-  if (!activeModel || !Array.isArray(models)) return null
-  return models.find(m => m.alias === activeModel || m.name === activeModel) ?? null
-}
-
-function resolveModel(metadata: VibeMetadata): string {
-  const activeModel = metadata.config?.active_model
-  if (activeModel) return activeModel
-  const configured = activeModelConfig(metadata)
-  return configured?.alias ?? configured?.name ?? DEFAULT_MODEL
-}
-
 function calculateSessionCost(metadata: VibeMetadata, model: string, inputTokens: number, outputTokens: number): number {
   const stats = metadata.stats ?? {}
   const sessionCost = safeNumber(stats.session_cost)
@@ -193,32 +110,6 @@ function calculateSessionCost(metadata: VibeMetadata, model: string, inputTokens
   }
 
   return calculateCost(model, inputTokens, outputTokens, 0, 0, 0)
-}
-
-function normalizeContent(content: unknown): string {
-  if (typeof content === 'string') return content
-  if (Array.isArray(content)) {
-    return content
-      .map(part => {
-        if (typeof part === 'string') return part
-        if (part && typeof part === 'object' && 'text' in part && typeof part.text === 'string') return part.text
-        return ''
-      })
-      .filter(Boolean)
-      .join(' ')
-  }
-  return ''
-}
-
-function parseToolArguments(raw: string | Record<string, unknown> | null | undefined): Record<string, unknown> {
-  if (!raw) return {}
-  if (typeof raw === 'object') return raw
-  try {
-    const parsed = JSON.parse(raw) as unknown
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}
-  } catch {
-    return {}
-  }
 }
 
 function extractMessageTools(message: VibeMessage): { tools: string[]; bashCommands: string[] } {
@@ -432,15 +323,35 @@ export function createMistralVibeProvider(sessionsDir?: string): Provider {
         })
       }
 
+      // Unified store sessions are discovered per journal segment rather than
+      // per session directory: the session cache fingerprints one file, and a
+      // directory mtime does not move when an existing segment is appended to.
+      for (const journalPath of await discoverUnifiedJournalFiles(join(dir, UNIFIED_DIRNAME))) {
+        const sessionDir = unifiedSessionDir(journalPath)
+        const metadata = await readJsonFile<VibeMetadata>(join(sessionDir, METADATA_FILENAME))
+        if (!metadata) continue
+        const cwd = metadata.environment?.working_directory
+        sources.push({
+          path: journalPath,
+          project: cwd ? basename(cwd) : basename(sessionDir),
+          provider: 'mistral-vibe',
+        })
+      }
+
       return sources
     },
 
     async probeRoots(): Promise<ProbeRoot[]> {
-      return [{ path: dir, label: 'session' }]
+      const roots: ProbeRoot[] = [{ path: dir, label: 'session' }]
+      const unifiedDir = join(dir, UNIFIED_DIRNAME)
+      // Reported only when the store exists so the probe list stays the exact
+      // set of directories discovery scans for this machine.
+      if (await isDirectory(unifiedDir)) roots.push({ path: unifiedDir, label: 'unified' })
+      return roots
     },
 
     createSessionParser(source: SessionSource, seenKeys: Set<string>): SessionParser {
-      return createParser(source, seenKeys)
+      return isUnifiedJournalSource(source.path) ? createUnifiedParser(source, seenKeys) : createParser(source, seenKeys)
     },
   }
 }

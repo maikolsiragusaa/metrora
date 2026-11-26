@@ -39,7 +39,7 @@ These labels describe current evidence boundaries. They are not a public impleme
 | kimicode | core | unassessed | docs/providers/kimicode.md | available | local-only | withheld |
 | kiro | core | chat-json-estimated | docs/providers/kiro.md | available | source-documented | withheld |
 | lingtai-tui | core | unassessed | docs/providers/lingtai-tui.md | available | local-only | withheld |
-| mistral-vibe | core | session-meta-and-jsonl | docs/providers/mistral-vibe.md | available | source-documented | withheld |
+| mistral-vibe | core | session-meta-jsonl-and-unified-journal | docs/providers/mistral-vibe.md | available | source-documented | withheld |
 | mux | core | unassessed | docs/providers/mux.md | available | local-only | withheld |
 | omp | core | unassessed | docs/providers/omp.md | available | local-only | withheld |
 | open-design | core | unassessed | docs/providers/open-design.md | available | local-only | withheld |

@@ -125,7 +125,7 @@ const entries = [
 
   priority('cursor', 'src/providers/cursor.ts', 'docs/providers/cursor.md', 'lazy', 'sqlite-mixed-measured-estimated', 2),
   priority('kiro', 'src/providers/kiro.ts', 'docs/providers/kiro.md', 'core', 'chat-json-estimated', 2),
-  priority('mistral-vibe', 'src/providers/mistral-vibe.ts', 'docs/providers/mistral-vibe.md', 'core', 'session-meta-and-jsonl', 2),
+  priority('mistral-vibe', 'src/providers/mistral-vibe.ts', 'docs/providers/mistral-vibe.md', 'core', 'session-meta-jsonl-and-unified-journal', 2),
   priority('openclaw', 'src/providers/openclaw.ts', 'docs/providers/openclaw.md', 'core', 'agent-jsonl', 2),
   priority('warp', 'src/providers/warp.ts', 'docs/providers/warp.md', 'lazy', 'sqlite-weighted-estimation', 2),
 
