@@ -691,7 +691,7 @@ describe('(h) fresh durable accounting wins over carried entries on a parser bum
       cacheCreationInputTokens: 0, cacheReadInputTokens: 0,
       cachedInputTokens: 0, reasoningTokens: 0, webSearchRequests: 0,
       costUSD: 0.001, tools: [], bashCommands: [],
-      timestamp: '2026-08-01T00:00:00.000Z', speed: 'standard',
+      timestamp: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(), speed: 'standard',
       deduplicationKey, userMessage: '', sessionId: deduplicationKey,
     })
 
