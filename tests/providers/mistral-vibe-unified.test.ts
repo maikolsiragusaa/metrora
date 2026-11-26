@@ -335,9 +335,9 @@ describe('mistral-vibe provider - unified store parsing', () => {
     expect(calls[0]!.deduplicationKey).toBe('mistral-vibe:unified-session-8:unified:action-10')
   })
 
-  it('falls back to session metadata when a segment cannot be stat-ed after discovery', async () => {
+  it('takes session identity and model from meta.json', async () => {
     const sessionDir = await writeUnifiedSession(
-      'unified-session-9',
+      'dir-name-differs-from-session-id',
       unifiedMetadata({ sessionId: 'unified-session-9' }),
       { '0000000000010000.jsonl': [completion('action-11', usage(30, 3, 0))] },
     )
@@ -346,5 +346,6 @@ describe('mistral-vibe provider - unified store parsing', () => {
 
     expect(calls).toHaveLength(1)
     expect(calls[0]!.sessionId).toBe('unified-session-9')
+    expect(calls[0]!.model).toBe(PRICED_MODEL)
   })
 })
