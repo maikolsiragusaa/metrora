@@ -189,13 +189,19 @@ export function parseToolArguments(raw: string | Record<string, unknown> | null 
   }
 }
 
-/** A unified journal segment: <session>/journal/<sequence>.jsonl. */
+/**
+ * A unified journal segment lives at
+ * <session-root>/unified/<session-id>/journal/<sequence>.jsonl, so the segment
+ * directory's parent is the session id and its grandparent is `unified`.
+ */
 export function isUnifiedJournalSource(path: string): boolean {
-  return path.endsWith(JOURNAL_EXTENSION)
-    && basename(dirname(path)) === JOURNAL_DIRNAME
-    && basename(dirname(dirname(path))) === UNIFIED_DIRNAME
+  if (!path.endsWith(JOURNAL_EXTENSION)) return false
+  const journalDir = dirname(path)
+  return basename(journalDir) === JOURNAL_DIRNAME
+    && basename(dirname(journalDir)) === UNIFIED_DIRNAME
 }
 
+/** <session-root>/unified/<session-id>/ for a segment inside that session. */
 export function unifiedSessionDir(journalPath: string): string {
   return dirname(dirname(journalPath))
 }
