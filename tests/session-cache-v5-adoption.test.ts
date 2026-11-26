@@ -342,10 +342,17 @@ describe('v7 -> v8 cost-assignment adoption', () => {
               fingerprint: { dev: 1, ino: 2, mtimeMs: 3, sizeBytes: 4 },
               mcpInventory: [],
               turns: [{
-                timestamp: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+                timestamp: '2026-07-20T10:00:00.000Z',
                 sessionId: 'durable',
                 userMessage: 'work',
-                calls: [{ ...cachedCall('durable-call', 12), provider: 'copilot' }],
+                calls: [{
+                  ...cachedCall('durable-call', 12),
+                  provider: 'copilot',
+                  // Retention is measured on the newest call, not on the turn, and this
+                  // case parses without a range, so the call must stay inside the
+                  // 90-day durable window or the entry is pruned before it is adopted.
+                  timestamp: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+                }],
               }],
             },
           },
